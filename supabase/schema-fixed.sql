@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════
--- BestLife Hub — Database Schema v1
+-- BestLife Hub — Database Schema v1 (Fixed)
 -- Run this in Supabase SQL Editor
 -- ═══════════════════════════════════════════════════════════════════
 
@@ -100,7 +100,31 @@ CREATE TABLE IF NOT EXISTS upload_metadata (
 );
 
 -- ═══════════════════════════════════════════════════════════════════
--- Row Level Security
+-- Triggers (Create functions first)
+-- ═══════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER invoices_updated_at
+  BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER pto_updated_at
+  BEFORE UPDATE ON pto_balances
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Row Level Security (After all tables are created)
 -- ═══════════════════════════════════════════════════════════════════
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -111,7 +135,10 @@ ALTER TABLE pto_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE upload_metadata ENABLE ROW LEVEL SECURITY;
 
 -- ─── Users RLS ───────────────────────────────────────────────────
--- Admins see all, others see themselves
+DROP POLICY IF EXISTS users_admin_all ON users;
+DROP POLICY IF EXISTS users_self_read ON users;
+DROP POLICY IF EXISTS users_supervisor_read ON users;
+
 CREATE POLICY users_admin_all ON users
   FOR ALL
   USING (
@@ -122,7 +149,6 @@ CREATE POLICY users_self_read ON users
   FOR SELECT
   USING (auth_id = auth.uid());
 
--- Clinical leaders see their supervisees
 CREATE POLICY users_supervisor_read ON users
   FOR SELECT
   USING (
@@ -132,6 +158,9 @@ CREATE POLICY users_supervisor_read ON users
   );
 
 -- ─── Therapists RLS ─────────────────────────────────────────────
+DROP POLICY IF EXISTS therapists_read_all ON therapists;
+DROP POLICY IF EXISTS therapists_admin_write ON therapists;
+
 CREATE POLICY therapists_read_all ON therapists
   FOR SELECT
   USING (true);
@@ -143,7 +172,10 @@ CREATE POLICY therapists_admin_write ON therapists
   );
 
 -- ─── Transactions RLS ───────────────────────────────────────────
--- Admins and clinical leaders can read all; therapists only their own
+DROP POLICY IF EXISTS txn_admin_all ON transactions;
+DROP POLICY IF EXISTS txn_read_own ON transactions;
+DROP POLICY IF EXISTS txn_leader_read ON transactions;
+
 CREATE POLICY txn_admin_all ON transactions
   FOR ALL
   USING (
@@ -167,6 +199,10 @@ CREATE POLICY txn_leader_read ON transactions
   );
 
 -- ─── Invoices RLS ───────────────────────────────────────────────
+DROP POLICY IF EXISTS inv_admin_all ON invoices;
+DROP POLICY IF EXISTS inv_own_read ON invoices;
+DROP POLICY IF EXISTS inv_own_insert ON invoices;
+
 CREATE POLICY inv_admin_all ON invoices
   FOR ALL
   USING (
@@ -186,6 +222,9 @@ CREATE POLICY inv_own_insert ON invoices
   );
 
 -- ─── PTO Balances RLS ───────────────────────────────────────────
+DROP POLICY IF EXISTS pto_admin_all ON pto_balances;
+DROP POLICY IF EXISTS pto_own_read ON pto_balances;
+
 CREATE POLICY pto_admin_all ON pto_balances
   FOR ALL
   USING (
@@ -199,6 +238,9 @@ CREATE POLICY pto_own_read ON pto_balances
   );
 
 -- ─── Upload Metadata RLS ────────────────────────────────────────
+DROP POLICY IF EXISTS upload_admin_all ON upload_metadata;
+DROP POLICY IF EXISTS upload_read_all ON upload_metadata;
+
 CREATE POLICY upload_admin_all ON upload_metadata
   FOR ALL
   USING (
@@ -208,27 +250,3 @@ CREATE POLICY upload_admin_all ON upload_metadata
 CREATE POLICY upload_read_all ON upload_metadata
   FOR SELECT
   USING (true);
-
--- ═══════════════════════════════════════════════════════════════════
--- Triggers
--- ═══════════════════════════════════════════════════════════════════
-
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER users_updated_at
-  BEFORE UPDATE ON users
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER invoices_updated_at
-  BEFORE UPDATE ON invoices
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER pto_updated_at
-  BEFORE UPDATE ON pto_balances
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();

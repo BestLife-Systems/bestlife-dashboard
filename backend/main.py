@@ -28,6 +28,14 @@ logger = logging.getLogger("bestlife")
 
 app = FastAPI(title="BestLife Hub API")
 
+# Startup logging
+@app.on_event("startup")
+async def startup_event():
+    logger.info("BestLife Hub API starting up...")
+    logger.info(f"Supabase URL: {SUPABASE_URL}")
+    logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
+    logger.info(f"Anon key configured: {'Yes' if SUPABASE_ANON_KEY else 'No'}")
+
 
 # ────────────────────────────────────────────────────────────────────
 # Supabase helpers
