@@ -43,7 +43,7 @@ const ADMIN_TABS = [
   { path: '/home',                  label: 'Home',            icon: <IconHome /> },
   { section: 'Workspace' },
   { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
+  { path: '/knowledge-base',       label: "Betty's Brain",    icon: <IconBrain /> },
   { section: 'Admin' },
   { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
   { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
@@ -61,7 +61,7 @@ const THERAPIST_TABS = [
   { path: '/therapist/time-off', label: 'Time Off',          icon: <IconPalmTree /> },
   { section: 'Workspace' },
   { path: '/my-work',            label: 'My Work',           icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: <IconBrain /> },
+  { path: '/knowledge-base',     label: "Betty's Brain",     icon: <IconBrain /> },
 ]
 
 const CLINICAL_TABS = [
@@ -75,7 +75,7 @@ const CLINICAL_TABS = [
   { path: '/clinical/supervision', label: 'Supervision',      icon: <IconClipboard /> },
   { section: 'Workspace' },
   { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
+  { path: '/knowledge-base',       label: "Betty's Brain",    icon: <IconBrain /> },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
