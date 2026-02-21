@@ -24,37 +24,50 @@ import ClinicalSupervisees from './pages/clinical/ClinicalSupervisees'
 import ClinicalSupervision from './pages/clinical/ClinicalSupervision'
 
 // Shared pages
+import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
 import MyWork from './pages/shared/MyWork'
 
 // ── Nav Tabs ──────────────────────────────────────────────────────
+// `section` items are rendered as labels/dividers, not links
 
 const ADMIN_TABS = [
-  { path: '/admin/analytics',      label: 'Analytics',       icon: '📊' },
+  { path: '/home',                  label: 'Home',            icon: '🏠' },
+  { section: 'Workspace' },
+  { path: '/my-work',              label: 'My Work',          icon: '✅' },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
+  { section: 'Admin' },
+  { path: '/admin/analytics',      label: 'Analytics',        icon: '📊' },
   { path: '/admin/payroll',        label: 'Payroll',          icon: '💰' },
   { path: '/admin/users',          label: 'Users',            icon: '👥' },
   { path: '/admin/task-templates', label: 'Task Templates',   icon: '🗓️' },
-  { path: '/my-work',              label: 'My Work',          icon: '✅' },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
+  { section: 'System' },
   { path: '/admin/settings',       label: 'Settings',         icon: '⚙️' },
 ]
 
 const THERAPIST_TABS = [
-  { path: '/therapist/stats',    label: 'My Stats',       icon: '🏠' },
-  { path: '/therapist/invoices', label: 'Invoices',        icon: '💼' },
-  { path: '/therapist/time-off', label: 'Time Off',        icon: '🏖️' },
-  { path: '/my-work',            label: 'My Work',         icon: '✅' },
-  { path: '/knowledge-base',     label: 'Knowledge Base',  icon: '🧠' },
+  { path: '/home',                label: 'Home',            icon: '🏠' },
+  { section: 'My Practice' },
+  { path: '/therapist/stats',    label: 'My Stats',         icon: '📊' },
+  { path: '/therapist/invoices', label: 'Invoices',          icon: '💼' },
+  { path: '/therapist/time-off', label: 'Time Off',          icon: '🏖️' },
+  { section: 'Workspace' },
+  { path: '/my-work',            label: 'My Work',           icon: '✅' },
+  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: '🧠' },
 ]
 
 const CLINICAL_TABS = [
-  { path: '/clinical/stats',       label: 'My Stats',       icon: '🏠' },
-  { path: '/clinical/supervisees', label: 'Supervisees',    icon: '👨‍⚕️' },
-  { path: '/clinical/supervision', label: 'Supervision',    icon: '📝' },
-  { path: '/clinical/invoices',    label: 'Invoices',       icon: '💼' },
-  { path: '/clinical/time-off',    label: 'Time Off',       icon: '🏖️' },
-  { path: '/my-work',              label: 'My Work',        icon: '✅' },
-  { path: '/knowledge-base',       label: 'Knowledge Base', icon: '🧠' },
+  { path: '/home',                  label: 'Home',            icon: '🏠' },
+  { section: 'My Practice' },
+  { path: '/clinical/stats',       label: 'My Stats',         icon: '📊' },
+  { path: '/clinical/invoices',    label: 'Invoices',         icon: '💼' },
+  { path: '/clinical/time-off',    label: 'Time Off',         icon: '🏖️' },
+  { section: 'Clinical' },
+  { path: '/clinical/supervisees', label: 'Supervisees',      icon: '👨‍⚕️' },
+  { path: '/clinical/supervision', label: 'Supervision',      icon: '📝' },
+  { section: 'Workspace' },
+  { path: '/my-work',              label: 'My Work',          icon: '✅' },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
@@ -74,15 +87,8 @@ function RoleRouter() {
 
   if (!profile) return <Navigate to="/login" replace />
 
-  switch (profile.role) {
-    case 'admin':
-      return <Navigate to="/admin/analytics" replace />
-    case 'clinical_leader':
-      return <Navigate to="/clinical/stats" replace />
-    case 'therapist':
-    default:
-      return <Navigate to="/therapist/stats" replace />
-  }
+  // All roles now go to /home
+  return <Navigate to="/home" replace />
 }
 
 // Helper: get tabs for any role
@@ -119,6 +125,11 @@ export default function App() {
           } />
 
           {/* ── Shared routes (all authenticated roles) ── */}
+          <Route path="/home" element={
+            <ProtectedRoute>
+              <SharedLayout><Home /></SharedLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/my-work" element={
             <ProtectedRoute>
               <SharedLayout><MyWork /></SharedLayout>

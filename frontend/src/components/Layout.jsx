@@ -35,7 +35,7 @@ export default function Layout({ children, tabs }) {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <div className="logo">
+          <div className="logo" onClick={() => navigate('/home')} style={{ cursor: 'pointer' }}>
             <span className="logo-icon">✦</span>
             <span className="logo-text">BestLife Hub</span>
           </div>
@@ -77,17 +77,30 @@ export default function Layout({ children, tabs }) {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`}>
           <div className="sidebar-nav">
-            {tabs.map((tab) => (
-              <NavLink
-                key={tab.path}
-                to={tab.path}
-                className={({ isActive }) => `sidebar-link ${isActive ? 'sidebar-link--active' : ''}`}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <span className="sidebar-icon">{tab.icon}</span>
-                <span className="sidebar-label">{tab.label}</span>
-              </NavLink>
-            ))}
+            {tabs.map((tab, i) => {
+              // Section label / divider
+              if (tab.section) {
+                return (
+                  <div key={`section-${tab.section}`} className="sidebar-section">
+                    {i > 0 && <div className="sidebar-divider" />}
+                    <span className="sidebar-section-label">{tab.section}</span>
+                  </div>
+                )
+              }
+
+              // Normal nav link
+              return (
+                <NavLink
+                  key={tab.path}
+                  to={tab.path}
+                  className={({ isActive }) => `sidebar-link ${isActive ? 'sidebar-link--active' : ''}`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <span className="sidebar-icon">{tab.icon}</span>
+                  <span className="sidebar-label">{tab.label}</span>
+                </NavLink>
+              )
+            })}
           </div>
         </nav>
 

@@ -110,13 +110,17 @@ a { color: var(--accent); text-decoration: none; }
 .main-container { display: flex; flex: 1; min-height: calc(100vh - var(--topbar-height)); }
 
 /* ── Sidebar ── */
-.sidebar { width: var(--sidebar-width); background: var(--bg-elevated); border-right: 1px solid var(--border); padding: 1rem 0.5rem; flex-shrink: 0; overflow-y: auto; }
-.sidebar-nav { display: flex; flex-direction: column; gap: 0.125rem; }
-.sidebar-link { display: flex; align-items: center; gap: 0.625rem; padding: 0.625rem 0.75rem; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 0.875rem; font-weight: 450; text-decoration: none; transition: all 0.15s; }
-.sidebar-link:hover { color: var(--text); background: var(--bg-card); }
-.sidebar-link--active { color: var(--accent); background: var(--accent-glow); }
-.sidebar-link--active:hover { color: var(--accent); background: var(--accent-glow); }
-.sidebar-icon { font-size: 1.1rem; width: 24px; text-align: center; flex-shrink: 0; }
+.sidebar { width: var(--sidebar-width); background: var(--bg-elevated); border-right: 1px solid var(--border); padding: 0.75rem 0.5rem; flex-shrink: 0; overflow-y: auto; }
+.sidebar-nav { display: flex; flex-direction: column; gap: 1px; }
+.sidebar-link { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem; font-weight: 450; text-decoration: none; transition: all 0.15s; opacity: 0.75; }
+.sidebar-link:hover { color: var(--text-bright); background: var(--bg-card); opacity: 1; }
+.sidebar-link--active { color: var(--accent); background: rgba(0, 187, 238, 0.06); opacity: 1; border: 1px solid rgba(0, 187, 238, 0.12); }
+.sidebar-link--active:hover { color: var(--accent); background: rgba(0, 187, 238, 0.08); }
+.sidebar-icon { font-size: 1rem; width: 22px; text-align: center; flex-shrink: 0; line-height: 1; }
+.sidebar-label { line-height: 1.2; }
+.sidebar-section { padding: 0 0.75rem; }
+.sidebar-section-label { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); opacity: 0.6; display: block; padding: 0.25rem 0 0.25rem; }
+.sidebar-divider { height: 1px; background: var(--border); margin: 0.5rem 0 0.375rem; opacity: 0.5; }
 .sidebar-overlay { display: none; }
 
 /* ── Content ── */
@@ -286,6 +290,19 @@ a { color: var(--accent); text-decoration: none; }
 .empty-state-icon { font-size: 2.5rem; margin-bottom: 1rem; }
 .empty-state h3 { font-family: var(--font-display); font-size: 1.25rem; color: var(--text-bright); margin-bottom: 0.5rem; font-weight: 400; }
 .empty-state p { font-size: 0.9rem; max-width: 400px; margin: 0 auto; }
+
+/* ── Home Widgets ── */
+.home-widgets { display: flex; flex-direction: column; gap: 1rem; }
+.home-widget { padding: 1.25rem 1.5rem; }
+.home-task-list { display: flex; flex-direction: column; gap: 0; }
+.home-task-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.home-task-item:last-child { border-bottom: none; }
+.home-task-item:hover { background: var(--bg-elevated); margin: 0 -0.25rem; padding: 0.5rem; border-radius: var(--radius-sm); }
+.home-task-title { font-size: 0.875rem; font-weight: 450; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-task-due { font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; }
+.home-announcement { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; }
+.home-announcement + .home-announcement { border-top: 1px solid var(--border); }
+.home-announcement-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 0.375rem; flex-shrink: 0; }
 
 /* ── Ask Betty Bar ── */
 --betty-height: 56px;

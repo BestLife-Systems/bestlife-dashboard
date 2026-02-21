@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 const PAGE_LABELS = {
+  '/home': 'Home',
   '/admin/analytics': 'Analytics',
   '/admin/payroll': 'Payroll',
   '/admin/users': 'Users',
