@@ -113,65 +113,37 @@ function SpaceCanvas() {
     const STAR_COUNT = 220
     const shooters = []
 
-    // ─── Big Dipper (accurate star positions, upper-left quadrant) ───
-    // Real proportions of Ursa Major's Big Dipper asterism
-    const BIG_DIPPER = [
-      { x: 0.18, y: 0.12 }, // 0 Alkaid (end of handle)
-      { x: 0.14, y: 0.16 }, // 1 Mizar (handle bend)
-      { x: 0.10, y: 0.19 }, // 2 Alioth (handle middle)
-      { x: 0.07, y: 0.24 }, // 3 Megrez (bowl-handle junction)
-      { x: 0.04, y: 0.20 }, // 4 Dubhe (bowl top-left)
-      { x: 0.05, y: 0.29 }, // 5 Merak (bowl bottom-left)
-      { x: 0.10, y: 0.28 }, // 6 Phecda (bowl bottom-right)
+    // ─── Smiley face constellation (upper-right area) ───
+    // Big circle face with dots for eyes and a curved smile
+    const SMILEY = [
+      // Face circle (12 points)
+      { x: 0.85, y: 0.10 },  // 0  top
+      { x: 0.89, y: 0.11 },  // 1  top-right
+      { x: 0.92, y: 0.14 },  // 2  right-top
+      { x: 0.93, y: 0.18 },  // 3  right
+      { x: 0.92, y: 0.22 },  // 4  right-bottom
+      { x: 0.89, y: 0.25 },  // 5  bottom-right
+      { x: 0.85, y: 0.26 },  // 6  bottom
+      { x: 0.81, y: 0.25 },  // 7  bottom-left
+      { x: 0.78, y: 0.22 },  // 8  left-bottom
+      { x: 0.77, y: 0.18 },  // 9  left
+      { x: 0.78, y: 0.14 },  // 10 left-top
+      { x: 0.81, y: 0.11 },  // 11 top-left
+      // Eyes (just dots, no lines)
+      { x: 0.82, y: 0.16 },  // 12 left eye
+      { x: 0.88, y: 0.16 },  // 13 right eye
+      // Smile (5 points for a nice curve)
+      { x: 0.81, y: 0.20 },  // 14 smile-left
+      { x: 0.83, y: 0.22 },  // 15 smile-left-mid
+      { x: 0.85, y: 0.23 },  // 16 smile-bottom
+      { x: 0.87, y: 0.22 },  // 17 smile-right-mid
+      { x: 0.89, y: 0.20 },  // 18 smile-right
     ]
-    // Bowl: Dubhe→Merak→Phecda→Megrez→Dubhe, Handle: Megrez→Alioth→Mizar→Alkaid
-    const BIG_DIPPER_LINES = [[4,5],[5,6],[6,3],[3,4],[3,2],[2,1],[1,0]]
-
-    // ─── Blue Man mascot — smiley face guy with arms on hips ───
-    // Round head with eyes + smile, body, arms on hips, legs spread
-    const BLUE_MAN = [
-      // Head circle (approximated with 8 points)
-      { x: 0.84, y: 0.56 },  // 0  head top
-      { x: 0.86, y: 0.57 },  // 1  head top-right
-      { x: 0.87, y: 0.59 },  // 2  head right
-      { x: 0.86, y: 0.61 },  // 3  head bottom-right
-      { x: 0.84, y: 0.62 },  // 4  head bottom
-      { x: 0.82, y: 0.61 },  // 5  head bottom-left
-      { x: 0.81, y: 0.59 },  // 6  head left
-      { x: 0.82, y: 0.57 },  // 7  head top-left
-      // Eyes
-      { x: 0.828, y: 0.585 }, // 8  left eye
-      { x: 0.852, y: 0.585 }, // 9  right eye
-      // Smile (3 points for a curve)
-      { x: 0.83, y: 0.605 },  // 10 smile left
-      { x: 0.84, y: 0.615 },  // 11 smile bottom
-      { x: 0.85, y: 0.605 },  // 12 smile right
-      // Body
-      { x: 0.84, y: 0.62 },  // 13 neck (same as head bottom)
-      { x: 0.84, y: 0.72 },  // 14 torso mid
-      { x: 0.84, y: 0.78 },  // 15 waist
-      // Arms (on hips, angled outward)
-      { x: 0.84, y: 0.67 },  // 16 shoulder point
-      { x: 0.78, y: 0.70 },  // 17 left elbow
-      { x: 0.80, y: 0.75 },  // 18 left hand on hip
-      { x: 0.90, y: 0.70 },  // 19 right elbow
-      { x: 0.88, y: 0.75 },  // 20 right hand on hip
-      // Legs (spread wide)
-      { x: 0.80, y: 0.88 },  // 21 left foot
-      { x: 0.88, y: 0.88 },  // 22 right foot
-    ]
-    const BLUE_MAN_LINES = [
-      // Head circle
-      [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0],
-      // Smile
-      [10,11],[11,12],
-      // Body
-      [13,14],[14,15],
-      // Arms
-      [16,17],[17,18],[18,15], // left arm to hip
-      [16,19],[19,20],[20,15], // right arm to hip
-      // Legs
-      [15,21],[15,22],
+    const SMILEY_LINES = [
+      // Face circle
+      [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,0],
+      // Smile curve
+      [14,15],[15,16],[16,17],[17,18],
     ]
 
     let constellationStars = []
@@ -209,8 +181,7 @@ function SpaceCanvas() {
         })
         lines.forEach(([a, b]) => constellationLines.push([base + a, base + b, color]))
       }
-      buildConstellation(BIG_DIPPER, BIG_DIPPER_LINES, 'rgba(180,210,255,0.5)', 2.5)
-      buildConstellation(BLUE_MAN, BLUE_MAN_LINES, 'rgba(100,190,255,0.4)', 1.8)
+      buildConstellation(SMILEY, SMILEY_LINES, 'rgba(140,200,255,0.45)', 2.2)
     }
 
     function spawnShooter() {
@@ -337,10 +308,19 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
     return () => cancelAnimationFrame(rafRef.current)
   }, [categories.length])
 
+  // The SVG arc label traces the outside-bottom of the icon circle.
+  // Icon is 80px (r=40). We want text on a circle of r=54 (14px outside the icon edge).
+  // The SVG is 160x160 centered on the icon. The arc center is at (80,80).
+  const arcR = 54 // radius for text path (outside the 40px icon radius)
+  const svgSize = 160
+  const cx = svgSize / 2
+  const cy = svgSize / 2
+
   return (
     <div className="kb-orbit-track-js">
       {categories.map((cat, i) => {
         const isHovered = hoveredCat === i
+        const arcId = `arc-${cat.name.replace(/[^a-zA-Z]/g, '')}`
         return (
           <div
             key={cat.name}
@@ -355,12 +335,31 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
               <div className="kb-orbit-node-icon-js">
                 {CAT_ICONS[cat.name]}
               </div>
-              <span
-                className="kb-orbit-node-label"
-                style={{ color: isHovered ? '#fff' : (cat.color || 'var(--text-muted)') }}
+              {/* SVG arc label — positioned absolutely over the icon, text on outside-bottom arc */}
+              <svg
+                className="kb-orbit-arc-label"
+                width={svgSize}
+                height={svgSize}
+                viewBox={`0 0 ${svgSize} ${svgSize}`}
               >
-                {cat.name}
-              </span>
+                <defs>
+                  <path
+                    id={arcId}
+                    d={`M ${cx - arcR} ${cy} A ${arcR} ${arcR} 0 0 1 ${cx + arcR} ${cy}`}
+                  />
+                </defs>
+                <text
+                  fill={isHovered ? '#ffffff' : (cat.color || '#7d8a82')}
+                  fontSize="11.5"
+                  fontFamily="'DM Sans', sans-serif"
+                  fontWeight="600"
+                  letterSpacing="0.04em"
+                >
+                  <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
+                    {cat.name}
+                  </textPath>
+                </text>
+              </svg>
             </div>
           </div>
         )

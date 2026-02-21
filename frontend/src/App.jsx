@@ -43,7 +43,7 @@ const ADMIN_TABS = [
   { path: '/home',                  label: 'Home',            icon: <IconHome /> },
   { section: 'Workspace' },
   { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: "Betty's Brain",    icon: <IconBrain /> },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
   { section: 'Admin' },
   { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
   { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
@@ -75,7 +75,7 @@ const CLINICAL_TABS = [
   { path: '/clinical/supervision', label: 'Supervision',      icon: <IconClipboard /> },
   { section: 'Workspace' },
   { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: "Betty's Brain",    icon: <IconBrain /> },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
