@@ -28,46 +28,54 @@ import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
 import MyWork from './pages/shared/MyWork'
 
+// Icons
+import {
+  IconHome, IconCheckSquare, IconBrain, IconBarChart, IconDollar,
+  IconUsers, IconCalendar, IconSettings, IconBriefcase, IconPalmTree,
+  IconUserCheck, IconClipboard,
+} from './components/Icons'
+
 // ── Nav Tabs ──────────────────────────────────────────────────────
 // `section` items are rendered as labels/dividers, not links
+// `icon` is now a React element (SVG component)
 
 const ADMIN_TABS = [
-  { path: '/home',                  label: 'Home',            icon: '🏠' },
+  { path: '/home',                  label: 'Home',            icon: <IconHome /> },
   { section: 'Workspace' },
-  { path: '/my-work',              label: 'My Work',          icon: '✅' },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
+  { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
   { section: 'Admin' },
-  { path: '/admin/analytics',      label: 'Analytics',        icon: '📊' },
-  { path: '/admin/payroll',        label: 'Payroll',          icon: '💰' },
-  { path: '/admin/users',          label: 'Users',            icon: '👥' },
-  { path: '/admin/task-templates', label: 'Task Templates',   icon: '🗓️' },
+  { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
+  { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
+  { path: '/admin/users',          label: 'Users',            icon: <IconUsers /> },
+  { path: '/admin/task-templates', label: 'Task Templates',   icon: <IconCalendar /> },
   { section: 'System' },
-  { path: '/admin/settings',       label: 'Settings',         icon: '⚙️' },
+  { path: '/admin/settings',       label: 'Settings',         icon: <IconSettings /> },
 ]
 
 const THERAPIST_TABS = [
-  { path: '/home',                label: 'Home',            icon: '🏠' },
+  { path: '/home',                label: 'Home',            icon: <IconHome /> },
   { section: 'My Practice' },
-  { path: '/therapist/stats',    label: 'My Stats',         icon: '📊' },
-  { path: '/therapist/invoices', label: 'Invoices',          icon: '💼' },
-  { path: '/therapist/time-off', label: 'Time Off',          icon: '🏖️' },
+  { path: '/therapist/stats',    label: 'My Stats',         icon: <IconBarChart /> },
+  { path: '/therapist/invoices', label: 'Invoices',          icon: <IconBriefcase /> },
+  { path: '/therapist/time-off', label: 'Time Off',          icon: <IconPalmTree /> },
   { section: 'Workspace' },
-  { path: '/my-work',            label: 'My Work',           icon: '✅' },
-  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: '🧠' },
+  { path: '/my-work',            label: 'My Work',           icon: <IconCheckSquare /> },
+  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: <IconBrain /> },
 ]
 
 const CLINICAL_TABS = [
-  { path: '/home',                  label: 'Home',            icon: '🏠' },
+  { path: '/home',                  label: 'Home',            icon: <IconHome /> },
   { section: 'My Practice' },
-  { path: '/clinical/stats',       label: 'My Stats',         icon: '📊' },
-  { path: '/clinical/invoices',    label: 'Invoices',         icon: '💼' },
-  { path: '/clinical/time-off',    label: 'Time Off',         icon: '🏖️' },
+  { path: '/clinical/stats',       label: 'My Stats',         icon: <IconBarChart /> },
+  { path: '/clinical/invoices',    label: 'Invoices',         icon: <IconBriefcase /> },
+  { path: '/clinical/time-off',    label: 'Time Off',         icon: <IconPalmTree /> },
   { section: 'Clinical' },
-  { path: '/clinical/supervisees', label: 'Supervisees',      icon: '👨‍⚕️' },
-  { path: '/clinical/supervision', label: 'Supervision',      icon: '📝' },
+  { path: '/clinical/supervisees', label: 'Supervisees',      icon: <IconUserCheck /> },
+  { path: '/clinical/supervision', label: 'Supervision',      icon: <IconClipboard /> },
   { section: 'Workspace' },
-  { path: '/my-work',              label: 'My Work',          icon: '✅' },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
+  { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
