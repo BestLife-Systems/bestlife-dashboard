@@ -35,12 +35,27 @@ function isToday(dateStr) {
   return d.toDateString() === today.toDateString()
 }
 
+// Weather condition code → icon + label
+function weatherInfo(code) {
+  if (code <= 0) return { icon: '☀️', label: 'Clear' }
+  if (code <= 3) return { icon: '⛅', label: 'Partly Cloudy' }
+  if (code <= 48) return { icon: '🌫️', label: 'Foggy' }
+  if (code <= 57) return { icon: '🌦️', label: 'Drizzle' }
+  if (code <= 67) return { icon: '🌧️', label: 'Rain' }
+  if (code <= 77) return { icon: '🌨️', label: 'Snow' }
+  if (code <= 82) return { icon: '🌧️', label: 'Showers' }
+  if (code <= 86) return { icon: '🌨️', label: 'Snow Showers' }
+  if (code <= 99) return { icon: '⛈️', label: 'Thunderstorm' }
+  return { icon: '🌤️', label: 'Fair' }
+}
+
 export default function Home() {
   const { profile } = useAuth()
   const navigate = useNavigate()
   const [tasks, setTasks] = useState([])
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [kbSearch, setKbSearch] = useState('')
+  const [weather, setWeather] = useState(null)
   const verb = useLoadingVerb(loadingTasks)
 
   const firstName = profile?.first_name || 'there'
@@ -51,6 +66,7 @@ export default function Home() {
 
   useEffect(() => {
     loadTasks()
+    loadWeather()
   }, [])
 
   async function loadTasks() {
@@ -71,6 +87,49 @@ export default function Home() {
     }
   }
 
+  async function loadWeather() {
+    try {
+      // Default: Phoenix, AZ area — override via geolocation if available
+      let lat = 33.45, lon = -112.07, city = 'Phoenix'
+      if (navigator.geolocation) {
+        try {
+          const pos = await new Promise((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 4000 })
+          )
+          lat = pos.coords.latitude
+          lon = pos.coords.longitude
+          // Reverse-geocode city name
+          try {
+            const geoRes = await fetch(
+              `https://geocoding-api.open-meteo.com/v1/search?name=_&count=1&latitude=${lat}&longitude=${lon}`
+            )
+            // Use a simpler reverse lookup via nominatim-style approach
+            // Actually Open-Meteo doesn't have reverse geocoding. We'll use the timezone as a rough label.
+          } catch {}
+          city = ''
+        } catch {
+          // geolocation denied or timed out — keep defaults
+        }
+      }
+
+      const res = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto`
+      )
+      const data = await res.json()
+      if (data.current) {
+        setWeather({
+          temp: Math.round(data.current.temperature_2m),
+          code: data.current.weather_code,
+          wind: Math.round(data.current.wind_speed_10m),
+          humidity: data.current.relative_humidity_2m,
+          city: city || data.timezone?.split('/').pop()?.replace(/_/g, ' ') || '',
+        })
+      }
+    } catch (err) {
+      console.error('Weather fetch failed:', err)
+    }
+  }
+
   function handleKbSearch(e) {
     e.preventDefault()
     navigate(`/knowledge-base${kbSearch.trim() ? `?q=${encodeURIComponent(kbSearch.trim())}` : ''}`)
@@ -86,6 +145,22 @@ export default function Home() {
             Here's what's on your plate today.
           </p>
         </div>
+        {weather && (() => {
+          const w = weatherInfo(weather.code)
+          return (
+            <div className="weather-widget">
+              <div className="weather-main">
+                <span className="weather-icon">{w.icon}</span>
+                <span className="weather-temp">{weather.temp}°F</span>
+              </div>
+              <div className="weather-details">
+                <span className="weather-label">{w.label}</span>
+                {weather.city && <span className="weather-city">{weather.city}</span>}
+                <span className="weather-meta">💧 {weather.humidity}%  ·  💨 {weather.wind} mph</span>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Widget grid */}
