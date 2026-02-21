@@ -459,6 +459,9 @@ a { color: var(--accent); text-decoration: none; }
 .kb-page {
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* Canvas space background */
@@ -470,30 +473,43 @@ a { color: var(--accent); text-decoration: none; }
   z-index: 0;
   pointer-events: none;
 }
-[data-theme="light"] .kb-space-canvas {
-  opacity: 0.25;
+[data-theme="light"] .kb-space-canvas { opacity: 0.2; }
+
+/* Hero title — bigger */
+.kb-hero {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 2rem;
+}
+.kb-hero-title {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  font-weight: 400;
+  color: var(--text-bright);
+}
+.kb-hero-sub {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin-top: 0.35rem;
 }
 
-/* ── Orbital Container — big on desktop ── */
+/* Search wrap */
+.kb-search-wrap {
+  max-width: 540px;
+  width: 100%;
+  margin: 1.5rem auto 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Orbital Container — big on desktop, always centered ── */
 .kb-orbit-container {
   position: relative;
-  width: 560px;
-  height: 560px;
-  margin: 0 auto;
-}
-
-/* Decorative orbit rings */
-.kb-orbit-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  opacity: 0.25;
-}
-.kb-orbit-ring--inner {
-  inset: 80px;
-  border-style: dashed;
-  opacity: 0.12;
+  width: 640px;
+  height: 640px;
+  flex-shrink: 0;
+  z-index: 1;
 }
 
 /* Center brain image */
@@ -509,15 +525,15 @@ a { color: var(--accent); text-decoration: none; }
 }
 .kb-orbit-brain-glow {
   position: absolute;
-  width: 170px;
-  height: 170px;
+  width: 190px;
+  height: 190px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(0, 187, 238, 0.2) 0%, rgba(164, 120, 255, 0.06) 50%, transparent 100%);
   animation: pulse-glow 3s ease-in-out infinite;
 }
 .kb-orbit-betty {
-  width: 140px;
-  height: 140px;
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid rgba(0, 187, 238, 0.3);
@@ -541,57 +557,56 @@ a { color: var(--accent); text-decoration: none; }
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 100px;
-  margin-left: -50px;
-  margin-top: -50px;
-  height: 100px;
+  width: 120px;
+  margin-left: -60px;
+  margin-top: -55px;
+  height: 110px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.15rem;
+  justify-content: flex-start;
+  gap: 0.2rem;
   cursor: pointer;
   will-change: transform;
 }
 
-/* Larger icon circles */
+/* Icon circles — big */
 .kb-orbit-node-icon-js {
-  width: 56px;
-  height: 56px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   background: var(--bg-card);
-  border: 1.5px solid var(--border);
+  border: 1.5px solid rgba(255,255,255,0.08);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--node-color, var(--accent));
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.35), inset 0 0 20px rgba(0,0,0,0.1);
+  transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+  flex-shrink: 0;
+}
+[data-theme="light"] .kb-orbit-node-icon-js {
+  border-color: var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
-/* Curved label (SVG textPath) */
+/* Curved label outside — SVG textPath */
 .kb-curved-label {
   display: block;
   overflow: visible;
-  transition: opacity 0.25s ease;
+  flex-shrink: 0;
 }
-.kb-curved-label text {
-  transition: fill 0.25s ease;
-}
-[data-theme="light"] .kb-curved-label text {
-  fill: var(--text-muted);
-}
-[data-theme="light"] .kb-curved-label--hovered text {
-  fill: var(--text-bright);
-}
+.kb-curved-label text { transition: fill 0.25s ease; }
+[data-theme="light"] .kb-curved-label text { fill: var(--text-muted); }
+[data-theme="light"] .kb-curved-label--hovered text { fill: var(--text-bright); }
 
 /* Hover: enlarge icon + glow */
 .kb-orbit-node-js--hovered .kb-orbit-node-icon-js {
-  transform: scale(1.45);
+  transform: scale(1.35);
   border-color: var(--node-color, var(--accent));
   box-shadow:
-    0 0 24px rgba(0, 187, 238, 0.3),
-    0 0 50px rgba(0, 187, 238, 0.12);
+    0 0 28px rgba(0, 187, 238, 0.35),
+    0 0 60px rgba(0, 187, 238, 0.12);
   background: var(--bg-elevated);
 }
 
@@ -656,16 +671,17 @@ a { color: var(--accent); text-decoration: none; }
   .modal-content { max-width: 100%; margin: 0.5rem; }
   .modal-actions { flex-direction: column; }
 
-  /* Scale down orbital layout for tablet/phone */
-  .kb-orbit-container { width: 380px; height: 380px; }
-  .kb-orbit-ring--inner { inset: 55px; }
+  /* Scale down orbital for tablet */
+  .kb-orbit-container { width: 420px; height: 420px; }
   .kb-orbit-betty { width: 100px; height: 100px; }
   .kb-orbit-brain-glow { width: 130px; height: 130px; }
-  .kb-orbit-node-js { width: 80px; margin-left: -40px; margin-top: -40px; height: 80px; }
-  .kb-orbit-node-icon-js { width: 44px; height: 44px; }
-  .kb-orbit-node-icon-js svg { width: 22px; height: 22px; }
-  .kb-curved-label { width: 80px; }
-  .kb-curved-label text { font-size: 8px; }
+  .kb-orbit-node-js { width: 90px; margin-left: -45px; margin-top: -42px; height: 84px; }
+  .kb-orbit-node-icon-js { width: 50px; height: 50px; }
+  .kb-orbit-node-icon-js svg { width: 26px; height: 26px; }
+  .kb-curved-label { width: 90px; height: 24px; }
+  .kb-curved-label text { font-size: 9px; }
+  .kb-hero-title { font-size: 1.75rem; }
+  .kb-hero { margin-bottom: 1.25rem; }
 }
 
 @media (max-width: 480px) {
@@ -674,13 +690,14 @@ a { color: var(--accent); text-decoration: none; }
   .pto-grid { grid-template-columns: 1fr; }
   .invoice-hours-grid { grid-template-columns: 1fr; }
 
-  .kb-orbit-container { width: 300px; height: 300px; }
-  .kb-orbit-ring--inner { inset: 35px; }
-  .kb-orbit-betty { width: 70px; height: 70px; }
-  .kb-orbit-brain-glow { width: 90px; height: 90px; }
-  .kb-orbit-node-js { width: 66px; margin-left: -33px; margin-top: -33px; height: 66px; }
-  .kb-orbit-node-icon-js { width: 34px; height: 34px; }
-  .kb-orbit-node-icon-js svg { width: 18px; height: 18px; }
-  .kb-curved-label { width: 70px; }
-  .kb-curved-label text { font-size: 7px; }
+  .kb-orbit-container { width: 310px; height: 310px; }
+  .kb-orbit-betty { width: 64px; height: 64px; }
+  .kb-orbit-brain-glow { width: 85px; height: 85px; }
+  .kb-orbit-node-js { width: 74px; margin-left: -37px; margin-top: -34px; height: 68px; }
+  .kb-orbit-node-icon-js { width: 38px; height: 38px; }
+  .kb-orbit-node-icon-js svg { width: 20px; height: 20px; }
+  .kb-curved-label { width: 74px; height: 20px; }
+  .kb-curved-label text { font-size: 7.5px; }
+  .kb-hero-title { font-size: 1.5rem; }
+  .kb-hero { margin-bottom: 1rem; }
 }
