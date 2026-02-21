@@ -14,7 +14,7 @@ function BrainIcon({ size = 24, color = 'currentColor' }) {
   )
 }
 
-// ── Futuristic category icons — geometric, angular, circuit-style ──
+// ── Futuristic category icons ──
 const sz = { width: 38, height: 38, viewBox: '0 0 32 32', fill: 'none', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' }
 
 const CAT_ICONS = {
@@ -99,7 +99,7 @@ const CATEGORIES = [
   { name: 'Training', color: '#f472b6' },
 ]
 
-// ── Canvas space background with Big Dipper + Blue Man constellations ──
+// ── Canvas space background ──
 function SpaceCanvas() {
   const canvasRef = useRef(null)
 
@@ -113,34 +113,69 @@ function SpaceCanvas() {
     const STAR_COUNT = 220
     const shooters = []
 
-    // Named constellation definitions (as fractions of canvas)
-    // Big Dipper — 7 stars in the classic pattern
+    // ─── Big Dipper (accurate star positions, upper-left quadrant) ───
+    // Real proportions of Ursa Major's Big Dipper asterism
     const BIG_DIPPER = [
-      { x: 0.12, y: 0.15 }, // Dubhe (front of bowl top)
-      { x: 0.08, y: 0.22 }, // Merak (front of bowl bottom)
-      { x: 0.16, y: 0.26 }, // Phecda (back of bowl bottom)
-      { x: 0.20, y: 0.18 }, // Megrez (back of bowl top)
-      { x: 0.27, y: 0.14 }, // Alioth (first handle)
-      { x: 0.33, y: 0.11 }, // Mizar (mid handle)
-      { x: 0.38, y: 0.08 }, // Alkaid (end handle)
+      { x: 0.18, y: 0.12 }, // 0 Alkaid (end of handle)
+      { x: 0.14, y: 0.16 }, // 1 Mizar (handle bend)
+      { x: 0.10, y: 0.19 }, // 2 Alioth (handle middle)
+      { x: 0.07, y: 0.24 }, // 3 Megrez (bowl-handle junction)
+      { x: 0.04, y: 0.20 }, // 4 Dubhe (bowl top-left)
+      { x: 0.05, y: 0.29 }, // 5 Merak (bowl bottom-left)
+      { x: 0.10, y: 0.28 }, // 6 Phecda (bowl bottom-right)
     ]
-    const BIG_DIPPER_LINES = [[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]]
+    // Bowl: Dubhe→Merak→Phecda→Megrez→Dubhe, Handle: Megrez→Alioth→Mizar→Alkaid
+    const BIG_DIPPER_LINES = [[4,5],[5,6],[6,3],[3,4],[3,2],[2,1],[1,0]]
 
-    // Blue Man mascot — simplified stick figure sitting with arms on hips
+    // ─── Blue Man mascot — smiley face guy with arms on hips ───
+    // Round head with eyes + smile, body, arms on hips, legs spread
     const BLUE_MAN = [
-      { x: 0.82, y: 0.60 }, // 0  head top
-      { x: 0.82, y: 0.65 }, // 1  chin/neck
-      { x: 0.82, y: 0.74 }, // 2  torso center
-      { x: 0.82, y: 0.82 }, // 3  waist
-      { x: 0.76, y: 0.70 }, // 4  left hand (arm on hip)
-      { x: 0.88, y: 0.70 }, // 5  right hand (arm on hip)
-      { x: 0.77, y: 0.92 }, // 6  left foot
-      { x: 0.87, y: 0.92 }, // 7  right foot
+      // Head circle (approximated with 8 points)
+      { x: 0.84, y: 0.56 },  // 0  head top
+      { x: 0.86, y: 0.57 },  // 1  head top-right
+      { x: 0.87, y: 0.59 },  // 2  head right
+      { x: 0.86, y: 0.61 },  // 3  head bottom-right
+      { x: 0.84, y: 0.62 },  // 4  head bottom
+      { x: 0.82, y: 0.61 },  // 5  head bottom-left
+      { x: 0.81, y: 0.59 },  // 6  head left
+      { x: 0.82, y: 0.57 },  // 7  head top-left
+      // Eyes
+      { x: 0.828, y: 0.585 }, // 8  left eye
+      { x: 0.852, y: 0.585 }, // 9  right eye
+      // Smile (3 points for a curve)
+      { x: 0.83, y: 0.605 },  // 10 smile left
+      { x: 0.84, y: 0.615 },  // 11 smile bottom
+      { x: 0.85, y: 0.605 },  // 12 smile right
+      // Body
+      { x: 0.84, y: 0.62 },  // 13 neck (same as head bottom)
+      { x: 0.84, y: 0.72 },  // 14 torso mid
+      { x: 0.84, y: 0.78 },  // 15 waist
+      // Arms (on hips, angled outward)
+      { x: 0.84, y: 0.67 },  // 16 shoulder point
+      { x: 0.78, y: 0.70 },  // 17 left elbow
+      { x: 0.80, y: 0.75 },  // 18 left hand on hip
+      { x: 0.90, y: 0.70 },  // 19 right elbow
+      { x: 0.88, y: 0.75 },  // 20 right hand on hip
+      // Legs (spread wide)
+      { x: 0.80, y: 0.88 },  // 21 left foot
+      { x: 0.88, y: 0.88 },  // 22 right foot
     ]
-    const BLUE_MAN_LINES = [[0,1],[1,2],[2,3],[1,4],[1,5],[4,3],[5,3],[3,6],[3,7]]
+    const BLUE_MAN_LINES = [
+      // Head circle
+      [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0],
+      // Smile
+      [10,11],[11,12],
+      // Body
+      [13,14],[14,15],
+      // Arms
+      [16,17],[17,18],[18,15], // left arm to hip
+      [16,19],[19,20],[20,15], // right arm to hip
+      // Legs
+      [15,21],[15,22],
+    ]
 
-    let constellationStars = [] // {x, y, r, alpha} for constellation-specific stars
-    let constellationLines = [] // [[starIdx, starIdx]]
+    let constellationStars = []
+    let constellationLines = []
 
     function resize() {
       const dpr = window.devicePixelRatio || 1
@@ -162,21 +197,20 @@ function SpaceCanvas() {
           hue: Math.random() < 0.12 ? (Math.random() < 0.5 ? 195 : 270) : 0,
         })
       }
-      // Build named constellations
       constellationStars = []
       constellationLines = []
-      const buildConstellation = (points, lines, color) => {
+      const buildConstellation = (points, lines, color, starSize) => {
         const base = constellationStars.length
         points.forEach(p => {
           constellationStars.push({
             x: p.x * cw, y: p.y * ch,
-            r: 2.2, alpha: 0.9, color
+            r: starSize || 2.2, alpha: 0.9, color
           })
         })
         lines.forEach(([a, b]) => constellationLines.push([base + a, base + b, color]))
       }
-      buildConstellation(BIG_DIPPER, BIG_DIPPER_LINES, 'rgba(180,210,255,0.4)')
-      buildConstellation(BLUE_MAN, BLUE_MAN_LINES, 'rgba(100,190,255,0.35)')
+      buildConstellation(BIG_DIPPER, BIG_DIPPER_LINES, 'rgba(180,210,255,0.5)', 2.5)
+      buildConstellation(BLUE_MAN, BLUE_MAN_LINES, 'rgba(100,190,255,0.4)', 1.8)
     }
 
     function spawnShooter() {
@@ -208,22 +242,23 @@ function SpaceCanvas() {
       g.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch)
 
-      // Named constellation lines (Big Dipper + Blue Man)
+      // Constellation lines
       for (const [a, b, color] of constellationLines) {
         const sa = constellationStars[a], sb = constellationStars[b]
         if (!sa || !sb) continue
-        ctx.strokeStyle = color; ctx.lineWidth = 1
+        ctx.strokeStyle = color; ctx.lineWidth = 0.8
         ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke()
       }
-      // Constellation stars (brighter, slightly larger)
+      // Constellation stars
       const t = now * 0.001
       for (const s of constellationStars) {
         const fl = Math.sin(t * 0.8 + s.x) * 0.15 + 0.85
-        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${s.alpha * fl})`)
+        const a = s.alpha * fl
+        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${a})`)
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill()
-        // Small glow
-        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${0.15 * fl})`)
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 3, 0, Math.PI * 2); ctx.fill()
+        // Glow
+        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${0.12 * fl})`)
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 3.5, 0, Math.PI * 2); ctx.fill()
       }
 
       // Background stars
@@ -257,37 +292,6 @@ function SpaceCanvas() {
   }, [])
 
   return <canvas ref={canvasRef} className="kb-space-canvas" />
-}
-
-// ── Curved label — arcs OUTSIDE below the icon circle ──
-function CurvedLabel({ text, color, isHovered }) {
-  // Arc sits entirely below the icon. The arc center is at the top of this SVG,
-  // curving downward so text follows the outside bottom curve of the icon circle.
-  const r = 48
-  const id = `arc-${text.replace(/[^a-zA-Z]/g, '')}`
-  return (
-    <svg
-      width="130"
-      height="28"
-      viewBox="0 0 130 28"
-      className={`kb-curved-label ${isHovered ? 'kb-curved-label--hovered' : ''}`}
-    >
-      <defs>
-        <path id={id} d={`M ${65 - r} 2 A ${r} ${r} 0 0 1 ${65 + r} 2`} />
-      </defs>
-      <text
-        fill={isHovered ? '#ffffff' : (color || '#7d8a82')}
-        fontSize="11"
-        fontFamily="'DM Sans', sans-serif"
-        fontWeight="600"
-        letterSpacing="0.04em"
-      >
-        <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">
-          {text}
-        </textPath>
-      </text>
-    </svg>
-  )
 }
 
 // ── Orbit radius — responsive ──
@@ -347,10 +351,17 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
             onMouseLeave={() => setHoveredCat(null)}
             onClick={() => onCategoryClick(cat.name)}
           >
-            <div className="kb-orbit-node-icon-js">
-              {CAT_ICONS[cat.name]}
+            <div className="kb-orbit-node-inner">
+              <div className="kb-orbit-node-icon-js">
+                {CAT_ICONS[cat.name]}
+              </div>
+              <span
+                className="kb-orbit-node-label"
+                style={{ color: isHovered ? '#fff' : (cat.color || 'var(--text-muted)') }}
+              >
+                {cat.name}
+              </span>
             </div>
-            <CurvedLabel text={cat.name} color={cat.color} isHovered={isHovered} />
           </div>
         )
       })}
@@ -402,7 +413,6 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
     } finally { setSaving(false) }
   }
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => {
       if (tagRef.current && !tagRef.current.contains(e.target)) setShowTagDropdown(false)
@@ -422,7 +432,7 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
         <label>Title</label>
         <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Article title..." />
       </div>
-      <div className="form-field" style={{ marginBottom: '1rem' }} ref={tagRef}>
+      <div className="form-field" style={{ marginBottom: '1rem', position: 'relative' }} ref={tagRef}>
         <label>Categories</label>
         <div className="kb-tag-chips">
           {tags.map(t => (
@@ -477,7 +487,10 @@ export default function KnowledgeBase() {
   const [selectedArticle, setSelectedArticle] = useState(null)
   const [hoveredCat, setHoveredCat] = useState(null)
   const [showAddPanel, setShowAddPanel] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const verb = useLoadingVerb(loading)
+  const searchRef = useRef(null)
 
   const fetchArticles = useCallback(async () => {
     setLoading(true)
@@ -496,7 +509,41 @@ export default function KnowledgeBase() {
 
   useEffect(() => { const t = setTimeout(fetchArticles, 300); return () => clearTimeout(t) }, [fetchArticles])
 
-  const clearFilters = () => { setSearch(''); setSelectedTag(null) }
+  // Autocomplete suggestions
+  useEffect(() => {
+    if (!search.trim() || search.trim().length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    const t = setTimeout(async () => {
+      try {
+        let query = supabase.from('kb_articles').select('id,title,tags')
+        if (!isAdmin) query = query.eq('status', 'published')
+        query = query.ilike('title', `%${search.trim()}%`).limit(6)
+        const { data } = await query
+        setSuggestions(data || [])
+        setShowSuggestions((data || []).length > 0)
+      } catch { setSuggestions([]); setShowSuggestions(false) }
+    }, 150)
+    return () => clearTimeout(t)
+  }, [search, isAdmin])
+
+  // Close autocomplete on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setShowSuggestions(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const clearFilters = () => { setSearch(''); setSelectedTag(null); setShowSuggestions(false) }
+
+  const selectSuggestion = (article) => {
+    setShowSuggestions(false)
+    setSelectedArticle(article)
+  }
 
   if (selectedArticle) {
     return (
@@ -523,13 +570,11 @@ export default function KnowledgeBase() {
     <div className="kb-page">
       <SpaceCanvas />
 
-      {/* Title */}
       <div className="kb-hero">
         <h2 className="kb-hero-title">Betty's Brain</h2>
         <p className="kb-hero-sub">Explore categories or search for articles</p>
       </div>
 
-      {/* Orbital */}
       <div className="kb-orbit-container">
         <div className="kb-orbit-center">
           <div className="kb-orbit-brain-glow" />
@@ -543,13 +588,20 @@ export default function KnowledgeBase() {
         />
       </div>
 
-      {/* Search + Add button */}
-      <div className="kb-search-wrap">
+      {/* Search + Autocomplete + Add button */}
+      <div className="kb-search-wrap" ref={searchRef}>
         <div className="kb-search">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.4, flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
-          <input type="text" placeholder="Search articles..." value={search} onChange={e => setSearch(e.target.value)} className="kb-search-input" />
+          <input
+            type="text"
+            placeholder="Search articles..."
+            value={search}
+            onChange={e => { setSearch(e.target.value); setShowSuggestions(true) }}
+            onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+            className="kb-search-input"
+          />
           {showResults && <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem' }} onClick={clearFilters}>&#10005;</button>}
           {isAdmin && (
             <button className="btn btn--primary btn--small" style={{ flexShrink: 0 }} onClick={() => setShowAddPanel(true)}>
@@ -557,6 +609,23 @@ export default function KnowledgeBase() {
             </button>
           )}
         </div>
+
+        {/* Autocomplete dropdown */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="kb-autocomplete">
+            {suggestions.map(s => (
+              <div key={s.id} className="kb-autocomplete-item" onClick={() => selectSuggestion(s)}>
+                <div className="kb-autocomplete-title">{s.title}</div>
+                {s.tags && s.tags.length > 0 && (
+                  <div className="kb-autocomplete-tags">
+                    {s.tags.map(tag => <span key={tag} className="kb-article-tag">{tag}</span>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {selectedTag && (
           <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center' }}>
             Filtered by: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{selectedTag}</span>
@@ -565,7 +634,6 @@ export default function KnowledgeBase() {
         )}
       </div>
 
-      {/* Add Article Panel */}
       {showAddPanel && (
         <div className="kb-add-overlay">
           <AddArticlePanel
