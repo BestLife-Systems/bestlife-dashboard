@@ -2,6 +2,10 @@
 
 Operations dashboard for BestLife therapy practice. Multi-user platform with role-based access, therapist analytics, invoice management, and PTO tracking.
 
+## Live URL
+
+**https://bestlife-dashboard-production-bf81.up.railway.app**
+
 ## Tech Stack
 
 - **Frontend:** React 18 + Vite + React Router

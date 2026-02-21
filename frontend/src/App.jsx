@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+import { useLoadingVerb } from './hooks/useLoadingVerb'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
@@ -11,6 +12,7 @@ import AdminAnalytics from './pages/admin/AdminAnalytics'
 import AdminPayroll from './pages/admin/AdminPayroll'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminSettings from './pages/admin/AdminSettings'
+import AdminTaskTemplates from './pages/admin/AdminTaskTemplates'
 
 // Therapist pages
 import TherapistStats from './pages/therapist/TherapistStats'
@@ -23,39 +25,49 @@ import ClinicalSupervision from './pages/clinical/ClinicalSupervision'
 
 // Shared pages
 import KnowledgeBase from './pages/shared/KnowledgeBase'
+import MyWork from './pages/shared/MyWork'
+
+// ── Nav Tabs ──────────────────────────────────────────────────────
 
 const ADMIN_TABS = [
-  { path: '/admin/analytics', label: 'Analytics', icon: '📊' },
-  { path: '/admin/payroll', label: 'Payroll', icon: '💰' },
-  { path: '/admin/users', label: 'Users', icon: '👥' },
-  { path: '/admin/knowledge-base', label: 'Knowledge Base', icon: '📚' },
-  { path: '/admin/settings', label: 'Settings', icon: '⚙️' },
+  { path: '/admin/analytics',      label: 'Analytics',       icon: '📊' },
+  { path: '/admin/payroll',        label: 'Payroll',          icon: '💰' },
+  { path: '/admin/users',          label: 'Users',            icon: '👥' },
+  { path: '/admin/task-templates', label: 'Task Templates',   icon: '🗓️' },
+  { path: '/my-work',              label: 'My Work',          icon: '✅' },
+  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: '🧠' },
+  { path: '/admin/settings',       label: 'Settings',         icon: '⚙️' },
 ]
 
 const THERAPIST_TABS = [
-  { path: '/therapist/stats', label: 'My Stats', icon: '🏠' },
-  { path: '/therapist/invoices', label: 'Invoices', icon: '💼' },
-  { path: '/therapist/time-off', label: 'Time Off', icon: '🏖️' },
-  { path: '/therapist/knowledge-base', label: 'Knowledge Base', icon: '📚' },
+  { path: '/therapist/stats',    label: 'My Stats',       icon: '🏠' },
+  { path: '/therapist/invoices', label: 'Invoices',        icon: '💼' },
+  { path: '/therapist/time-off', label: 'Time Off',        icon: '🏖️' },
+  { path: '/my-work',            label: 'My Work',         icon: '✅' },
+  { path: '/knowledge-base',     label: 'Knowledge Base',  icon: '🧠' },
 ]
 
 const CLINICAL_TABS = [
-  { path: '/clinical/stats', label: 'My Stats', icon: '🏠' },
-  { path: '/clinical/supervisees', label: 'Supervisees', icon: '👨‍⚕️' },
-  { path: '/clinical/supervision', label: 'Supervision', icon: '📝' },
-  { path: '/clinical/invoices', label: 'Invoices', icon: '💼' },
-  { path: '/clinical/time-off', label: 'Time Off', icon: '🏖️' },
-  { path: '/clinical/knowledge-base', label: 'Knowledge Base', icon: '📚' },
+  { path: '/clinical/stats',       label: 'My Stats',       icon: '🏠' },
+  { path: '/clinical/supervisees', label: 'Supervisees',    icon: '👨‍⚕️' },
+  { path: '/clinical/supervision', label: 'Supervision',    icon: '📝' },
+  { path: '/clinical/invoices',    label: 'Invoices',       icon: '💼' },
+  { path: '/clinical/time-off',    label: 'Time Off',       icon: '🏖️' },
+  { path: '/my-work',              label: 'My Work',        icon: '✅' },
+  { path: '/knowledge-base',       label: 'Knowledge Base', icon: '🧠' },
 ]
+
+// ── Role Router ───────────────────────────────────────────────────
 
 function RoleRouter() {
   const { profile, loading } = useAuth()
+  const verb = useLoadingVerb(loading)
 
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
-        <p>Loading...</p>
+        <p>{verb}…</p>
       </div>
     )
   }
@@ -72,6 +84,22 @@ function RoleRouter() {
       return <Navigate to="/therapist/stats" replace />
   }
 }
+
+// Helper: get tabs for any role
+function tabsForRole(role) {
+  if (role === 'admin') return ADMIN_TABS
+  if (role === 'clinical_leader') return CLINICAL_TABS
+  return THERAPIST_TABS
+}
+
+// Shared layout: picks tabs based on current user role
+function SharedLayout({ children }) {
+  const { profile } = useAuth()
+  const tabs = tabsForRole(profile?.role)
+  return <Layout tabs={tabs}>{children}</Layout>
+}
+
+// ── App ───────────────────────────────────────────────────────────
 
 export default function App() {
   return (
@@ -90,7 +118,19 @@ export default function App() {
             </ProtectedRoute>
           } />
 
-          {/* Admin Routes */}
+          {/* ── Shared routes (all authenticated roles) ── */}
+          <Route path="/my-work" element={
+            <ProtectedRoute>
+              <SharedLayout><MyWork /></SharedLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/knowledge-base" element={
+            <ProtectedRoute>
+              <SharedLayout><KnowledgeBase /></SharedLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* ── Admin Routes ── */}
           <Route path="/admin/analytics" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><AdminAnalytics /></Layout>
@@ -106,9 +146,9 @@ export default function App() {
               <Layout tabs={ADMIN_TABS}><AdminUsers /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/knowledge-base" element={
+          <Route path="/admin/task-templates" element={
             <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><KnowledgeBase /></Layout>
+              <Layout tabs={ADMIN_TABS}><AdminTaskTemplates /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/settings" element={
@@ -117,7 +157,12 @@ export default function App() {
             </ProtectedRoute>
           } />
 
-          {/* Therapist Routes */}
+          {/* Legacy KB routes → redirect to canonical */}
+          <Route path="/admin/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
+          <Route path="/therapist/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
+          <Route path="/clinical/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
+
+          {/* ── Therapist Routes ── */}
           <Route path="/therapist/stats" element={
             <ProtectedRoute allowedRoles={['therapist']}>
               <Layout tabs={THERAPIST_TABS}><TherapistStats /></Layout>
@@ -133,13 +178,8 @@ export default function App() {
               <Layout tabs={THERAPIST_TABS}><TherapistTimeOff /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/therapist/knowledge-base" element={
-            <ProtectedRoute allowedRoles={['therapist']}>
-              <Layout tabs={THERAPIST_TABS}><KnowledgeBase /></Layout>
-            </ProtectedRoute>
-          } />
 
-          {/* Clinical Leader Routes */}
+          {/* ── Clinical Leader Routes ── */}
           <Route path="/clinical/stats" element={
             <ProtectedRoute allowedRoles={['clinical_leader']}>
               <Layout tabs={CLINICAL_TABS}><TherapistStats /></Layout>
@@ -163,11 +203,6 @@ export default function App() {
           <Route path="/clinical/time-off" element={
             <ProtectedRoute allowedRoles={['clinical_leader']}>
               <Layout tabs={CLINICAL_TABS}><TherapistTimeOff /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/clinical/knowledge-base" element={
-            <ProtectedRoute allowedRoles={['clinical_leader']}>
-              <Layout tabs={CLINICAL_TABS}><KnowledgeBase /></Layout>
             </ProtectedRoute>
           } />
 

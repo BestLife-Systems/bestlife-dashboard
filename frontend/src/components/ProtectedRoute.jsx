@@ -1,14 +1,16 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLoadingVerb } from '../hooks/useLoadingVerb'
 
 export default function ProtectedRoute({ children, allowedRoles }) {
   const { user, profile, loading } = useAuth()
+  const verb = useLoadingVerb(loading)
 
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
-        <p>Loading...</p>
+        <p>{verb}…</p>
       </div>
     )
   }
@@ -21,7 +23,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
-        <p>Setting up your profile...</p>
+        <p>conjuring your profile…</p>
       </div>
     )
   }

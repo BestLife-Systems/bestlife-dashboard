@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import AskBetty from './AskBetty'
 
 export default function Layout({ children, tabs }) {
   const { profile, signOut } = useAuth()
@@ -98,6 +99,9 @@ export default function Layout({ children, tabs }) {
           {children}
         </main>
       </div>
+
+      {/* Global Ask Betty Bar */}
+      <AskBetty />
     </div>
   )
 }

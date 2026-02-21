@@ -6,8 +6,8 @@ import os
 import io
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, date
+from typing import Optional, List
 
 import httpx
 import openpyxl
@@ -572,6 +572,191 @@ async def therapist_analytics(user_id: str, user=Depends(verify_token)):
         "practice_avg_ltv": practice_avg.get("avg_ltv", 0),
         "practice_avg_appointments": practice_avg.get("avg_appointments", 0),
     }
+
+
+# ── Task Generation ──────────────────────────────────────────────
+
+def compute_due_dates(template: dict, start: date, end: date) -> List[date]:
+    """Return all due dates for a template between start and end (inclusive)."""
+    schedule_type = template.get("schedule_type", "weekly")
+    try:
+        rule = json.loads(template.get("schedule_rule") or "{}")
+    except Exception:
+        rule = {}
+
+    offset = int(template.get("default_due_offset_days") or 0)
+    due_dates = []
+    current = start
+
+    while current <= end:
+        include = False
+
+        if schedule_type == "daily":
+            every_n = int(rule.get("every_n_days", 1))
+            # Include every N days from start
+            delta = (current - start).days
+            include = (delta % every_n == 0)
+
+        elif schedule_type == "weekly":
+            weekdays = rule.get("weekdays", [0, 1, 2, 3, 4])  # Mon–Fri default
+            # Python weekday(): Mon=0, Sun=6
+            include = current.weekday() in weekdays
+
+        elif schedule_type == "monthly":
+            day_of_month = int(rule.get("day_of_month", 1))
+            include = current.day == day_of_month
+
+        if include:
+            due = current + timedelta(days=offset)
+            due_dates.append(due)
+
+        current += timedelta(days=1)
+
+    return due_dates
+
+
+@app.post("/api/tasks/generate")
+async def generate_task_instances(days: int = 30, admin=Depends(require_admin)):
+    """
+    Generate task_instances for all active templates over the next `days` days.
+    Safe to call repeatedly — unique constraint prevents duplicates.
+    Admin-only.
+    """
+    today = date.today()
+    window_end = today + timedelta(days=days)
+
+    # Fetch all active templates
+    templates = await sb_request("GET", "task_templates", params={
+        "active": "eq.true",
+        "select": "*",
+    })
+
+    if not templates:
+        return {"status": "ok", "generated": 0, "skipped": 0, "message": "No active templates found"}
+
+    generated = 0
+    skipped = 0
+
+    for tmpl in templates:
+        due_dates = compute_due_dates(tmpl, today, window_end)
+
+        for due in due_dates:
+            instance = {
+                "template_id": tmpl["id"],
+                "title": tmpl["title"],
+                "description": tmpl.get("description"),
+                "tags": tmpl.get("tags", []),
+                "priority": tmpl.get("priority", "medium"),
+                "assigned_to_user_id": tmpl.get("assigned_to_user_id"),
+                "assigned_to_role": tmpl.get("assigned_to_role"),
+                "due_date": due.isoformat(),
+                "status": "backlog",
+            }
+
+            try:
+                await sb_request("POST", "task_instances", data=instance)
+                generated += 1
+            except HTTPException as e:
+                # 409 Conflict = duplicate (unique constraint) — expected, skip silently
+                if e.status_code in (409, 422, 400):
+                    skipped += 1
+                else:
+                    logger.warning(f"Task instance insert failed: {e.detail}")
+                    skipped += 1
+
+    return {
+        "status": "ok",
+        "generated": generated,
+        "skipped": skipped,
+        "window_days": days,
+        "templates_processed": len(templates),
+    }
+
+
+@app.get("/api/tasks/instances")
+async def get_task_instances(user=Depends(verify_token)):
+    """
+    Get task instances for the current user.
+    Admins see all; others see only their own (by user_id or role).
+    """
+    params = {
+        "select": "*, task_templates(title, schedule_type)",
+        "order": "due_date.asc",
+    }
+
+    if user.get("role") != "admin":
+        # Filter to user's own instances or role-based ones
+        params["or"] = f"(assigned_to_user_id.eq.{user['id']},assigned_to_role.eq.{user['role']})"
+
+    instances = await sb_request("GET", "task_instances", params=params)
+    return instances or []
+
+
+@app.patch("/api/tasks/instances/{instance_id}")
+async def update_task_instance(instance_id: str, request: Request, user=Depends(verify_token)):
+    """Update a task instance status."""
+    body = await request.json()
+    allowed_fields = {"status", "completed_at"}
+    update_data = {k: v for k, v in body.items() if k in allowed_fields}
+
+    if "status" in update_data and update_data["status"] == "done":
+        update_data["completed_at"] = datetime.utcnow().isoformat()
+    elif "status" in update_data and update_data["status"] != "done":
+        update_data["completed_at"] = None
+
+    update_data["updated_at"] = datetime.utcnow().isoformat()
+
+    result = await sb_request("PATCH", f"task_instances?id=eq.{instance_id}", data=update_data)
+    return result
+
+
+@app.get("/api/tasks/templates")
+async def get_task_templates(admin=Depends(require_admin)):
+    """Admin: list all task templates."""
+    templates = await sb_request("GET", "task_templates", params={
+        "select": "*",
+        "order": "created_at.desc",
+    })
+    return templates or []
+
+
+class TaskTemplateRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    tags: Optional[List[str]] = []
+    priority: str = "medium"
+    assigned_to_role: Optional[str] = None
+    assigned_to_user_id: Optional[str] = None
+    schedule_type: str = "weekly"
+    schedule_rule: Optional[str] = "{}"
+    timezone: str = "America/New_York"
+    default_due_offset_days: int = 0
+    active: bool = True
+
+
+@app.post("/api/tasks/templates")
+async def create_task_template(req: TaskTemplateRequest, admin=Depends(require_admin)):
+    """Admin: create a new task template."""
+    data = req.dict()
+    data["created_by_user_id"] = admin["id"]
+    result = await sb_request("POST", "task_templates", data=data)
+    return result
+
+
+@app.patch("/api/tasks/templates/{template_id}")
+async def update_task_template(template_id: str, req: TaskTemplateRequest, admin=Depends(require_admin)):
+    """Admin: update an existing task template."""
+    data = req.dict()
+    data["updated_at"] = datetime.utcnow().isoformat()
+    result = await sb_request("PATCH", f"task_templates?id=eq.{template_id}", data=data)
+    return result
+
+
+@app.delete("/api/tasks/templates/{template_id}")
+async def delete_task_template(template_id: str, admin=Depends(require_admin)):
+    """Admin: soft-delete (deactivate) a task template."""
+    result = await sb_request("PATCH", f"task_templates?id=eq.{template_id}", data={"active": False})
+    return {"status": "deactivated", "id": template_id}
 
 
 # ── Static File Serving (Production) ────────────────────────────
