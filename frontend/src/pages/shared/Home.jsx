@@ -156,6 +156,7 @@ export default function Home() {
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true)
   const [weather, setWeather] = useState(null)
   const [showWinModal, setShowWinModal] = useState(false)
+  const [showAllWins, setShowAllWins] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [birthdayAnnouncements, setBirthdayAnnouncements] = useState([])
 
@@ -216,9 +217,18 @@ export default function Home() {
       const all = data || []
       // Separate birthdays from regular meetings
       const regular = all.filter(m => !m.title.includes('Birthday')).slice(0, 6)
-      const bdays = all.filter(m => m.title.includes('Birthday'))
       setMeetings(regular)
-      // Store birthday meetings to merge into announcements
+      // Birthdays within the next 30 days go into announcements
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const thirtyDays = new Date(today)
+      thirtyDays.setDate(thirtyDays.getDate() + 30)
+      const bdays = all
+        .filter(m => m.title.includes('Birthday'))
+        .filter(m => {
+          const d = new Date(m.meeting_date + 'T00:00:00')
+          return d >= today && d <= thirtyDays
+        })
       setBirthdayAnnouncements(bdays.map(b => ({
         id: 'bday-' + b.id,
         title: b.title,
@@ -365,24 +375,38 @@ export default function Home() {
               No wins yet — be the first to share one!
             </div>
           ) : (
-            <div className="home-wins-feed">
-              {wins.map(win => (
-                <div key={win.id} className="home-win-item">
-                  <div
-                    className={`home-win-dot home-win-dot--${win.category}`}
-                    title={win.category}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="home-win-body">{win.body}</div>
-                    <div className="home-win-meta">
+            <>
+              <div className="home-wins-feed">
+                {wins.slice(0, showAllWins ? wins.length : 3).map(win => (
+                  <div key={win.id} className={`home-win-bar home-win-bar--${win.category}`}>
+                    <div className="home-win-bar-text">{win.body}</div>
+                    <div className="home-win-bar-meta">
                       {win.users ? `${win.users.first_name} ${win.users.last_name}` : ''}
                       {' · '}
                       {relativeTime(win.created_at)}
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {wins.length > 3 && !showAllWins && (
+                <button
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setShowAllWins(true)}
+                  style={{ width: '100%', marginTop: '0.5rem' }}
+                >
+                  View all {wins.length} wins →
+                </button>
+              )}
+              {showAllWins && wins.length > 3 && (
+                <button
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setShowAllWins(false)}
+                  style={{ width: '100%', marginTop: '0.5rem' }}
+                >
+                  Show less
+                </button>
+              )}
+            </>
           )}
         </div>
 
