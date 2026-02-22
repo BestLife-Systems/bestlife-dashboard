@@ -582,16 +582,14 @@ a { color: var(--accent); text-decoration: none; }
 }
 
 /* ── Ask Betty Bar ── */
-.betty-bar { position: fixed; bottom: 0; left: 0; right: 0; height: var(--betty-height, 56px); background: var(--bg-elevated); border-top: 1px solid var(--border); z-index: 120; display: flex; align-items: center; padding: 0 1rem; }
-.betty-form { display: flex; align-items: center; gap: 0.625rem; width: 100%; max-width: 860px; margin: 0 auto; }
+.betty-bar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; padding: 0.625rem 1rem; margin-bottom: 1rem; }
+.betty-form { display: flex; align-items: center; gap: 0.625rem; width: 100%; }
 .betty-brain { color: var(--accent); flex-shrink: 0; display: flex; align-items: center; }
 .betty-input { flex: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; color: var(--text); font-family: var(--font-body); font-size: 0.9rem; outline: none; transition: border-color 0.15s; }
 .betty-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-glow); }
 .betty-input::placeholder { color: var(--text-muted); }
 .betty-context { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
 .betty-submit { flex-shrink: 0; }
-/* Push content above Betty bar */
-.content { padding-bottom: calc(1.75rem + 56px); }
 
 /* ── Task Board ── */
 .task-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; align-items: start; }

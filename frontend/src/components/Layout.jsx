@@ -139,8 +139,7 @@ export default function Layout({ children, tabs }) {
         </main>
       </div>
 
-      {/* Global Ask Betty Bar */}
-      <AskBetty />
+      {/* Ask Betty is now rendered inside individual pages (e.g. Home) */}
     </div>
   )
 }

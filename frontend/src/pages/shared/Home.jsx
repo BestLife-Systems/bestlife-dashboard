@@ -5,6 +5,7 @@ import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { fetchMyInstances } from '../../lib/tasksApi'
 import { fetchMeetingInstances, generateMeetings } from '../../lib/meetingsApi'
 import { supabase } from '../../lib/supabase'
+import AskBetty from '../../components/AskBetty'
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -243,7 +244,7 @@ export default function Home() {
 
   async function loadWeather() {
     try {
-      let lat = 33.45, lon = -112.07, city = 'Phoenix'
+      let lat = 39.08, lon = -74.82, city = 'Cape May Court House'
       if (navigator.geolocation) {
         try {
           const pos = await new Promise((resolve, reject) =>
@@ -326,6 +327,9 @@ export default function Home() {
           )
         })()}
       </div>
+
+      {/* ── Ask Betty ── */}
+      <AskBetty />
 
       {/* ── Widgets ── */}
       <div className="home-widgets">
