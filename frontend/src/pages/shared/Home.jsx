@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { fetchMyInstances } from '../../lib/tasksApi'
-import { fetchMeetingInstances } from '../../lib/meetingsApi'
+import { fetchMeetingInstances, generateMeetings } from '../../lib/meetingsApi'
 import { supabase } from '../../lib/supabase'
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ function AddWinModal({ profile, onClose, onSaved }) {
 // ── Main Home Component ──────────────────────────────────────────
 
 export default function Home() {
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const navigate = useNavigate()
 
   // State
@@ -155,6 +155,7 @@ export default function Home() {
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true)
   const [weather, setWeather] = useState(null)
   const [showWinModal, setShowWinModal] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   const verb = useLoadingVerb(loadingTasks || loadingWins || loadingMeetings)
   const firstName = profile?.first_name || 'there'
@@ -271,6 +272,19 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Weather fetch failed:', err)
+    }
+  }
+
+  async function handleGenerateMeetings() {
+    setGenerating(true)
+    try {
+      const result = await generateMeetings(120)
+      console.log('Meetings generated:', result)
+      await loadMeetings()
+    } catch (err) {
+      console.error('Failed to generate meetings:', err)
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -410,6 +424,16 @@ export default function Home() {
               <div className="card-title" style={{ margin: 0 }}>
                 <span style={{ marginRight: '0.375rem' }}>📅</span> Upcoming Meetings
               </div>
+              {isAdmin && (
+                <button
+                  className="btn btn--ghost btn--small"
+                  onClick={handleGenerateMeetings}
+                  disabled={generating}
+                  title="Generate meeting instances for the next 120 days"
+                >
+                  {generating ? 'Generating...' : '⚙ Generate'}
+                </button>
+              )}
             </div>
 
             {loadingMeetings ? renderLoading() : meetings.length === 0 ? (
