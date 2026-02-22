@@ -6,6 +6,7 @@ import os
 import io
 import json
 import logging
+import calendar
 from datetime import datetime, timedelta, date
 from typing import Optional, List
 
@@ -757,6 +758,227 @@ async def delete_task_template(template_id: str, admin=Depends(require_admin)):
     """Admin: soft-delete (deactivate) a task template."""
     result = await sb_request("PATCH", f"task_templates?id=eq.{template_id}", data={"active": False})
     return {"status": "deactivated", "id": template_id}
+
+
+# ── Meeting Generation ────────────────────────────────────────────
+
+def _nth_weekday_in_month(year: int, month: int, day_of_week: int, nth: int) -> Optional[date]:
+    """
+    Find the nth occurrence of a weekday in a given month.
+    day_of_week: 0=Mon..6=Sun
+    nth: 1-based (1=first, 2=second, ...) or -1 for last.
+    Returns a date or None if invalid.
+    """
+    # calendar.monthcalendar returns weeks starting Monday by default
+    cal = calendar.Calendar(firstweekday=0)  # Monday = 0
+    month_days = cal.monthdayscalendar(year, month)
+
+    if nth == -1:
+        # Last occurrence: iterate weeks in reverse
+        for week in reversed(month_days):
+            d = week[day_of_week]
+            if d != 0:
+                return date(year, month, d)
+        return None
+
+    # Positive nth: count occurrences
+    count = 0
+    for week in month_days:
+        d = week[day_of_week]
+        if d != 0:
+            count += 1
+            if count == nth:
+                return date(year, month, d)
+    return None
+
+
+def _is_last_weekday_of_month(d: date) -> bool:
+    """Check if this date is the last occurrence of its weekday in the month."""
+    # If adding 7 days pushes us to next month, it's the last one
+    next_week = d + timedelta(days=7)
+    return next_week.month != d.month
+
+
+def compute_meeting_dates(template: dict, start: date, end: date) -> list:
+    """Return all meeting dates for a template between start and end (inclusive)."""
+    cadence = template.get("cadence", "weekly")
+    rule = template.get("schedule_rule") or {}
+    if isinstance(rule, str):
+        try:
+            rule = json.loads(rule)
+        except Exception:
+            rule = {}
+
+    dates = []
+
+    if cadence == "weekly":
+        dow = int(rule.get("day_of_week", 0))
+        skip_last = bool(rule.get("skip_last", False))
+        current = start
+        while current <= end:
+            if current.weekday() == dow:
+                if skip_last and _is_last_weekday_of_month(current):
+                    pass  # Skip last occurrence of this weekday
+                else:
+                    dates.append(current)
+            current += timedelta(days=1)
+
+    elif cadence == "monthly":
+        nth = int(rule.get("nth", 1))
+        dow = int(rule.get("day_of_week", 0))
+        # Iterate each month in range
+        y, m = start.year, start.month
+        while date(y, m, 1) <= end:
+            d = _nth_weekday_in_month(y, m, dow, nth)
+            if d and start <= d <= end:
+                dates.append(d)
+            # Next month
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+
+    elif cadence == "monthly_interval":
+        dom = int(rule.get("day_of_month", 1))
+        every_n = int(rule.get("every_n_months", 1))
+        anchor_str = rule.get("anchor", start.isoformat())
+        try:
+            anchor = date.fromisoformat(anchor_str)
+        except Exception:
+            anchor = start
+
+        # Start from anchor, step by every_n_months
+        y, m = anchor.year, anchor.month
+        while True:
+            try:
+                d = date(y, m, min(dom, calendar.monthrange(y, m)[1]))
+            except ValueError:
+                d = None
+            if d and d > end:
+                break
+            if d and start <= d <= end:
+                dates.append(d)
+            # Step forward
+            m += every_n
+            while m > 12:
+                m -= 12
+                y += 1
+
+    elif cadence == "quarterly":
+        moq = int(rule.get("month_of_quarter", 1))  # 1, 2, or 3
+        nth = int(rule.get("nth", 1))
+        dow = int(rule.get("day_of_week", 0))
+        # Quarters: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+        quarter_starts = [1, 4, 7, 10]
+        for qs in quarter_starts:
+            target_month = qs + moq - 1
+            for year in range(start.year, end.year + 1):
+                if target_month > 12:
+                    continue
+                d = _nth_weekday_in_month(year, target_month, dow, nth)
+                if d and start <= d <= end:
+                    dates.append(d)
+
+    elif cadence == "yearly":
+        mo = int(rule.get("month", 1))
+        dy = int(rule.get("day", 1))
+        for year in range(start.year, end.year + 1):
+            try:
+                d = date(year, mo, dy)
+                if start <= d <= end:
+                    dates.append(d)
+            except ValueError:
+                pass  # Invalid date (e.g., Feb 30)
+
+    dates.sort()
+    return dates
+
+
+@app.post("/api/meetings/generate")
+async def generate_meeting_instances(days: int = 120, admin=Depends(require_admin)):
+    """
+    Generate meeting_instances for all active templates over the next `days` days.
+    Safe to call repeatedly — unique constraint prevents duplicates.
+    Admin-only.
+    """
+    today = date.today()
+    window_end = today + timedelta(days=days)
+
+    templates = await sb_request("GET", "meeting_templates", params={
+        "active": "eq.true",
+        "select": "*",
+    })
+
+    if not templates:
+        return {"status": "ok", "generated": 0, "skipped": 0, "message": "No active meeting templates found"}
+
+    generated = 0
+    skipped = 0
+
+    for tmpl in templates:
+        meeting_dates = compute_meeting_dates(tmpl, today, window_end)
+
+        for md in meeting_dates:
+            instance = {
+                "template_id": tmpl["id"],
+                "title": tmpl["title"],
+                "meeting_date": md.isoformat(),
+            }
+
+            try:
+                await sb_request("POST", "meeting_instances", data=instance)
+                generated += 1
+            except HTTPException as e:
+                if e.status_code in (409, 422, 400):
+                    skipped += 1
+                else:
+                    logger.warning(f"Meeting instance insert failed: {e.detail}")
+                    skipped += 1
+
+    return {
+        "status": "ok",
+        "generated": generated,
+        "skipped": skipped,
+        "window_days": days,
+        "templates_processed": len(templates),
+    }
+
+
+@app.get("/api/meetings/instances")
+async def get_meeting_instances(user=Depends(verify_token)):
+    """
+    Get upcoming meeting instances for the current user.
+    Filters by audience_roles on the template (empty = all roles).
+    Returns the next 20 meetings from today onward.
+    """
+    today_str = date.today().isoformat()
+    user_role = user.get("role", "therapist")
+
+    # Fetch upcoming instances with template info (service key to bypass RLS for join)
+    instances = await sb_request("GET", "meeting_instances", params={
+        "select": "*, meeting_templates(audience_roles)",
+        "meeting_date": f"gte.{today_str}",
+        "order": "meeting_date.asc",
+        "limit": "50",
+    })
+
+    if not instances:
+        return []
+
+    # Filter by audience role client-side (since Supabase REST join filtering is limited)
+    filtered = []
+    for inst in instances:
+        tmpl = inst.get("meeting_templates") or {}
+        audience = tmpl.get("audience_roles") or []
+        # Empty audience = visible to all; admin sees everything
+        if not audience or user_role == "admin" or user_role in audience:
+            # Remove the nested template data for clean response
+            inst.pop("meeting_templates", None)
+            filtered.append(inst)
+        if len(filtered) >= 20:
+            break
+
+    return filtered
 
 
 # ── Static File Serving (Production) ────────────────────────────

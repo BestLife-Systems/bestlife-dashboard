@@ -3,17 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { fetchMyInstances } from '../../lib/tasksApi'
+import { fetchMeetingInstances } from '../../lib/meetingsApi'
 import { supabase } from '../../lib/supabase'
 
-// Brain icon component
-function BrainIcon({ size = 24, color = 'currentColor' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-      <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-    </svg>
-  )
-}
+// ── Helpers ──────────────────────────────────────────────────────
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -35,45 +28,153 @@ function isToday(dateStr) {
   return d.toDateString() === today.toDateString()
 }
 
-// Weather condition code → icon + label
-function weatherInfo(code) {
-  if (code <= 0) return { icon: '☀️', label: 'Clear' }
-  if (code <= 3) return { icon: '⛅', label: 'Partly Cloudy' }
-  if (code <= 48) return { icon: '🌫️', label: 'Foggy' }
-  if (code <= 57) return { icon: '🌦️', label: 'Drizzle' }
-  if (code <= 67) return { icon: '🌧️', label: 'Rain' }
-  if (code <= 77) return { icon: '🌨️', label: 'Snow' }
-  if (code <= 82) return { icon: '🌧️', label: 'Showers' }
-  if (code <= 86) return { icon: '🌨️', label: 'Snow Showers' }
-  if (code <= 99) return { icon: '⛈️', label: 'Thunderstorm' }
-  return { icon: '🌤️', label: 'Fair' }
+function isThisWeek(dateStr) {
+  if (!dateStr) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const d = new Date(dateStr + 'T00:00:00')
+  const diff = (d - today) / (1000 * 60 * 60 * 24)
+  return diff >= 0 && diff < 7
 }
+
+function relativeTime(isoStr) {
+  if (!isoStr) return ''
+  const now = new Date()
+  const d = new Date(isoStr)
+  const diffMs = now - d
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}d ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// Weather condition code to icon + label
+function weatherInfo(code) {
+  if (code <= 0) return { icon: '\u2600\uFE0F', label: 'Clear' }
+  if (code <= 3) return { icon: '\u26C5', label: 'Partly Cloudy' }
+  if (code <= 48) return { icon: '\uD83C\uDF2B\uFE0F', label: 'Foggy' }
+  if (code <= 57) return { icon: '\uD83C\uDF26\uFE0F', label: 'Drizzle' }
+  if (code <= 67) return { icon: '\uD83C\uDF27\uFE0F', label: 'Rain' }
+  if (code <= 77) return { icon: '\uD83C\uDF28\uFE0F', label: 'Snow' }
+  if (code <= 82) return { icon: '\uD83C\uDF27\uFE0F', label: 'Showers' }
+  if (code <= 86) return { icon: '\uD83C\uDF28\uFE0F', label: 'Snow Showers' }
+  if (code <= 99) return { icon: '\u26C8\uFE0F', label: 'Thunderstorm' }
+  return { icon: '\uD83C\uDF24\uFE0F', label: 'Fair' }
+}
+
+const ANNOUNCEMENT_COLORS = {
+  policy: '#60a5fa',
+  celebration: '#fbbf24',
+  outing: '#22c55e',
+  general: 'var(--text-muted)',
+}
+
+// ── Add Win Modal ────────────────────────────────────────────────
+
+function AddWinModal({ profile, onClose, onSaved }) {
+  const [category, setCategory] = useState('business')
+  const [body, setBody] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSave() {
+    if (!body.trim()) return
+    setSaving(true)
+    try {
+      await supabase.from('wins').insert({
+        user_id: profile.id,
+        category,
+        body: body.trim(),
+      })
+      onSaved()
+      onClose()
+    } catch (err) {
+      console.error('Failed to save win:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="win-modal-overlay" onClick={onClose}>
+      <div className="win-modal" onClick={e => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 1rem', color: 'var(--text-bright)', fontSize: '1.1rem' }}>Add a Win</h3>
+
+        <div className="win-category-toggle">
+          <button
+            className={`win-cat-btn ${category === 'business' ? 'win-cat-btn--active win-cat-btn--business' : ''}`}
+            onClick={() => setCategory('business')}
+          >
+            Business
+          </button>
+          <button
+            className={`win-cat-btn ${category === 'personal' ? 'win-cat-btn--active win-cat-btn--personal' : ''}`}
+            onClick={() => setCategory('personal')}
+          >
+            Personal
+          </button>
+        </div>
+
+        <textarea
+          className="win-textarea"
+          placeholder="What's the win?"
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          rows={3}
+          autoFocus
+        />
+
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <button className="btn btn--ghost btn--small" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary btn--small" onClick={handleSave} disabled={saving || !body.trim()}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Home Component ──────────────────────────────────────────
 
 export default function Home() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+
+  // State
   const [tasks, setTasks] = useState([])
   const [loadingTasks, setLoadingTasks] = useState(true)
-  const [kbSearch, setKbSearch] = useState('')
+  const [wins, setWins] = useState([])
+  const [loadingWins, setLoadingWins] = useState(true)
+  const [meetings, setMeetings] = useState([])
+  const [loadingMeetings, setLoadingMeetings] = useState(true)
+  const [announcements, setAnnouncements] = useState([])
+  const [loadingAnnouncements, setLoadingAnnouncements] = useState(true)
   const [weather, setWeather] = useState(null)
-  const verb = useLoadingVerb(loadingTasks)
+  const [showWinModal, setShowWinModal] = useState(false)
 
+  const verb = useLoadingVerb(loadingTasks || loadingWins || loadingMeetings)
   const firstName = profile?.first_name || 'there'
-
-  // Greeting based on time of day
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   useEffect(() => {
     loadTasks()
+    loadWins()
+    loadMeetings()
+    loadAnnouncements()
     loadWeather()
   }, [])
+
+  // ── Data loaders ──
 
   async function loadTasks() {
     setLoadingTasks(true)
     try {
       const data = await fetchMyInstances()
-      // Filter to non-done, sort by due_date, take first 10
       const upcoming = (data || [])
         .filter(t => t.status !== 'done' && t.status !== 'skipped')
         .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
@@ -87,9 +188,60 @@ export default function Home() {
     }
   }
 
+  async function loadWins() {
+    setLoadingWins(true)
+    try {
+      const { data, error } = await supabase
+        .from('wins')
+        .select('*, users(first_name, last_name)')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      setWins(data || [])
+    } catch (err) {
+      console.error('Failed to load wins:', err)
+      setWins([])
+    } finally {
+      setLoadingWins(false)
+    }
+  }
+
+  async function loadMeetings() {
+    setLoadingMeetings(true)
+    try {
+      const data = await fetchMeetingInstances()
+      setMeetings((data || []).slice(0, 6))
+    } catch (err) {
+      console.error('Failed to load meetings:', err)
+      setMeetings([])
+    } finally {
+      setLoadingMeetings(false)
+    }
+  }
+
+  async function loadAnnouncements() {
+    setLoadingAnnouncements(true)
+    try {
+      const todayStr = new Date().toISOString().split('T')[0]
+      const { data, error } = await supabase
+        .from('announcements')
+        .select('*')
+        .lte('effective_date', todayStr)
+        .or(`expiration_date.is.null,expiration_date.gte.${todayStr}`)
+        .order('effective_date', { ascending: false })
+        .limit(10)
+      if (error) throw error
+      setAnnouncements(data || [])
+    } catch (err) {
+      console.error('Failed to load announcements:', err)
+      setAnnouncements([])
+    } finally {
+      setLoadingAnnouncements(false)
+    }
+  }
+
   async function loadWeather() {
     try {
-      // Default: Phoenix, AZ area — override via geolocation if available
       let lat = 33.45, lon = -112.07, city = 'Phoenix'
       if (navigator.geolocation) {
         try {
@@ -98,14 +250,6 @@ export default function Home() {
           )
           lat = pos.coords.latitude
           lon = pos.coords.longitude
-          // Reverse-geocode city name
-          try {
-            const geoRes = await fetch(
-              `https://geocoding-api.open-meteo.com/v1/search?name=_&count=1&latitude=${lat}&longitude=${lon}`
-            )
-            // Use a simpler reverse lookup via nominatim-style approach
-            // Actually Open-Meteo doesn't have reverse geocoding. We'll use the timezone as a rough label.
-          } catch {}
           city = ''
         } catch {
           // geolocation denied or timed out — keep defaults
@@ -130,14 +274,20 @@ export default function Home() {
     }
   }
 
-  function handleKbSearch(e) {
-    e.preventDefault()
-    navigate(`/knowledge-base${kbSearch.trim() ? `?q=${encodeURIComponent(kbSearch.trim())}` : ''}`)
+  // ── Render helpers ──
+
+  function renderLoading(msg) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1.5rem 0', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        <div className="loading-spinner loading-spinner--small" />
+        {msg || verb + '\u2026'}
+      </div>
+    )
   }
 
   return (
     <div>
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="page-header">
         <div>
           <h2 className="page-title">{greeting}, {firstName}</h2>
@@ -156,62 +306,166 @@ export default function Home() {
               <div className="weather-details">
                 <span className="weather-label">{w.label}</span>
                 {weather.city && <span className="weather-city">{weather.city}</span>}
-                <span className="weather-meta">💧 {weather.humidity}%  ·  💨 {weather.wind} mph</span>
+                <span className="weather-meta">{'\uD83D\uDCA7'} {weather.humidity}%  ·  {'\uD83D\uDCA8'} {weather.wind} mph</span>
               </div>
             </div>
           )
         })()}
       </div>
 
-      {/* Widget grid */}
+      {/* ── Widgets ── */}
       <div className="home-widgets">
 
-        {/* ── Widget 1: My Upcoming Tasks ── */}
+        {/* ═══ 1. WINS (full width) ═══ */}
         <div className="card home-widget">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <div className="card-title" style={{ margin: 0 }}>
-              <span style={{ marginRight: '0.375rem' }}>✅</span> My Upcoming Tasks
+              <span style={{ marginRight: '0.375rem' }}>🏆</span> Wins
             </div>
-            <button className="btn btn--ghost btn--small" onClick={() => navigate('/my-work')}>
-              View all →
+            <button className="btn btn--primary btn--small" onClick={() => setShowWinModal(true)}>
+              + Add a Win
             </button>
           </div>
 
-          {loadingTasks ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1.5rem 0', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              <div className="loading-spinner loading-spinner--small" />
-              {verb}…
-            </div>
-          ) : tasks.length === 0 ? (
+          {loadingWins ? renderLoading() : wins.length === 0 ? (
             <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              🎉 You're all caught up — no pending tasks!
+              No wins yet — be the first to share one!
             </div>
           ) : (
-            <div className="home-task-list">
-              {tasks.map(task => (
-                <div
-                  key={task.id}
-                  className="home-task-item"
-                  onClick={() => navigate('/my-work')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
-                    <span className={`task-priority task-priority--${task.priority}`}>
-                      {task.priority === 'high' ? '!' : task.priority === 'medium' ? '–' : '·'}
-                    </span>
-                    <span className="home-task-title">{task.title}</span>
+            <div className="home-wins-feed">
+              {wins.map(win => (
+                <div key={win.id} className="home-win-item">
+                  <div
+                    className={`home-win-dot home-win-dot--${win.category}`}
+                    title={win.category}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="home-win-body">{win.body}</div>
+                    <div className="home-win-meta">
+                      {win.users ? `${win.users.first_name} ${win.users.last_name}` : ''}
+                      {' · '}
+                      {relativeTime(win.created_at)}
+                    </div>
                   </div>
-                  <span
-                    className="home-task-due"
-                    style={{
-                      color: isOverdue(task.due_date, task.status)
-                        ? 'var(--danger)'
-                        : isToday(task.due_date)
-                          ? 'var(--accent)'
-                          : 'var(--text-muted)',
-                    }}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ═══ 2. TASKS + MEETINGS (two columns) ═══ */}
+        <div className="home-two-col">
+
+          {/* ── Tasks ── */}
+          <div className="card home-widget">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div className="card-title" style={{ margin: 0 }}>
+                <span style={{ marginRight: '0.375rem' }}>✅</span> My Tasks
+              </div>
+              <button className="btn btn--ghost btn--small" onClick={() => navigate('/my-work')}>
+                View all →
+              </button>
+            </div>
+
+            {loadingTasks ? renderLoading() : tasks.length === 0 ? (
+              <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                🎉 You're all caught up — no pending tasks!
+              </div>
+            ) : (
+              <div className="home-task-list">
+                {tasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="home-task-item"
+                    onClick={() => navigate('/my-work')}
                   >
-                    {isOverdue(task.due_date, task.status) && '⚠ '}
-                    {isToday(task.due_date) ? 'Today' : formatDate(task.due_date)}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
+                      <span className={`task-priority task-priority--${task.priority}`}>
+                        {task.priority === 'high' ? '!' : task.priority === 'medium' ? '\u2013' : '\u00B7'}
+                      </span>
+                      <span className="home-task-title">{task.title}</span>
+                    </div>
+                    <span
+                      className="home-task-due"
+                      style={{
+                        color: isOverdue(task.due_date, task.status)
+                          ? 'var(--danger)'
+                          : isToday(task.due_date)
+                            ? 'var(--accent)'
+                            : 'var(--text-muted)',
+                      }}
+                    >
+                      {isOverdue(task.due_date, task.status) && '\u26A0 '}
+                      {isToday(task.due_date) ? 'Today' : formatDate(task.due_date)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Meetings ── */}
+          <div className="card home-widget">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div className="card-title" style={{ margin: 0 }}>
+                <span style={{ marginRight: '0.375rem' }}>📅</span> Upcoming Meetings
+              </div>
+            </div>
+
+            {loadingMeetings ? renderLoading() : meetings.length === 0 ? (
+              <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                No upcoming meetings scheduled.
+              </div>
+            ) : (
+              <div className="home-meetings-list">
+                {meetings.map(mtg => (
+                  <div
+                    key={mtg.id}
+                    className={`home-meeting-item ${isToday(mtg.meeting_date) ? 'home-meeting-item--today' : isThisWeek(mtg.meeting_date) ? 'home-meeting-item--week' : ''}`}
+                  >
+                    <span className="home-meeting-date">
+                      {isToday(mtg.meeting_date) ? 'Today' : formatDate(mtg.meeting_date)}
+                    </span>
+                    <span className="home-meeting-title">{mtg.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ═══ 3. ANNOUNCEMENTS (full width) ═══ */}
+        <div className="card home-widget">
+          <div className="card-title" style={{ marginBottom: '1rem' }}>
+            <span style={{ marginRight: '0.375rem' }}>📢</span> Announcements
+          </div>
+
+          {loadingAnnouncements ? renderLoading() : announcements.length === 0 ? (
+            <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+              No announcements right now.
+            </div>
+          ) : (
+            <div>
+              {announcements.map(ann => (
+                <div key={ann.id} className="home-announcement">
+                  <span
+                    className="home-announcement-badge"
+                    style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}
+                  >
+                    {ann.category}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
+                      {ann.title}
+                    </div>
+                    {ann.body && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                        {ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}
+                      </div>
+                    )}
+                  </div>
+                  <span className="home-announcement-date">
+                    {formatDate(ann.effective_date)}
                   </span>
                 </div>
               ))}
@@ -219,75 +473,16 @@ export default function Home() {
           )}
         </div>
 
-        {/* ── Widget 2: Knowledge Base Search ── */}
-        <div className="card home-widget">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-            <div style={{ color: 'var(--accent)', flexShrink: 0 }}>
-              <BrainIcon size={28} color="var(--accent)" />
-            </div>
-            <div className="card-title" style={{ margin: 0 }}>Knowledge Base</div>
-          </div>
-
-          <form onSubmit={handleKbSearch}>
-            <div className="kb-search" style={{ margin: 0 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.4, flexShrink: 0 }}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search articles…"
-                value={kbSearch}
-                onChange={e => setKbSearch(e.target.value)}
-                className="kb-search-input"
-              />
-              <button type="submit" className="btn btn--primary btn--small">Search</button>
-            </div>
-          </form>
-
-          <div style={{ marginTop: '0.75rem' }}>
-            <button
-              className="btn btn--ghost btn--small"
-              onClick={() => navigate('/knowledge-base')}
-              style={{ width: '100%' }}
-            >
-              Browse all articles →
-            </button>
-          </div>
-        </div>
-
-        {/* ── Widget 3: Announcements ── */}
-        <div className="card home-widget">
-          <div className="card-title">
-            <span style={{ marginRight: '0.375rem' }}>📢</span> Announcements
-          </div>
-
-          <div className="home-announcement">
-            <div className="home-announcement-dot" />
-            <div>
-              <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
-                BestLife Hub v2 is live!
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                New features: recurring tasks, My Work board, Knowledge Base search, and Ask Betty. Explore the sidebar to check them out.
-              </div>
-            </div>
-          </div>
-
-          <div className="home-announcement">
-            <div className="home-announcement-dot" style={{ background: 'var(--text-muted)', opacity: 0.4 }} />
-            <div>
-              <div style={{ fontWeight: 500, color: 'var(--text)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
-                More announcements coming soon
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                This section will display team updates, reminders, and practice-wide news.
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
+
+      {/* ── Win Modal ── */}
+      {showWinModal && (
+        <AddWinModal
+          profile={profile}
+          onClose={() => setShowWinModal(false)}
+          onSaved={loadWins}
+        />
+      )}
     </div>
   )
 }

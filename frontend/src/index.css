@@ -323,15 +323,184 @@ a { color: var(--accent); text-decoration: none; }
 /* ── Home Widgets ── */
 .home-widgets { display: flex; flex-direction: column; gap: 1rem; }
 .home-widget { padding: 1.25rem 1.5rem; }
+
+/* Two-column grid for Tasks + Meetings */
+.home-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 768px) {
+  .home-two-col { grid-template-columns: 1fr; }
+}
+
+/* Tasks */
 .home-task-list { display: flex; flex-direction: column; gap: 0; }
 .home-task-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
 .home-task-item:last-child { border-bottom: none; }
 .home-task-item:hover { background: var(--bg-elevated); margin: 0 -0.25rem; padding: 0.5rem; border-radius: var(--radius-sm); }
 .home-task-title { font-size: 0.875rem; font-weight: 450; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home-task-due { font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; }
-.home-announcement { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 0; }
+
+/* Wins */
+.home-wins-feed {
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.home-wins-feed::-webkit-scrollbar { width: 4px; }
+.home-wins-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.home-win-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.625rem 0;
+}
+.home-win-item + .home-win-item { border-top: 1px solid var(--border); }
+.home-win-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 0.25rem;
+  flex-shrink: 0;
+}
+.home-win-dot--business { background: var(--accent); }
+.home-win-dot--personal { background: #22c55e; }
+.home-win-body {
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.home-win-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+/* Meetings */
+.home-meetings-list { display: flex; flex-direction: column; gap: 0; }
+.home-meeting-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.home-meeting-item:last-child { border-bottom: none; }
+.home-meeting-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+.home-meeting-title {
+  font-size: 0.875rem;
+  font-weight: 450;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-meeting-item--today .home-meeting-date { color: var(--accent); font-weight: 600; }
+.home-meeting-item--today .home-meeting-title { color: var(--text-bright); }
+.home-meeting-item--week .home-meeting-date { color: var(--accent); }
+
+/* Announcements */
+.home-announcement {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
 .home-announcement + .home-announcement { border-top: 1px solid var(--border); }
-.home-announcement-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 0.375rem; flex-shrink: 0; }
+.home-announcement-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+.home-announcement-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+/* Win Modal */
+.win-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+.win-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 440px;
+  box-shadow: var(--shadow-lg);
+}
+.win-category-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.win-cat-btn {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-body);
+}
+.win-cat-btn:hover { border-color: var(--text); color: var(--text); }
+.win-cat-btn--active.win-cat-btn--business {
+  border-color: var(--accent);
+  background: rgba(0, 187, 238, 0.1);
+  color: var(--accent);
+}
+.win-cat-btn--active.win-cat-btn--personal {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+.win-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.win-textarea:focus { border-color: var(--accent); }
+.win-textarea::placeholder { color: var(--text-muted); }
 
 /* ── Weather Widget ── */
 .weather-widget {
