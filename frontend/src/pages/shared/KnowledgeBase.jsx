@@ -15,7 +15,7 @@ function BrainIcon({ size = 24, color = 'currentColor' }) {
 }
 
 // ── Futuristic category icons ──
-const sz = { width: 38, height: 38, viewBox: '0 0 32 32', fill: 'none', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' }
+const sz = { width: 40, height: 40, viewBox: '0 0 32 32', fill: 'none', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round' }
 
 const CAT_ICONS = {
   Onboarding: (
@@ -71,11 +71,11 @@ const CAT_ICONS = {
   ),
   Templates: (
     <svg {...sz} stroke="currentColor">
-      <rect x="5" y="5" width="22" height="22" rx="3" />
-      <line x1="5" y1="12" x2="27" y2="12" />
-      <line x1="13" y1="12" x2="13" y2="27" />
-      <circle cx="9" cy="8.5" r="1" fill="currentColor" stroke="none" opacity="0.4" />
-      <circle cx="20" cy="8.5" r="1" fill="currentColor" stroke="none" opacity="0.4" />
+      <rect x="8" y="4" width="18" height="20" rx="2" opacity="0.2" />
+      <rect x="5" y="7" width="18" height="20" rx="2" />
+      <line x1="10" y1="13" x2="18" y2="13" strokeWidth="1.2" opacity="0.5" />
+      <line x1="10" y1="17" x2="18" y2="17" strokeWidth="1.2" opacity="0.5" />
+      <line x1="10" y1="21" x2="15" y2="21" strokeWidth="1.2" opacity="0.5" />
     </svg>
   ),
   Training: (
@@ -350,7 +350,7 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
                 </defs>
                 <text
                   fill={isHovered ? '#ffffff' : (cat.color || '#7d8a82')}
-                  fontSize="11.5"
+                  fontSize="13.5"
                   fontFamily="'DM Sans', sans-serif"
                   fontWeight="600"
                   letterSpacing="0.04em"

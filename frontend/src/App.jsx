@@ -61,7 +61,7 @@ const THERAPIST_TABS = [
   { path: '/therapist/time-off', label: 'Time Off',          icon: <IconPalmTree /> },
   { section: 'Workspace' },
   { path: '/my-work',            label: 'My Work',           icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',     label: "Betty's Brain",     icon: <IconBrain /> },
+  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: <IconBrain /> },
 ]
 
 const CLINICAL_TABS = [
