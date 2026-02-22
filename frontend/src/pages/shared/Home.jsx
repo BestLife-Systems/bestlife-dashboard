@@ -157,6 +157,7 @@ export default function Home() {
   const [weather, setWeather] = useState(null)
   const [showWinModal, setShowWinModal] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [birthdayAnnouncements, setBirthdayAnnouncements] = useState([])
 
   const verb = useLoadingVerb(loadingTasks || loadingWins || loadingMeetings)
   const firstName = profile?.first_name || 'there'
@@ -212,10 +213,24 @@ export default function Home() {
     setLoadingMeetings(true)
     try {
       const data = await fetchMeetingInstances()
-      setMeetings((data || []).slice(0, 6))
+      const all = data || []
+      // Separate birthdays from regular meetings
+      const regular = all.filter(m => !m.title.includes('Birthday')).slice(0, 6)
+      const bdays = all.filter(m => m.title.includes('Birthday'))
+      setMeetings(regular)
+      // Store birthday meetings to merge into announcements
+      setBirthdayAnnouncements(bdays.map(b => ({
+        id: 'bday-' + b.id,
+        title: b.title,
+        body: null,
+        category: 'celebration',
+        effective_date: b.meeting_date,
+        _isBirthday: true,
+      })))
     } catch (err) {
       console.error('Failed to load meetings:', err)
       setMeetings([])
+      setBirthdayAnnouncements([])
     } finally {
       setLoadingMeetings(false)
     }
@@ -471,37 +486,44 @@ export default function Home() {
             <span style={{ marginRight: '0.375rem' }}>📢</span> Announcements
           </div>
 
-          {loadingAnnouncements ? renderLoading() : announcements.length === 0 ? (
-            <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              No announcements right now.
-            </div>
-          ) : (
-            <div>
-              {announcements.map(ann => (
-                <div key={ann.id} className="home-announcement">
-                  <span
-                    className="home-announcement-badge"
-                    style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}
-                  >
-                    {ann.category}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
-                      {ann.title}
-                    </div>
-                    {ann.body && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                        {ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}
+          {(() => {
+            // Merge real announcements + upcoming birthdays, sorted by date
+            const allAnn = [...announcements, ...birthdayAnnouncements]
+              .sort((a, b) => (a.effective_date || '').localeCompare(b.effective_date || ''))
+            if (loadingAnnouncements && loadingMeetings) return renderLoading()
+            if (allAnn.length === 0) return (
+              <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                No announcements right now.
+              </div>
+            )
+            return (
+              <div>
+                {allAnn.map(ann => (
+                  <div key={ann.id} className="home-announcement">
+                    <span
+                      className="home-announcement-badge"
+                      style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}
+                    >
+                      {ann.category}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>
+                        {ann.title}
                       </div>
-                    )}
+                      {ann.body && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                          {ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}
+                        </div>
+                      )}
+                    </div>
+                    <span className="home-announcement-date">
+                      {formatDate(ann.effective_date)}
+                    </span>
                   </div>
-                  <span className="home-announcement-date">
-                    {formatDate(ann.effective_date)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )
+          })()}
         </div>
 
       </div>

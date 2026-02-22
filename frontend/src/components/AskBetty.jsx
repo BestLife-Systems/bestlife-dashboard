@@ -71,7 +71,6 @@ export default function AskBetty() {
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
           />
-          <span className="betty-context">{pageName} · {roleName}</span>
           <button className="betty-submit btn btn--primary btn--small" type="submit">Ask</button>
         </form>
       </div>
