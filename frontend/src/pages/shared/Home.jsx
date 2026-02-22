@@ -302,6 +302,9 @@ export default function Home() {
 
   return (
     <div>
+      {/* ── Ask Betty (very top) ── */}
+      <AskBetty />
+
       {/* ── Header ── */}
       <div className="page-header">
         <div>
@@ -327,9 +330,6 @@ export default function Home() {
           )
         })()}
       </div>
-
-      {/* ── Ask Betty ── */}
-      <AskBetty />
 
       {/* ── Widgets ── */}
       <div className="home-widgets">
@@ -455,6 +455,9 @@ export default function Home() {
                       {isToday(mtg.meeting_date) ? 'Today' : formatDate(mtg.meeting_date)}
                     </span>
                     <span className="home-meeting-title">{mtg.title}</span>
+                    {mtg.meeting_time && (
+                      <span className="home-meeting-time">{mtg.meeting_time}</span>
+                    )}
                   </div>
                 ))}
               </div>

@@ -839,9 +839,10 @@ def compute_meeting_dates(template: dict, start: date, end: date) -> list:
                 y += 1
 
     elif cadence == "monthly_interval":
-        dom = int(rule.get("day_of_month", 1))
         every_n = int(rule.get("every_n_months", 1))
         anchor_str = rule.get("anchor", start.isoformat())
+        weekday_rule = rule.get("weekday_rule")  # e.g. "first_monday"
+        dom = int(rule.get("day_of_month", 1))
         try:
             anchor = date.fromisoformat(anchor_str)
         except Exception:
@@ -850,10 +851,14 @@ def compute_meeting_dates(template: dict, start: date, end: date) -> list:
         # Start from anchor, step by every_n_months
         y, m = anchor.year, anchor.month
         while True:
-            try:
-                d = date(y, m, min(dom, calendar.monthrange(y, m)[1]))
-            except ValueError:
-                d = None
+            d = None
+            if weekday_rule == "first_monday":
+                d = _nth_weekday_in_month(y, m, 0, 1)  # 1st Monday
+            else:
+                try:
+                    d = date(y, m, min(dom, calendar.monthrange(y, m)[1]))
+                except ValueError:
+                    pass
             if d and d > end:
                 break
             if d and start <= d <= end:
@@ -865,19 +870,34 @@ def compute_meeting_dates(template: dict, start: date, end: date) -> list:
                 y += 1
 
     elif cadence == "quarterly":
-        moq = int(rule.get("month_of_quarter", 1))  # 1, 2, or 3
-        nth = int(rule.get("nth", 1))
-        dow = int(rule.get("day_of_week", 0))
-        # Quarters: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
-        quarter_starts = [1, 4, 7, 10]
-        for qs in quarter_starts:
-            target_month = qs + moq - 1
+        # Two modes:
+        # 1) "months": [4, 7, 10] — specific months with day 15 default
+        # 2) "month_of_quarter" + "nth" + "day_of_week" — nth weekday in nth month of quarter
+        specific_months = rule.get("months")
+        if specific_months:
+            day_of = int(rule.get("day", 15))
             for year in range(start.year, end.year + 1):
-                if target_month > 12:
-                    continue
-                d = _nth_weekday_in_month(year, target_month, dow, nth)
-                if d and start <= d <= end:
-                    dates.append(d)
+                for mo in specific_months:
+                    try:
+                        d = date(year, int(mo), min(day_of, calendar.monthrange(year, int(mo))[1]))
+                        if start <= d <= end:
+                            dates.append(d)
+                    except ValueError:
+                        pass
+        else:
+            moq = int(rule.get("month_of_quarter", 1))  # 1, 2, or 3
+            nth = int(rule.get("nth", 1))
+            dow = int(rule.get("day_of_week", 0))
+            # Quarters: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+            quarter_starts = [1, 4, 7, 10]
+            for qs in quarter_starts:
+                target_month = qs + moq - 1
+                for year in range(start.year, end.year + 1):
+                    if target_month > 12:
+                        continue
+                    d = _nth_weekday_in_month(year, target_month, dow, nth)
+                    if d and start <= d <= end:
+                        dates.append(d)
 
     elif cadence == "yearly":
         mo = int(rule.get("month", 1))
@@ -956,7 +976,7 @@ async def get_meeting_instances(user=Depends(verify_token)):
 
     # Fetch upcoming instances with template info (service key to bypass RLS for join)
     instances = await sb_request("GET", "meeting_instances", params={
-        "select": "*, meeting_templates(audience_roles)",
+        "select": "*, meeting_templates(audience_roles, meeting_time)",
         "meeting_date": f"gte.{today_str}",
         "order": "meeting_date.asc",
         "limit": "50",
@@ -970,10 +990,13 @@ async def get_meeting_instances(user=Depends(verify_token)):
     for inst in instances:
         tmpl = inst.get("meeting_templates") or {}
         audience = tmpl.get("audience_roles") or []
+        meeting_time = tmpl.get("meeting_time")
         # Empty audience = visible to all; admin sees everything
         if not audience or user_role == "admin" or user_role in audience:
-            # Remove the nested template data for clean response
+            # Flatten meeting_time into the instance and remove nested template data
             inst.pop("meeting_templates", None)
+            if meeting_time:
+                inst["meeting_time"] = meeting_time
             filtered.append(inst)
         if len(filtered) >= 20:
             break

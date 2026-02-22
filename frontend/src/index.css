@@ -407,6 +407,14 @@ a { color: var(--accent); text-decoration: none; }
 .home-meeting-item--today .home-meeting-date { color: var(--accent); font-weight: 600; }
 .home-meeting-item--today .home-meeting-title { color: var(--text-bright); }
 .home-meeting-item--week .home-meeting-date { color: var(--accent); }
+.home-meeting-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.home-meeting-item--today .home-meeting-time { color: var(--accent); }
 
 /* Announcements */
 .home-announcement {
