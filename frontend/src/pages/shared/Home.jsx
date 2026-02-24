@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
-import { fetchMyInstances } from '../../lib/tasksApi'
+import { fetchMyInstances, updateInstanceStatus } from '../../lib/tasksApi'
 import { fetchMeetingInstances, generateMeetings } from '../../lib/meetingsApi'
 import { supabase } from '../../lib/supabase'
 import AskBetty from '../../components/AskBetty'
@@ -159,6 +159,8 @@ export default function Home() {
   const [showAllWins, setShowAllWins] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [birthdayAnnouncements, setBirthdayAnnouncements] = useState([])
+  const [undoTask, setUndoTask] = useState(null) // { task, timerId }
+  const undoTimerRef = useRef(null)
 
   const verb = useLoadingVerb(loadingTasks || loadingWins || loadingMeetings)
   const firstName = profile?.first_name || 'there'
@@ -179,10 +181,15 @@ export default function Home() {
     setLoadingTasks(true)
     try {
       const data = await fetchMyInstances()
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const sevenDays = new Date(today)
+      sevenDays.setDate(sevenDays.getDate() + 7)
+      const sevenDaysStr = sevenDays.toISOString().split('T')[0]
       const upcoming = (data || [])
         .filter(t => t.status !== 'done' && t.status !== 'skipped')
+        .filter(t => !t.due_date || t.due_date <= sevenDaysStr) // next 7 days + overdue
         .sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
-        .slice(0, 10)
       setTasks(upcoming)
     } catch (err) {
       console.error('Failed to load tasks:', err)
@@ -191,6 +198,52 @@ export default function Home() {
       setLoadingTasks(false)
     }
   }
+
+  // ── Task completion with undo ──
+
+  const handleCompleteTask = useCallback(async (task) => {
+    // Optimistically remove from list
+    setTasks(prev => prev.filter(t => t.id !== task.id))
+
+    // Clear any existing undo timer
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+
+    // Set up undo state
+    setUndoTask({ task })
+
+    // Auto-commit after 5 seconds
+    undoTimerRef.current = setTimeout(async () => {
+      try {
+        await updateInstanceStatus(task.id, 'done')
+      } catch (err) {
+        console.error('Failed to complete task:', err)
+      }
+      setUndoTask(null)
+      undoTimerRef.current = null
+    }, 5000)
+  }, [])
+
+  const handleUndoTask = useCallback(() => {
+    if (!undoTask) return
+    // Cancel the pending API call
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+    // Restore the task to the list
+    setTasks(prev => {
+      const restored = [...prev, undoTask.task]
+      return restored.sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))
+    })
+    setUndoTask(null)
+  }, [undoTask])
+
+  // Cleanup undo timer on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    }
+  }, [])
 
   async function loadWins() {
     setLoadingWins(true)
@@ -418,6 +471,7 @@ export default function Home() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div className="card-title" style={{ margin: 0 }}>
                 <span style={{ marginRight: '0.375rem' }}>✅</span> My Tasks
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '0.5rem' }}>Next 7 days</span>
               </div>
               <button className="btn btn--ghost btn--small" onClick={() => navigate('/my-work')}>
                 View all →
@@ -434,7 +488,6 @@ export default function Home() {
                   <div
                     key={task.id}
                     className="home-task-item"
-                    onClick={() => navigate('/my-work')}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
                       <span className={`task-priority task-priority--${task.priority}`}>
@@ -455,6 +508,15 @@ export default function Home() {
                       {isOverdue(task.due_date, task.status) && '\u26A0 '}
                       {isToday(task.due_date) ? 'Today' : formatDate(task.due_date)}
                     </span>
+                    <button
+                      className="home-task-check"
+                      onClick={(e) => { e.stopPropagation(); handleCompleteTask(task) }}
+                      title="Mark as done"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="3" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -551,6 +613,14 @@ export default function Home() {
         </div>
 
       </div>
+
+      {/* ── Undo Toast ── */}
+      {undoTask && (
+        <div className="undo-toast">
+          <span>Completed "<strong>{undoTask.task.title}</strong>"</span>
+          <button className="undo-toast-btn" onClick={handleUndoTask}>Undo</button>
+        </div>
+      )}
 
       {/* ── Win Modal ── */}
       {showWinModal && (

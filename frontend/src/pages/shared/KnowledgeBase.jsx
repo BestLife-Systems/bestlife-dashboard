@@ -113,39 +113,6 @@ function SpaceCanvas() {
     const STAR_COUNT = 220
     const shooters = []
 
-    // ─── Smiley face constellation (upper-right area) ───
-    // Big circle face with dots for eyes and a curved smile
-    const SMILEY = [
-      // Face circle (12 points)
-      { x: 0.85, y: 0.10 },  // 0  top
-      { x: 0.89, y: 0.11 },  // 1  top-right
-      { x: 0.92, y: 0.14 },  // 2  right-top
-      { x: 0.93, y: 0.18 },  // 3  right
-      { x: 0.92, y: 0.22 },  // 4  right-bottom
-      { x: 0.89, y: 0.25 },  // 5  bottom-right
-      { x: 0.85, y: 0.26 },  // 6  bottom
-      { x: 0.81, y: 0.25 },  // 7  bottom-left
-      { x: 0.78, y: 0.22 },  // 8  left-bottom
-      { x: 0.77, y: 0.18 },  // 9  left
-      { x: 0.78, y: 0.14 },  // 10 left-top
-      { x: 0.81, y: 0.11 },  // 11 top-left
-      // Eyes (just dots, no lines)
-      { x: 0.82, y: 0.16 },  // 12 left eye
-      { x: 0.88, y: 0.16 },  // 13 right eye
-      // Smile (5 points for a nice curve)
-      { x: 0.81, y: 0.20 },  // 14 smile-left
-      { x: 0.83, y: 0.22 },  // 15 smile-left-mid
-      { x: 0.85, y: 0.23 },  // 16 smile-bottom
-      { x: 0.87, y: 0.22 },  // 17 smile-right-mid
-      { x: 0.89, y: 0.20 },  // 18 smile-right
-    ]
-    const SMILEY_LINES = [
-      // Face circle
-      [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11,0],
-      // Smile curve
-      [14,15],[15,16],[16,17],[17,18],
-    ]
-
     let constellationStars = []
     let constellationLines = []
 
@@ -171,17 +138,6 @@ function SpaceCanvas() {
       }
       constellationStars = []
       constellationLines = []
-      const buildConstellation = (points, lines, color, starSize) => {
-        const base = constellationStars.length
-        points.forEach(p => {
-          constellationStars.push({
-            x: p.x * cw, y: p.y * ch,
-            r: starSize || 2.2, alpha: 0.9, color
-          })
-        })
-        lines.forEach(([a, b]) => constellationLines.push([base + a, base + b, color]))
-      }
-      buildConstellation(SMILEY, SMILEY_LINES, 'rgba(140,200,255,0.45)', 2.2)
     }
 
     function spawnShooter() {
@@ -332,6 +288,7 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
             onClick={() => onCategoryClick(cat.name)}
           >
             <div className="kb-orbit-node-inner">
+              <div className="kb-orbit-node-glow" style={{ '--node-color': cat.color }} />
               <div className="kb-orbit-node-icon-js">
                 {CAT_ICONS[cat.name]}
               </div>
