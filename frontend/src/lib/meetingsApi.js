@@ -26,3 +26,52 @@ export async function generateMeetings(days = 120) {
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+export async function fetchMeetingTemplates() {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE}/api/meetings/templates`, { headers })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function createMeetingTemplate(data) {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE}/api/meetings/templates`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function updateMeetingTemplate(id, data) {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE}/api/meetings/templates/${id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function deleteMeetingTemplate(id) {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE}/api/meetings/templates/${id}`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function deleteMeetingInstance(id) {
+  const headers = await authHeaders()
+  const res = await fetch(`${API_BASE}/api/meetings/instances/${id}`, {
+    method: 'DELETE',
+    headers,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}

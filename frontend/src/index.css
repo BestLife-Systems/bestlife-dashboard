@@ -627,6 +627,12 @@ a { color: var(--accent); text-decoration: none; }
 .weekday-btn { padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: none; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; font-family: var(--font-body); transition: all 0.15s; }
 .weekday-btn--active { border-color: var(--accent); background: var(--accent-glow); color: var(--accent); }
 
+/* ── Tab Bar ── */
+.tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+.tab-btn { padding: 0.5rem 1rem; border: none; background: none; color: var(--text-muted); font-size: 0.875rem; font-family: var(--font-body); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+.tab-btn:hover { color: var(--text); }
+.tab-btn--active { color: var(--accent); border-bottom-color: var(--accent); }
+
 /* ── KB Article ── */
 .kb-article { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 0.5rem; cursor: pointer; transition: border-color 0.15s; }
 .kb-article:hover { border-color: var(--accent-dim); }

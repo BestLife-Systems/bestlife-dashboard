@@ -1004,6 +1004,112 @@ async def get_meeting_instances(user=Depends(verify_token)):
     return filtered
 
 
+# ── Meeting Template CRUD ─────────────────────────────────────────
+
+class MeetingTemplateRequest(BaseModel):
+    title: str
+    cadence: str = "weekly"
+    schedule_rule: Optional[dict] = {}
+    audience_roles: Optional[List[str]] = []
+    meeting_time: Optional[str] = None
+    active: bool = True
+
+
+@app.get("/api/meetings/templates")
+async def get_meeting_templates(admin=Depends(require_admin)):
+    """Admin: list all meeting templates."""
+    templates = await sb_request("GET", "meeting_templates", params={
+        "select": "*",
+        "order": "title.asc",
+    })
+    return templates or []
+
+
+@app.post("/api/meetings/templates")
+async def create_meeting_template(req: MeetingTemplateRequest, admin=Depends(require_admin)):
+    """Admin: create a new meeting template."""
+    data = req.dict()
+    data["created_by_user_id"] = admin["id"]
+    result = await sb_request("POST", "meeting_templates", data=data)
+    return result
+
+
+@app.patch("/api/meetings/templates/{template_id}")
+async def update_meeting_template(template_id: str, req: MeetingTemplateRequest, admin=Depends(require_admin)):
+    """Admin: update a meeting template."""
+    data = req.dict()
+    data["updated_at"] = datetime.utcnow().isoformat()
+    result = await sb_request("PATCH", f"meeting_templates?id=eq.{template_id}", data=data)
+    return result
+
+
+@app.delete("/api/meetings/templates/{template_id}")
+async def delete_meeting_template(template_id: str, admin=Depends(require_admin)):
+    """Admin: deactivate a meeting template."""
+    result = await sb_request("PATCH", f"meeting_templates?id=eq.{template_id}", data={"active": False})
+    return {"status": "deactivated", "id": template_id}
+
+
+# ── Meeting Instance CRUD ─────────────────────────────────────────
+
+class MeetingInstanceRequest(BaseModel):
+    title: str
+    meeting_date: str
+    template_id: Optional[str] = None
+
+
+@app.delete("/api/meetings/instances/{instance_id}")
+async def delete_meeting_instance(instance_id: str, admin=Depends(require_admin)):
+    """Admin: delete a meeting instance."""
+    await sb_request("DELETE", f"meeting_instances?id=eq.{instance_id}")
+    return {"status": "deleted", "id": instance_id}
+
+
+# ── Announcements CRUD ────────────────────────────────────────────
+
+class AnnouncementRequest(BaseModel):
+    title: str
+    body: Optional[str] = None
+    category: str = "general"
+    audience_roles: Optional[List[str]] = []
+    effective_date: str
+    expiration_date: Optional[str] = None
+
+
+@app.get("/api/announcements")
+async def get_announcements(admin=Depends(require_admin)):
+    """Admin: list all announcements (including expired)."""
+    results = await sb_request("GET", "announcements", params={
+        "select": "*",
+        "order": "effective_date.desc",
+    })
+    return results or []
+
+
+@app.post("/api/announcements")
+async def create_announcement(req: AnnouncementRequest, admin=Depends(require_admin)):
+    """Admin: create an announcement."""
+    data = req.dict()
+    data["created_by_user_id"] = admin["id"]
+    result = await sb_request("POST", "announcements", data=data)
+    return result
+
+
+@app.patch("/api/announcements/{announcement_id}")
+async def update_announcement(announcement_id: str, req: AnnouncementRequest, admin=Depends(require_admin)):
+    """Admin: update an announcement."""
+    data = req.dict()
+    result = await sb_request("PATCH", f"announcements?id=eq.{announcement_id}", data=data)
+    return result
+
+
+@app.delete("/api/announcements/{announcement_id}")
+async def delete_announcement(announcement_id: str, admin=Depends(require_admin)):
+    """Admin: delete an announcement."""
+    await sb_request("DELETE", f"announcements?id=eq.{announcement_id}")
+    return {"status": "deleted", "id": announcement_id}
+
+
 # ── Static File Serving (Production) ────────────────────────────
 
 # Mount the built frontend in production

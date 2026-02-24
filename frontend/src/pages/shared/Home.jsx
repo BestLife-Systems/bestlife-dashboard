@@ -377,7 +377,7 @@ export default function Home() {
           ) : (
             <>
               <div className="home-wins-feed">
-                {wins.slice(0, showAllWins ? wins.length : 3).map(win => (
+                {wins.slice(0, showAllWins ? wins.length : 4).map(win => (
                   <div key={win.id} className={`home-win-bar home-win-bar--${win.category}`}>
                     <div className="home-win-bar-text">{win.body}</div>
                     <div className="home-win-bar-meta">
@@ -388,7 +388,7 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              {wins.length > 3 && !showAllWins && (
+              {wins.length > 4 && !showAllWins && (
                 <button
                   className="btn btn--ghost btn--small"
                   onClick={() => setShowAllWins(true)}
@@ -397,7 +397,7 @@ export default function Home() {
                   View all {wins.length} wins →
                 </button>
               )}
-              {showAllWins && wins.length > 3 && (
+              {showAllWins && wins.length > 4 && (
                 <button
                   className="btn btn--ghost btn--small"
                   onClick={() => setShowAllWins(false)}

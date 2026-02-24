@@ -50,3 +50,7 @@ export function IconUserCheck(props) {
 export function IconClipboard(props) {
   return <svg {...s} {...props}><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 3h6v2H9z" /><path d="M9 11h6M9 15h4" /></svg>
 }
+
+export function IconMegaphone(props) {
+  return <svg {...s} {...props}><path d="M3 11l18-5v12L3 13v-2z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></svg>
+}

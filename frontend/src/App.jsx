@@ -13,6 +13,8 @@ import AdminPayroll from './pages/admin/AdminPayroll'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminSettings from './pages/admin/AdminSettings'
 import AdminTaskTemplates from './pages/admin/AdminTaskTemplates'
+import AdminMeetings from './pages/admin/AdminMeetings'
+import AdminAnnouncements from './pages/admin/AdminAnnouncements'
 
 // Therapist pages
 import TherapistStats from './pages/therapist/TherapistStats'
@@ -32,7 +34,7 @@ import MyWork from './pages/shared/MyWork'
 import {
   IconHome, IconCheckSquare, IconBrain, IconBarChart, IconDollar,
   IconUsers, IconCalendar, IconSettings, IconBriefcase, IconPalmTree,
-  IconUserCheck, IconClipboard,
+  IconUserCheck, IconClipboard, IconMegaphone,
 } from './components/Icons'
 
 // ── Nav Tabs ──────────────────────────────────────────────────────
@@ -48,7 +50,9 @@ const ADMIN_TABS = [
   { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
   { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
   { path: '/admin/users',          label: 'Users',            icon: <IconUsers /> },
-  { path: '/admin/task-templates', label: 'Task Templates',   icon: <IconCalendar /> },
+  { path: '/admin/task-templates', label: 'Task Templates',   icon: <IconCheckSquare /> },
+  { path: '/admin/meetings',      label: 'Meetings',          icon: <IconCalendar /> },
+  { path: '/admin/announcements', label: 'Announcements',     icon: <IconMegaphone /> },
   { section: 'System' },
   { path: '/admin/settings',       label: 'Settings',         icon: <IconSettings /> },
 ]
@@ -168,6 +172,16 @@ export default function App() {
           <Route path="/admin/task-templates" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><AdminTaskTemplates /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/meetings" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><AdminMeetings /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/announcements" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><AdminAnnouncements /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/settings" element={
