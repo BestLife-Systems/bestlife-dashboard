@@ -1354,9 +1354,12 @@ async def open_pay_period(period_id: str, admin=Depends(require_admin)):
 
     payroll_roles = {"therapist", "clinical_leader", "apn"}
     eligible = [u for u in (users or []) if u.get("role") in payroll_roles]
+    logger.info(f"Opening pay period {period_id}: {len(users or [])} total users, {len(eligible)} eligible")
 
     # Create recipients
     created = 0
+    sms_sent = 0
+    sms_skipped = 0
     for user in eligible:
         try:
             recipient = await sb_request("POST", "pay_period_recipients", data={
@@ -1365,24 +1368,37 @@ async def open_pay_period(period_id: str, admin=Depends(require_admin)):
                 "status": "sent",
             })
             created += 1
+            logger.info(f"Created recipient for {user.get('first_name')} {user.get('last_name')} ({user['id']})")
 
             # Send notification
             name = user.get("first_name", "")
             msg = f"Hi {name}! Your BestLife invoice for {period['label']} is now open. Please submit by {period['due_date']}."
 
             # SMS
-            if user.get("phone_number") and user.get("sms_enabled"):
-                sid = send_sms(user["phone_number"], msg)
-                if recipient and sid:
-                    rid = recipient[0]["id"] if isinstance(recipient, list) else recipient["id"]
-                    await sb_request("POST", "reminder_log", data={
-                        "recipient_id": rid,
-                        "channel": "sms",
-                        "status": "sent",
-                    })
+            phone = user.get("phone_number")
+            sms_on = user.get("sms_enabled")
+            logger.info(f"  SMS check: phone={phone}, sms_enabled={sms_on}, twilio_client={'yes' if twilio_client else 'no'}")
+            if phone and sms_on:
+                sid = send_sms(phone, msg)
+                if sid:
+                    sms_sent += 1
+                    if recipient:
+                        rid = recipient[0]["id"] if isinstance(recipient, list) else recipient["id"]
+                        await sb_request("POST", "reminder_log", data={
+                            "recipient_id": rid,
+                            "channel": "sms",
+                            "status": "sent",
+                        })
+                else:
+                    sms_skipped += 1
+                    logger.warning(f"  SMS send returned None for {phone}")
+            else:
+                sms_skipped += 1
 
         except Exception as e:
             logger.warning(f"Failed to create recipient for {user['id']}: {e}")
+
+    logger.info(f"Pay period opened: {created} recipients, {sms_sent} SMS sent, {sms_skipped} SMS skipped")
 
     # Update period status
     await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
@@ -1415,11 +1431,16 @@ async def close_pay_period(period_id: str, admin=Depends(require_admin)):
 @app.get("/api/payroll/pay-periods/{period_id}/recipients")
 async def get_period_recipients(period_id: str, admin=Depends(require_admin)):
     """Admin: list all recipients for a pay period with their draft tokens."""
+    # Note: pay_period_recipients has TWO FKs to users (user_id, approved_by).
+    # We must disambiguate by specifying the FK column in the join hint:
+    #   users!user_id(...)  tells PostgREST which FK to use.
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "pay_period_id": f"eq.{period_id}",
-        "select": "id,user_id,status,draft_token,submit_token,submitted_at,users(first_name,last_name,email)",
+        "select": "id,user_id,status,draft_token,submit_token,submitted_at,users!user_id(first_name,last_name,email)",
         "order": "created_at.asc",
     })
+
+    logger.info(f"Recipients raw for period {period_id}: {recipients}")
 
     result = []
     for r in (recipients or []):

@@ -148,6 +148,7 @@ export default function Layout({ children, tabs }) {
         {/* Sidebar */}
         <nav className={`sidebar ${sidebarOpen ? 'sidebar--open' : ''}`}>
           <div className="sidebar-nav">
+            {(() => { console.log('SIDEBAR TABS:', JSON.stringify(tabs.map(t => t.label || t.section || t.path))); return null })()}
             {tabs.map((tab, i) => {
               // Section label / divider
               if (tab.section) {
