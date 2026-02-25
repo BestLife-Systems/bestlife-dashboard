@@ -33,7 +33,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editUser, setEditUser] = useState(null)
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -63,14 +63,24 @@ export default function AdminUsers() {
     setError('')
     setSaving(true)
     try {
+      const phoneE164 = form.phone_number ? toE164(form.phone_number) : null
+      if (form.phone_number && !phoneE164) {
+        setError('Phone number must be 10 digits (US)')
+        setSaving(false)
+        return
+      }
       await apiPost('/admin/invite-user', {
         email: form.email,
         first_name: form.first_name,
         last_name: form.last_name,
         role: form.role,
+        phone_number: phoneE164 || null,
+        sms_enabled: form.sms_enabled,
+        supervision_required: form.supervision_required,
+        clinical_supervisor_id: form.clinical_supervisor_id || null,
       })
       setShowAdd(false)
-      setForm({ first_name: '', last_name: '', email: '', role: 'therapist' })
+      setForm({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
       loadUsers()
     } catch (err) {
       setError(err.message)
@@ -227,6 +237,50 @@ export default function AdminUsers() {
               {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
+          <div className="form-field" style={{ marginTop: '0.75rem' }}>
+            <label>Phone Number</label>
+            <input
+              type="tel"
+              placeholder="(555) 123-4567"
+              value={form.phone_number ? formatPhone(form.phone_number) : ''}
+              onChange={e => {
+                const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                setForm({ ...form, phone_number: digits })
+              }}
+            />
+          </div>
+          <div className="form-row" style={{ marginTop: '0.75rem', gap: '1.5rem' }}>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.sms_enabled}
+                onChange={e => setForm({ ...form, sms_enabled: e.target.checked })}
+              />
+              SMS Enabled
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.supervision_required}
+                onChange={e => setForm({ ...form, supervision_required: e.target.checked })}
+              />
+              Supervision Required
+            </label>
+          </div>
+          {form.supervision_required && (
+            <div className="form-field" style={{ marginTop: '0.75rem' }}>
+              <label>Clinical Supervisor</label>
+              <select
+                value={form.clinical_supervisor_id}
+                onChange={e => setForm({ ...form, clinical_supervisor_id: e.target.value })}
+              >
+                <option value="">— None —</option>
+                {clinicalLeaders.map(cl => (
+                  <option key={cl.id} value={cl.id}>{cl.first_name} {cl.last_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="modal-actions">
             <button type="button" className="btn btn--ghost" onClick={() => setShowAdd(false)}>Cancel</button>
             <button type="submit" className="btn btn--primary" disabled={saving}>

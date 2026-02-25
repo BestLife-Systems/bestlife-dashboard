@@ -457,10 +457,10 @@ export default function Home() {
                     </div>
                     {!(annEditMode || annRemoveMode) && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
                     {annEditMode && !ann._isBirthday && (
-                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', alignSelf: 'center' }}><PencilIcon /></button>
+                      <button className="home-inline-action-flow home-inline-edit-flow" onClick={() => openEditAnn(ann)} title="Edit"><PencilIcon /></button>
                     )}
                     {annRemoveMode && !ann._isBirthday && (
-                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', alignSelf: 'center' }}><XIcon /></button>
+                      <button className="home-inline-action-flow home-inline-remove-flow" onClick={() => removeAnn(ann)} title="Remove"><XIcon /></button>
                     )}
                   </div>
                 ))}

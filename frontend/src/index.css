@@ -154,7 +154,7 @@ a { color: var(--accent); text-decoration: none; }
 .sidebar-overlay { display: none; }
 
 /* ── Content ── */
-.content { flex: 1; padding: 1.75rem 2rem 4.5rem; overflow-y: auto; max-width: 1200px; }
+.content { flex: 1; padding: 1.75rem 2rem; overflow-y: auto; max-width: 1200px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem; }
 .page-title { font-family: var(--font-display); font-size: 1.5rem; font-weight: 400; color: var(--text-bright); }
 .page-actions { display: flex; gap: 0.5rem; }
@@ -720,17 +720,13 @@ a { color: var(--accent); text-decoration: none; }
   background: radial-gradient(ellipse at 50% 0%, rgba(0, 153, 204, 0.06) 0%, transparent 60%), var(--bg);
 }
 
-/* ── Ask Betty Global Bottom Bar ── */
+/* ── Ask Betty Bar (top of content area) ── */
 .betty-global-bar {
-  position: fixed;
-  bottom: 0;
-  left: var(--sidebar-width);
-  right: 0;
   background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 0.5rem 1rem;
-  z-index: 90;
-  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+  margin-bottom: 1.25rem;
 }
 .betty-form { display: flex; align-items: center; gap: 0.625rem; width: 100%; }
 .betty-brain { color: var(--accent); flex-shrink: 0; display: flex; align-items: center; }
@@ -1214,8 +1210,7 @@ a { color: var(--accent); text-decoration: none; }
     z-index: 140;
   }
 
-  .content { padding: 1.25rem 1rem calc(1.25rem + 56px); }
-  .betty-global-bar { left: 0; }
+  .content { padding: 1.25rem 1rem; }
   .betty-context { display: none; }
   .betty-label { display: none; }
   .page-header { flex-direction: column; align-items: flex-start; }

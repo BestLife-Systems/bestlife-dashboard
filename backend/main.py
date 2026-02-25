@@ -1410,6 +1410,27 @@ async def close_pay_period(period_id: str, admin=Depends(require_admin)):
     return {"status": "closed"}
 
 
+@app.get("/api/payroll/pay-periods/{period_id}/recipients")
+async def get_period_recipients(period_id: str, admin=Depends(require_admin)):
+    """Admin: list all recipients for a pay period with their draft tokens."""
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "pay_period_id": f"eq.{period_id}",
+        "select": "id,user_id,status,draft_token,submit_token,submitted_at,users(first_name,last_name,email)",
+        "order": "created_at.asc",
+    })
+
+    result = []
+    for r in (recipients or []):
+        user = r.pop("users", {}) or {}
+        result.append({
+            **r,
+            "user_name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+            "user_email": user.get("email", ""),
+        })
+
+    return result
+
+
 # ── Approval Queue ─────────────────────────────────────────────────
 
 @app.get("/api/payroll/approval-queue")

@@ -191,12 +191,11 @@ export default function Layout({ children, tabs }) {
 
         {/* Main Content */}
         <main className="content">
+          {/* Global Ask Betty bar — top of content area */}
+          <AskBetty />
           {children}
         </main>
       </div>
-
-      {/* Global Ask Betty bar — fixed bottom on all authenticated pages */}
-      <AskBetty />
     </div>
   )
 }

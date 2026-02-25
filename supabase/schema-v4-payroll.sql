@@ -196,43 +196,62 @@ ALTER TABLE reminder_log ENABLE ROW LEVEL SECURITY;
 -- Regular users access data through the API, not directly
 
 -- Rate types: readable by all authenticated
-CREATE POLICY IF NOT EXISTS "rate_types_read" ON rate_types FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "rate_types_admin" ON rate_types FOR ALL USING (true);
+DROP POLICY IF EXISTS "rate_types_read" ON rate_types;
+CREATE POLICY "rate_types_read" ON rate_types FOR SELECT USING (true);
+DROP POLICY IF EXISTS "rate_types_admin" ON rate_types;
+CREATE POLICY "rate_types_admin" ON rate_types FOR ALL USING (true);
 
 -- Bill rate defaults: readable by all
-CREATE POLICY IF NOT EXISTS "bill_rate_defaults_read" ON bill_rate_defaults FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "bill_rate_defaults_admin" ON bill_rate_defaults FOR ALL USING (true);
+DROP POLICY IF EXISTS "bill_rate_defaults_read" ON bill_rate_defaults;
+CREATE POLICY "bill_rate_defaults_read" ON bill_rate_defaults FOR SELECT USING (true);
+DROP POLICY IF EXISTS "bill_rate_defaults_admin" ON bill_rate_defaults;
+CREATE POLICY "bill_rate_defaults_admin" ON bill_rate_defaults FOR ALL USING (true);
 
 -- User pay rates: users can see their own, admin all
-CREATE POLICY IF NOT EXISTS "user_pay_rates_own" ON user_pay_rates FOR SELECT USING (auth.uid()::text IN (SELECT auth_id::text FROM users WHERE id = user_pay_rates.user_id));
-CREATE POLICY IF NOT EXISTS "user_pay_rates_admin" ON user_pay_rates FOR ALL USING (true);
+DROP POLICY IF EXISTS "user_pay_rates_own" ON user_pay_rates;
+CREATE POLICY "user_pay_rates_own" ON user_pay_rates FOR SELECT USING (auth.uid()::text IN (SELECT auth_id::text FROM users WHERE id = user_pay_rates.user_id));
+DROP POLICY IF EXISTS "user_pay_rates_admin" ON user_pay_rates;
+CREATE POLICY "user_pay_rates_admin" ON user_pay_rates FOR ALL USING (true);
 
 -- Pay periods: readable by all authenticated
-CREATE POLICY IF NOT EXISTS "pay_periods_read" ON pay_periods FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "pay_periods_admin" ON pay_periods FOR ALL USING (true);
+DROP POLICY IF EXISTS "pay_periods_read" ON pay_periods;
+CREATE POLICY "pay_periods_read" ON pay_periods FOR SELECT USING (true);
+DROP POLICY IF EXISTS "pay_periods_admin" ON pay_periods;
+CREATE POLICY "pay_periods_admin" ON pay_periods FOR ALL USING (true);
 
 -- Recipients: users see own, admin all
-CREATE POLICY IF NOT EXISTS "recipients_own" ON pay_period_recipients FOR SELECT USING (auth.uid()::text IN (SELECT auth_id::text FROM users WHERE id = pay_period_recipients.user_id));
-CREATE POLICY IF NOT EXISTS "recipients_admin" ON pay_period_recipients FOR ALL USING (true);
+DROP POLICY IF EXISTS "recipients_own" ON pay_period_recipients;
+CREATE POLICY "recipients_own" ON pay_period_recipients FOR SELECT USING (auth.uid()::text IN (SELECT auth_id::text FROM users WHERE id = pay_period_recipients.user_id));
+DROP POLICY IF EXISTS "recipients_admin" ON pay_period_recipients;
+CREATE POLICY "recipients_admin" ON pay_period_recipients FOR ALL USING (true);
 
 -- Time entries: locked rows, admin access
-CREATE POLICY IF NOT EXISTS "time_entries_read" ON time_entries FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "time_entries_admin" ON time_entries FOR ALL USING (true);
+DROP POLICY IF EXISTS "time_entries_read" ON time_entries;
+CREATE POLICY "time_entries_read" ON time_entries FOR SELECT USING (true);
+DROP POLICY IF EXISTS "time_entries_admin" ON time_entries;
+CREATE POLICY "time_entries_admin" ON time_entries FOR ALL USING (true);
 
 -- Rollups: readable by all
-CREATE POLICY IF NOT EXISTS "rollup_pp_read" ON rollup_pay_period FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "rollup_pp_admin" ON rollup_pay_period FOR ALL USING (true);
-CREATE POLICY IF NOT EXISTS "rollup_monthly_read" ON rollup_monthly FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "rollup_monthly_admin" ON rollup_monthly FOR ALL USING (true);
+DROP POLICY IF EXISTS "rollup_pp_read" ON rollup_pay_period;
+CREATE POLICY "rollup_pp_read" ON rollup_pay_period FOR SELECT USING (true);
+DROP POLICY IF EXISTS "rollup_pp_admin" ON rollup_pay_period;
+CREATE POLICY "rollup_pp_admin" ON rollup_pay_period FOR ALL USING (true);
+DROP POLICY IF EXISTS "rollup_monthly_read" ON rollup_monthly;
+CREATE POLICY "rollup_monthly_read" ON rollup_monthly FOR SELECT USING (true);
+DROP POLICY IF EXISTS "rollup_monthly_admin" ON rollup_monthly;
+CREATE POLICY "rollup_monthly_admin" ON rollup_monthly FOR ALL USING (true);
 
 -- Export batches: admin only
-CREATE POLICY IF NOT EXISTS "export_batches_admin" ON export_batches FOR ALL USING (true);
+DROP POLICY IF EXISTS "export_batches_admin" ON export_batches;
+CREATE POLICY "export_batches_admin" ON export_batches FOR ALL USING (true);
 
 -- Audit log: admin only
-CREATE POLICY IF NOT EXISTS "audit_log_admin" ON audit_log FOR ALL USING (true);
+DROP POLICY IF EXISTS "audit_log_admin" ON audit_log;
+CREATE POLICY "audit_log_admin" ON audit_log FOR ALL USING (true);
 
 -- Reminder log: admin only
-CREATE POLICY IF NOT EXISTS "reminder_log_admin" ON reminder_log FOR ALL USING (true);
+DROP POLICY IF EXISTS "reminder_log_admin" ON reminder_log;
+CREATE POLICY "reminder_log_admin" ON reminder_log FOR ALL USING (true);
 
 -- ═══════════════════════════════════════════════════════════════════
 -- SEED DATA: Rate Types
