@@ -217,7 +217,7 @@ export default function PayPeriods() {
             </thead>
             <tbody>
               {periods.map(p => (
-                <tr key={p.id} className="data-table-row" style={{ cursor: 'pointer' }} onClick={() => viewDetail(p)}>
+                <tr key={p.id} className={`data-table-row ${p.status === 'open' ? 'data-table-row--open' : ''} ${p.status === 'closed' ? 'data-table-row--closed' : ''}`} style={{ cursor: 'pointer' }} onClick={() => viewDetail(p)}>
                   <td className="data-table-primary">{p.label || `${formatDate(p.start_date)} – ${formatDate(p.end_date)}`}</td>
                   <td>{formatDate(p.start_date)} – {formatDate(p.end_date)}</td>
                   <td>{p.recipient_count || 0}</td>
