@@ -87,6 +87,7 @@ const ADMIN_TABS = [
       { path: '/admin/users/clinical-assignments', label: 'Clinical Leader Assignment' },
     ],
   },
+  { path: '/admin/settings', label: 'Settings', icon: <IconSettings /> },
 ]
 
 const THERAPIST_TABS = [
