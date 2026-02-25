@@ -1819,7 +1819,7 @@ async def get_public_invoice(draft_token: str):
     """
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "draft_token": f"eq.{draft_token}",
-        "select": "*, users(first_name, last_name), pay_periods(start_date, end_date, label, due_date, status)",
+        "select": "*, users!user_id(first_name, last_name), pay_periods(start_date, end_date, label, due_date, status)",
     })
     if not recipients:
         raise HTTPException(status_code=404, detail="Invoice link not found or expired")
