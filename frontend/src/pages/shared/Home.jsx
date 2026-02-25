@@ -419,12 +419,16 @@ export default function Home() {
             ) : (
               <div className="home-meetings-list">
                 {meetings.map(mtg => (
-                  <div key={mtg.id} className={`home-meeting-item ${isToday(mtg.meeting_date) ? 'home-meeting-item--today' : isThisWeek(mtg.meeting_date) ? 'home-meeting-item--week' : ''}`} style={{ position: 'relative' }}>
+                  <div key={mtg.id} className={`home-meeting-item ${isToday(mtg.meeting_date) ? 'home-meeting-item--today' : isThisWeek(mtg.meeting_date) ? 'home-meeting-item--week' : ''}`}>
                     <span className="home-meeting-date">{isToday(mtg.meeting_date) ? 'Today' : formatDate(mtg.meeting_date)}</span>
-                    <span className="home-meeting-title" style={{ paddingRight: (meetingEditMode || meetingRemoveMode) ? '2rem' : 0 }}>{mtg.title}</span>
+                    <span className="home-meeting-title">{mtg.title}</span>
                     {mtg.meeting_time && !(meetingEditMode || meetingRemoveMode) && <span className="home-meeting-time">{mtg.meeting_time}</span>}
-                    {meetingEditMode && <button className="home-inline-action home-inline-edit" onClick={() => openEditMeeting(mtg)} title="Edit"><PencilIcon /></button>}
-                    {meetingRemoveMode && <button className="home-inline-action home-inline-remove" onClick={() => removeMeeting(mtg)} title="Remove"><XIcon /></button>}
+                    {meetingEditMode && (
+                      <button onClick={() => openEditMeeting(mtg)} title="Edit" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto' }}><PencilIcon /></button>
+                    )}
+                    {meetingRemoveMode && (
+                      <button onClick={() => removeMeeting(mtg)} title="Remove" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto' }}><XIcon /></button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -448,15 +452,19 @@ export default function Home() {
             return (
               <div>
                 {allAnn.map(ann => (
-                  <div key={ann.id} className="home-announcement" style={{ position: 'relative' }}>
+                  <div key={ann.id} className="home-announcement">
                     <span className="home-announcement-badge" style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}>{ann.category}</span>
-                    <div style={{ flex: 1, minWidth: 0, paddingRight: (annEditMode || annRemoveMode) ? '2rem' : 0 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
                       {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
                     </div>
                     {!(annEditMode || annRemoveMode) && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
-                    {annEditMode && !ann._isBirthday && <button className="home-inline-action home-inline-edit" onClick={() => openEditAnn(ann)} title="Edit"><PencilIcon /></button>}
-                    {annRemoveMode && !ann._isBirthday && <button className="home-inline-action home-inline-remove" onClick={() => removeAnn(ann)} title="Remove"><XIcon /></button>}
+                    {annEditMode && !ann._isBirthday && (
+                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', alignSelf: 'center' }}><PencilIcon /></button>
+                    )}
+                    {annRemoveMode && !ann._isBirthday && (
+                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', alignSelf: 'center' }}><XIcon /></button>
+                    )}
                   </div>
                 ))}
               </div>

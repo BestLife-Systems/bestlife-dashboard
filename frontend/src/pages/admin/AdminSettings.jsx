@@ -400,6 +400,84 @@ export default function AdminSettings() {
         )}
       </div>
 
+      {/* ── API Connections ── */}
+      <div className="card" style={{ marginTop: '1.5rem' }}>
+        <h3 className="card-title">API Connections</h3>
+        <p className="card-description" style={{ marginBottom: '1rem' }}>
+          Connect external services to extend BestLife Hub's capabilities. API keys are stored securely in your backend environment.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {/* OpenAI / Claude */}
+          <div className="card" style={{ padding: '0.875rem 1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'linear-gradient(135deg, #10a37f, #1a7f64)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 0 1 10 10 10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2z" /><path d="M8 12h8M12 8v8" /></svg>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>AI Assistant (Betty)</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>OpenAI GPT or Anthropic Claude · Powers Ask Betty</div>
+                </div>
+              </div>
+              <span className="badge badge--muted">Not Connected</span>
+            </div>
+          </div>
+
+          {/* QuickBooks Online */}
+          <div className="card" style={{ padding: '0.875rem 1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'linear-gradient(135deg, #2ca01c, #1a8a0e)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>QB</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>QuickBooks Online</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Accounting & invoicing · Payroll sync</div>
+                </div>
+              </div>
+              <span className="badge badge--muted">Not Connected</span>
+            </div>
+          </div>
+
+          {/* Google Workspace */}
+          <div className="card" style={{ padding: '0.875rem 1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'linear-gradient(135deg, #4285f4, #3367d6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.9rem' }}>G</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>Google Workspace</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Calendar, Drive, Gmail · Team scheduling</div>
+                </div>
+              </div>
+              <span className="badge badge--muted">Not Connected</span>
+            </div>
+          </div>
+
+          {/* Meta / Facebook */}
+          <div className="card" style={{ padding: '0.875rem 1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'linear-gradient(135deg, #0668e1, #0553b8)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.85rem' }}>M</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>Meta Business</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Facebook & Instagram · Marketing & analytics</div>
+                </div>
+              </div>
+              <span className="badge badge--muted">Not Connected</span>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          💡 To connect a service, add the required API keys to your backend environment variables on Railway, then redeploy. Integration endpoints will be built as each service is connected.
+        </div>
+      </div>
+
       {/* ── TherapyNotes Upload ── */}
       <div className="card" style={{ marginTop: '1.5rem' }}>
         <h3 className="card-title">TherapyNotes Data Upload</h3>

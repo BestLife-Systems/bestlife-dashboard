@@ -38,7 +38,12 @@ export default function Layout({ children, tabs }) {
             </svg>
           </button>
           <div className="logo" onClick={() => navigate('/home')} style={{ cursor: 'pointer' }}>
-            <span className="logo-icon">✦</span>
+            <svg className="logo-icon-svg" width="24" height="24" viewBox="0 0 48 48" fill="none">
+              <circle cx="24" cy="24" r="22" fill="var(--accent)" />
+              <circle cx="17" cy="20" r="3" fill="#fff" />
+              <circle cx="31" cy="20" r="3" fill="#fff" />
+              <path d="M15 30c2 5 7 7 9 7s7-2 9-7" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" />
+            </svg>
             <span className="logo-text">BestLife Hub</span>
           </div>
         </div>

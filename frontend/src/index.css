@@ -117,8 +117,9 @@ a { color: var(--accent); text-decoration: none; }
 .topbar-left { display: flex; align-items: center; gap: 0.75rem; }
 .hamburger { display: none; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; }
 .logo { display: flex; align-items: center; gap: 0.5rem; }
-.logo-icon { color: var(--accent); font-size: 1.25rem; }
+.logo-icon-svg { flex-shrink: 0; }
 .logo-text { font-family: var(--font-display); font-size: 1.25rem; color: var(--text-bright); }
+.login-logo-svg { display: block; margin: 0 auto 0.75rem; }
 .topbar-right { display: flex; align-items: center; }
 
 /* User Menu */
