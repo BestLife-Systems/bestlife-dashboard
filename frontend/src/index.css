@@ -432,6 +432,37 @@ a { color: var(--accent); text-decoration: none; }
   color: #fff;
 }
 
+/* Flow-based inline edit/remove buttons (meetings & announcements) */
+.home-inline-action-flow {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+}
+.home-inline-edit-flow {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.home-inline-edit-flow:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.home-inline-remove-flow {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.home-inline-remove-flow:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
 /* Wins */
 .home-wins-feed {
   display: flex;

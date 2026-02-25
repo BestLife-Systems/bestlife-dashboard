@@ -50,6 +50,7 @@ const ADMIN_TABS = [
   { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
   { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
   { path: '/admin/users',          label: 'Users',            icon: <IconUsers /> },
+  { path: '/admin/task-templates', label: 'Task Management',  icon: <IconCheckSquare /> },
   { section: 'System' },
   { path: '/admin/settings',       label: 'Settings',         icon: <IconSettings /> },
 ]
