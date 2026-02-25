@@ -16,6 +16,21 @@ import AdminTaskTemplates from './pages/admin/AdminTaskTemplates'
 import AdminMeetings from './pages/admin/AdminMeetings'
 import AdminAnnouncements from './pages/admin/AdminAnnouncements'
 
+// New admin pages — Payroll sub-pages
+import PayPeriods from './pages/admin/PayPeriods'
+import ApprovalQueue from './pages/admin/ApprovalQueue'
+import ExportBatches from './pages/admin/ExportBatches'
+import RateCatalog from './pages/admin/RateCatalog'
+
+// New admin pages — Users sub-pages
+import UserPayRates from './pages/admin/UserPayRates'
+import ClinicalLeaderAssignment from './pages/admin/ClinicalLeaderAssignment'
+
+// New admin pages — Analytics sub-pages
+import HoursMargin from './pages/admin/HoursMargin'
+import PerformanceTracking from './pages/admin/PerformanceTracking'
+import SupervisionCompliance from './pages/admin/SupervisionCompliance'
+
 // Therapist pages
 import TherapistStats from './pages/therapist/TherapistStats'
 import TherapistInvoices from './pages/therapist/TherapistInvoices'
@@ -30,54 +45,68 @@ import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
 import MyWork from './pages/shared/MyWork'
 
+// Public pages (no auth required)
+import PublicInvoice from './pages/public/PublicInvoice'
+
 // Icons
 import {
   IconHome, IconCheckSquare, IconBrain, IconBarChart, IconDollar,
   IconUsers, IconCalendar, IconSettings, IconBriefcase, IconPalmTree,
-  IconUserCheck, IconClipboard, IconMegaphone,
+  IconUserCheck, IconClipboard, IconMegaphone, IconClock, IconTrendingUp,
+  IconShield, IconFileText, IconInbox, IconDownload, IconTag, IconCreditCard,
 } from './components/Icons'
 
 // ── Nav Tabs ──────────────────────────────────────────────────────
 // `section` items are rendered as labels/dividers, not links
-// `icon` is now a React element (SVG component)
+// `children` items render as collapsible sub-menu under a parent
+// `icon` is a React element (SVG component)
 
 const ADMIN_TABS = [
-  { path: '/home',                  label: 'Home',            icon: <IconHome /> },
-  { section: 'Workspace' },
-  { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
+  { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
   { section: 'Admin' },
-  { path: '/admin/analytics',      label: 'Analytics',        icon: <IconBarChart /> },
-  { path: '/admin/payroll',        label: 'Payroll',          icon: <IconDollar /> },
-  { path: '/admin/users',          label: 'Users',            icon: <IconUsers /> },
-  { path: '/admin/task-templates', label: 'Task Management',  icon: <IconCheckSquare /> },
-  { section: 'System' },
-  { path: '/admin/settings',       label: 'Settings',         icon: <IconSettings /> },
+  {
+    label: 'Analytics', icon: <IconBarChart />, children: [
+      { path: '/admin/analytics/hours-margin', label: 'Hours & Margin' },
+      { path: '/admin/analytics/performance', label: 'Performance Tracking' },
+      { path: '/admin/analytics/supervision', label: 'Supervision Compliance' },
+    ],
+  },
+  {
+    label: 'Payroll', icon: <IconDollar />, children: [
+      { path: '/admin/payroll/pay-periods', label: 'Pay Periods' },
+      { path: '/admin/payroll/approval-queue', label: 'Approval Queue' },
+      { path: '/admin/payroll/export-batches', label: 'Export Batches' },
+      { path: '/admin/payroll/rate-catalog', label: 'Rate Catalog' },
+    ],
+  },
+  {
+    label: 'Users', icon: <IconUsers />, children: [
+      { path: '/admin/users', label: 'All Users' },
+      { path: '/admin/users/pay-rates', label: 'Pay Rates' },
+      { path: '/admin/users/clinical-assignments', label: 'Clinical Leader Assignment' },
+    ],
+  },
 ]
 
 const THERAPIST_TABS = [
-  { path: '/home',                label: 'Home',            icon: <IconHome /> },
-  { section: 'My Practice' },
-  { path: '/therapist/stats',    label: 'My Stats',         icon: <IconBarChart /> },
-  { path: '/therapist/invoices', label: 'Invoices',          icon: <IconBriefcase /> },
-  { path: '/therapist/time-off', label: 'Time Off',          icon: <IconPalmTree /> },
-  { section: 'Workspace' },
-  { path: '/my-work',            label: 'My Work',           icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',     label: 'Knowledge Base',    icon: <IconBrain /> },
+  { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
 ]
 
 const CLINICAL_TABS = [
-  { path: '/home',                  label: 'Home',            icon: <IconHome /> },
-  { section: 'My Practice' },
-  { path: '/clinical/stats',       label: 'My Stats',         icon: <IconBarChart /> },
-  { path: '/clinical/invoices',    label: 'Invoices',         icon: <IconBriefcase /> },
-  { path: '/clinical/time-off',    label: 'Time Off',         icon: <IconPalmTree /> },
-  { section: 'Clinical' },
-  { path: '/clinical/supervisees', label: 'Supervisees',      icon: <IconUserCheck /> },
-  { path: '/clinical/supervision', label: 'Supervision',      icon: <IconClipboard /> },
-  { section: 'Workspace' },
-  { path: '/my-work',              label: 'My Work',          icon: <IconCheckSquare /> },
-  { path: '/knowledge-base',       label: 'Knowledge Base',   icon: <IconBrain /> },
+  { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+]
+
+const APN_TABS = [
+  { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+]
+
+const FRONT_DESK_TABS = [
+  { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
@@ -105,6 +134,8 @@ function RoleRouter() {
 function tabsForRole(role) {
   if (role === 'admin') return ADMIN_TABS
   if (role === 'clinical_leader') return CLINICAL_TABS
+  if (role === 'apn') return APN_TABS
+  if (role === 'front_desk') return FRONT_DESK_TABS
   return THERAPIST_TABS
 }
 
@@ -126,6 +157,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/invoice/:draftToken" element={<PublicInvoice />} />
 
           {/* Home redirect */}
           <Route path="/" element={
@@ -140,33 +172,73 @@ export default function App() {
               <SharedLayout><Home /></SharedLayout>
             </ProtectedRoute>
           } />
-          <Route path="/my-work" element={
-            <ProtectedRoute>
-              <SharedLayout><MyWork /></SharedLayout>
-            </ProtectedRoute>
-          } />
           <Route path="/knowledge-base" element={
             <ProtectedRoute>
               <SharedLayout><KnowledgeBase /></SharedLayout>
             </ProtectedRoute>
           } />
 
-          {/* ── Admin Routes ── */}
-          <Route path="/admin/analytics" element={
+          {/* ── Admin Routes — Analytics ── */}
+          <Route path="/admin/analytics/hours-margin" element={
             <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><AdminAnalytics /></Layout>
+              <Layout tabs={ADMIN_TABS}><HoursMargin /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/payroll" element={
+          <Route path="/admin/analytics/performance" element={
             <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><AdminPayroll /></Layout>
+              <Layout tabs={ADMIN_TABS}><PerformanceTracking /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/admin/analytics/supervision" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><SupervisionCompliance /></Layout>
+            </ProtectedRoute>
+          } />
+          {/* Legacy analytics redirect */}
+          <Route path="/admin/analytics" element={<Navigate to="/admin/analytics/hours-margin" replace />} />
+
+          {/* ── Admin Routes — Payroll ── */}
+          <Route path="/admin/payroll/pay-periods" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><PayPeriods /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/approval-queue" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><ApprovalQueue /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/export-batches" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><ExportBatches /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/payroll/rate-catalog" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><RateCatalog /></Layout>
+            </ProtectedRoute>
+          } />
+          {/* Legacy payroll redirect */}
+          <Route path="/admin/payroll" element={<Navigate to="/admin/payroll/pay-periods" replace />} />
+
+          {/* ── Admin Routes — Users ── */}
           <Route path="/admin/users" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><AdminUsers /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/admin/users/pay-rates" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><UserPayRates /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/users/clinical-assignments" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><ClinicalLeaderAssignment /></Layout>
+            </ProtectedRoute>
+          } />
+
+          {/* ── Admin Routes — Other ── */}
           <Route path="/admin/task-templates" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><AdminTaskTemplates /></Layout>
@@ -192,6 +264,9 @@ export default function App() {
           <Route path="/admin/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
           <Route path="/therapist/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
           <Route path="/clinical/knowledge-base" element={<Navigate to="/knowledge-base" replace />} />
+
+          {/* Legacy My Work → redirect to home */}
+          <Route path="/my-work" element={<Navigate to="/home" replace />} />
 
           {/* ── Therapist Routes ── */}
           <Route path="/therapist/stats" element={

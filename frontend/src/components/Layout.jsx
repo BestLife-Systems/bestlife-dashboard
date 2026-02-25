@@ -1,8 +1,47 @@
 import { useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../hooks/useTheme'
 import AskBetty from './AskBetty'
+
+function CollapsibleNav({ tab, onLinkClick }) {
+  const location = useLocation()
+  const isChildActive = tab.children?.some(c => location.pathname === c.path)
+  const [open, setOpen] = useState(isChildActive)
+
+  return (
+    <div className="sidebar-collapsible">
+      <button
+        className={`sidebar-link sidebar-link--parent ${isChildActive ? 'sidebar-link--active' : ''}`}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="sidebar-icon">{tab.icon}</span>
+        <span className="sidebar-label">{tab.label}</span>
+        <svg
+          className={`sidebar-chevron ${open ? 'sidebar-chevron--open' : ''}`}
+          width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="sidebar-children">
+          {tab.children.map(child => (
+            <NavLink
+              key={child.path}
+              to={child.path}
+              className={({ isActive }) => `sidebar-link sidebar-link--child ${isActive ? 'sidebar-link--active' : ''}`}
+              onClick={onLinkClick}
+            >
+              <span className="sidebar-label">{child.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Layout({ children, tabs }) {
   const { profile, signOut } = useAuth()
@@ -23,6 +62,7 @@ export default function Layout({ children, tabs }) {
     front_desk: 'Front Desk',
     ba: 'Billing Admin',
     medical_biller: 'Medical Biller',
+    apn: 'APN',
   }
 
   return (
@@ -119,6 +159,17 @@ export default function Layout({ children, tabs }) {
                 )
               }
 
+              // Collapsible parent with children
+              if (tab.children) {
+                return (
+                  <CollapsibleNav
+                    key={`parent-${tab.label}`}
+                    tab={tab}
+                    onLinkClick={() => setSidebarOpen(false)}
+                  />
+                )
+              }
+
               // Normal nav link
               return (
                 <NavLink
@@ -144,7 +195,8 @@ export default function Layout({ children, tabs }) {
         </main>
       </div>
 
-      {/* Ask Betty is now rendered inside individual pages (e.g. Home) */}
+      {/* Global Ask Betty bar — fixed bottom on all authenticated pages */}
+      <AskBetty />
     </div>
   )
 }

@@ -8,10 +8,25 @@ const ROLES = [
   { value: 'admin', label: 'Admin' },
   { value: 'clinical_leader', label: 'Clinical Leader' },
   { value: 'therapist', label: 'Therapist' },
+  { value: 'apn', label: 'APN' },
   { value: 'front_desk', label: 'Front Desk' },
   { value: 'ba', label: 'Billing Admin' },
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
+
+function formatPhone(val) {
+  const digits = val.replace(/\D/g, '')
+  if (digits.length <= 3) return digits
+  if (digits.length <= 6) return `(${digits.slice(0,3)}) ${digits.slice(3)}`
+  return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6,10)}`
+}
+
+function toE164(val) {
+  const digits = val.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return null
+}
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([])
@@ -21,6 +36,8 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const clinicalLeaders = users.filter(u => u.role === 'clinical_leader' && u.is_active)
 
   useEffect(() => { loadUsers() }, [])
 
@@ -67,6 +84,12 @@ export default function AdminUsers() {
     setError('')
     setSaving(true)
     try {
+      const phoneE164 = editUser.phone_number ? toE164(editUser.phone_number) : null
+      if (editUser.phone_number && !phoneE164) {
+        setError('Phone number must be 10 digits (US)')
+        setSaving(false)
+        return
+      }
       const { error: err } = await supabase
         .from('users')
         .update({
@@ -74,6 +97,10 @@ export default function AdminUsers() {
           last_name: editUser.last_name,
           email: editUser.email,
           role: editUser.role,
+          phone_number: phoneE164 || null,
+          sms_enabled: editUser.sms_enabled ?? true,
+          supervision_required: editUser.supervision_required ?? false,
+          clinical_supervisor_id: editUser.clinical_supervisor_id || null,
         })
         .eq('id', editUser.id)
 
@@ -121,6 +148,7 @@ export default function AdminUsers() {
                 <tr>
                   <th>Name</th>
                   <th>Email</th>
+                  <th>Phone</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th></th>
@@ -131,6 +159,7 @@ export default function AdminUsers() {
                   <tr key={u.id} className="data-table-row">
                     <td className="data-table-primary">{u.first_name} {u.last_name}</td>
                     <td>{u.email}</td>
+                    <td>{u.phone_number || '—'}</td>
                     <td>{ROLES.find(r => r.value === u.role)?.label || u.role}</td>
                     <td><StatusBadge status={u.is_active ? 'active' : 'inactive'} /></td>
                     <td>
@@ -232,6 +261,50 @@ export default function AdminUsers() {
                 {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
             </div>
+            <div className="form-field" style={{ marginTop: '0.75rem' }}>
+              <label>Phone Number</label>
+              <input
+                type="tel"
+                placeholder="(555) 123-4567"
+                value={editUser.phone_number ? formatPhone(editUser.phone_number.replace('+1', '')) : ''}
+                onChange={e => {
+                  const digits = e.target.value.replace(/\D/g, '').slice(0, 10)
+                  setEditUser({ ...editUser, phone_number: digits })
+                }}
+              />
+            </div>
+            <div className="form-row" style={{ marginTop: '0.75rem', gap: '1.5rem' }}>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={editUser.sms_enabled ?? true}
+                  onChange={e => setEditUser({ ...editUser, sms_enabled: e.target.checked })}
+                />
+                SMS Enabled
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={editUser.supervision_required ?? false}
+                  onChange={e => setEditUser({ ...editUser, supervision_required: e.target.checked })}
+                />
+                Supervision Required
+              </label>
+            </div>
+            {editUser.supervision_required && (
+              <div className="form-field" style={{ marginTop: '0.75rem' }}>
+                <label>Clinical Supervisor</label>
+                <select
+                  value={editUser.clinical_supervisor_id || ''}
+                  onChange={e => setEditUser({ ...editUser, clinical_supervisor_id: e.target.value || null })}
+                >
+                  <option value="">— None —</option>
+                  {clinicalLeaders.map(cl => (
+                    <option key={cl.id} value={cl.id}>{cl.first_name} {cl.last_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="modal-actions">
               <button type="button" className="btn btn--ghost" onClick={() => setEditUser(null)}>Cancel</button>
               <button type="submit" className="btn btn--primary" disabled={saving}>

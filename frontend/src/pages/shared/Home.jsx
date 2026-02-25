@@ -7,7 +7,6 @@ import { fetchMeetingInstances, deleteMeetingInstance } from '../../lib/meetings
 import { fetchAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../lib/announcementsApi'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
-import AskBetty from '../../components/AskBetty'
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -317,8 +316,6 @@ export default function Home() {
 
   return (
     <div>
-      <AskBetty />
-
       {/* ── Header ── */}
       <div className="page-header">
         <div>

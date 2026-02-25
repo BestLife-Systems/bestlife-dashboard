@@ -1110,6 +1110,955 @@ async def delete_announcement(announcement_id: str, admin=Depends(require_admin)
     return {"status": "deleted", "id": announcement_id}
 
 
+# ── Admin: List Users ──────────────────────────────────────────────
+
+@app.get("/api/admin/users")
+async def list_users(admin=Depends(require_admin)):
+    """Admin: list all users."""
+    users = await sb_request("GET", "users", params={
+        "select": "*",
+        "order": "last_name.asc",
+    })
+    return users or []
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PAYROLL SYSTEM
+# ═══════════════════════════════════════════════════════════════════
+
+# ── Twilio Config ──────────────────────────────────────────────────
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_MESSAGING_SERVICE_SID = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")
+
+twilio_client = None
+
+@app.on_event("startup")
+async def init_twilio():
+    global twilio_client
+    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+        try:
+            from twilio.rest import Client
+            twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+            logger.info("Twilio client initialized")
+        except ImportError:
+            logger.warning("twilio package not installed — SMS disabled")
+        except Exception as e:
+            logger.warning(f"Twilio init failed: {e}")
+    else:
+        logger.info("Twilio credentials not configured — SMS disabled")
+
+
+def send_sms(to_number: str, body: str):
+    """Send SMS via Twilio Messaging Service."""
+    if not twilio_client or not TWILIO_MESSAGING_SERVICE_SID:
+        logger.info(f"SMS skipped (no Twilio): {to_number}")
+        return None
+    try:
+        msg = twilio_client.messages.create(
+            messaging_service_sid=TWILIO_MESSAGING_SERVICE_SID,
+            to=to_number,
+            body=body,
+        )
+        logger.info(f"SMS sent to {to_number}: {msg.sid}")
+        return msg.sid
+    except Exception as e:
+        logger.error(f"SMS send failed: {e}")
+        return None
+
+
+# ── Rate Catalog ───────────────────────────────────────────────────
+
+@app.get("/api/payroll/rate-catalog")
+async def get_rate_catalog(user=Depends(verify_token)):
+    """Get all rate types and bill rate defaults."""
+    rate_types = await sb_request("GET", "rate_types", params={
+        "select": "*",
+        "is_active": "eq.true",
+        "order": "sort_order.asc",
+    })
+    bill_defaults = await sb_request("GET", "bill_rate_defaults", params={
+        "select": "*",
+    })
+    return {
+        "rate_types": rate_types or [],
+        "bill_rate_defaults": bill_defaults or [],
+    }
+
+
+class RateTypeRequest(BaseModel):
+    name: str
+    unit: str = "hourly"
+    default_duration_minutes: Optional[int] = None
+    default_bill_rate: Optional[float] = None
+
+
+@app.post("/api/payroll/rate-types")
+async def create_rate_type(req: RateTypeRequest, admin=Depends(require_admin)):
+    """Admin: create a new rate type."""
+    result = await sb_request("POST", "rate_types", data={
+        "name": req.name,
+        "unit": req.unit,
+        "default_duration_minutes": req.default_duration_minutes,
+    })
+    if req.default_bill_rate and result:
+        rt_id = result[0]["id"] if isinstance(result, list) else result["id"]
+        await sb_request("POST", "bill_rate_defaults", data={
+            "rate_type_id": rt_id,
+            "default_bill_rate": req.default_bill_rate,
+        })
+    return result
+
+
+@app.patch("/api/payroll/rate-types/{rate_type_id}")
+async def update_rate_type(rate_type_id: str, req: RateTypeRequest, admin=Depends(require_admin)):
+    """Admin: update a rate type."""
+    await sb_request("PATCH", f"rate_types?id=eq.{rate_type_id}", data={
+        "name": req.name,
+        "unit": req.unit,
+        "default_duration_minutes": req.default_duration_minutes,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    if req.default_bill_rate is not None:
+        existing = await sb_request("GET", "bill_rate_defaults", params={
+            "rate_type_id": f"eq.{rate_type_id}",
+        })
+        if existing:
+            await sb_request("PATCH", f"bill_rate_defaults?rate_type_id=eq.{rate_type_id}", data={
+                "default_bill_rate": req.default_bill_rate,
+            })
+        else:
+            await sb_request("POST", "bill_rate_defaults", data={
+                "rate_type_id": rate_type_id,
+                "default_bill_rate": req.default_bill_rate,
+            })
+    return {"status": "updated"}
+
+
+# ── User Pay Rates ─────────────────────────────────────────────────
+
+@app.get("/api/payroll/user-pay-rates")
+async def get_all_user_pay_rates(admin=Depends(require_admin)):
+    """Admin: get all user pay rates."""
+    return await sb_request("GET", "user_pay_rates", params={"select": "*"}) or []
+
+
+class UserPayRatesRequest(BaseModel):
+    rates: List[dict]
+
+
+@app.post("/api/payroll/user-pay-rates/{user_id}")
+async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depends(require_admin)):
+    """Admin: set pay rates for a user (upsert)."""
+    # Delete existing rates for this user
+    try:
+        await sb_request("DELETE", f"user_pay_rates?user_id=eq.{user_id}")
+    except Exception:
+        pass
+
+    # Insert new rates
+    for rate in req.rates:
+        await sb_request("POST", "user_pay_rates", data={
+            "user_id": user_id,
+            "rate_type_id": rate["rate_type_id"],
+            "pay_rate": rate["pay_rate"],
+        })
+
+    return {"status": "saved", "count": len(req.rates)}
+
+
+# ── Pay Periods ────────────────────────────────────────────────────
+
+@app.get("/api/payroll/pay-periods")
+async def get_pay_periods(admin=Depends(require_admin)):
+    """Admin: list all pay periods with recipient counts."""
+    periods = await sb_request("GET", "pay_periods", params={
+        "select": "*",
+        "order": "start_date.desc",
+    })
+    if not periods:
+        return []
+
+    # Enrich with recipient counts
+    for p in periods:
+        recipients = await sb_request("GET", "pay_period_recipients", params={
+            "pay_period_id": f"eq.{p['id']}",
+            "select": "id,status",
+        })
+        p["recipient_count"] = len(recipients) if recipients else 0
+        p["received_count"] = len([r for r in (recipients or []) if r["status"] in ("received", "approved", "exported")])
+
+    return periods
+
+
+class PayPeriodCreateRequest(BaseModel):
+    period_type: str  # 'first_half' or 'second_half'
+
+
+@app.post("/api/payroll/pay-periods")
+async def create_pay_period(req: PayPeriodCreateRequest, admin=Depends(require_admin)):
+    """Admin: create a new pay period."""
+    today = date.today()
+
+    if req.period_type == "first_half":
+        start = date(today.year, today.month, 1)
+        end = date(today.year, today.month, 15)
+        due = end
+    else:
+        start = date(today.year, today.month, 16)
+        _, last_day = calendar.monthrange(today.year, today.month)
+        end = date(today.year, today.month, last_day)
+        due = end
+
+    label = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+
+    result = await sb_request("POST", "pay_periods", data={
+        "period_type": req.period_type,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "due_date": due.isoformat(),
+        "status": "draft",
+        "label": label,
+        "created_by": admin["id"],
+    })
+
+    return result
+
+
+@app.post("/api/payroll/pay-periods/{period_id}/open")
+async def open_pay_period(period_id: str, admin=Depends(require_admin)):
+    """
+    Admin: open a pay period.
+    - Auto-generates recipient list from active users
+    - Sends initial email + SMS notifications
+    """
+    # Get the period
+    periods = await sb_request("GET", "pay_periods", params={
+        "id": f"eq.{period_id}",
+        "select": "*",
+    })
+    if not periods:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    period = periods[0]
+
+    if period["status"] != "draft":
+        raise HTTPException(status_code=400, detail="Can only open draft periods")
+
+    # Get active users (therapists, clinical_leaders, apn — not admin, front_desk)
+    users = await sb_request("GET", "users", params={
+        "is_active": "eq.true",
+        "select": "id,first_name,last_name,email,phone_number,sms_enabled,role",
+    })
+
+    payroll_roles = {"therapist", "clinical_leader", "apn"}
+    eligible = [u for u in (users or []) if u.get("role") in payroll_roles]
+
+    # Create recipients
+    created = 0
+    for user in eligible:
+        try:
+            recipient = await sb_request("POST", "pay_period_recipients", data={
+                "pay_period_id": period_id,
+                "user_id": user["id"],
+                "status": "sent",
+            })
+            created += 1
+
+            # Send notification
+            name = user.get("first_name", "")
+            msg = f"Hi {name}! Your BestLife invoice for {period['label']} is now open. Please submit by {period['due_date']}."
+
+            # SMS
+            if user.get("phone_number") and user.get("sms_enabled"):
+                sid = send_sms(user["phone_number"], msg)
+                if recipient and sid:
+                    rid = recipient[0]["id"] if isinstance(recipient, list) else recipient["id"]
+                    await sb_request("POST", "reminder_log", data={
+                        "recipient_id": rid,
+                        "channel": "sms",
+                        "status": "sent",
+                    })
+
+        except Exception as e:
+            logger.warning(f"Failed to create recipient for {user['id']}: {e}")
+
+    # Update period status
+    await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
+        "status": "open",
+        "opened_at": datetime.utcnow().isoformat(),
+    })
+
+    # Audit log
+    await sb_request("POST", "audit_log", data={
+        "action": "pay_period_opened",
+        "entity_type": "pay_period",
+        "entity_id": period_id,
+        "user_id": admin["id"],
+        "details": {"recipients_created": created},
+    })
+
+    return {"status": "opened", "recipients_created": created}
+
+
+@app.post("/api/payroll/pay-periods/{period_id}/close")
+async def close_pay_period(period_id: str, admin=Depends(require_admin)):
+    """Admin: close a pay period."""
+    await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
+        "status": "closed",
+        "closed_at": datetime.utcnow().isoformat(),
+    })
+    return {"status": "closed"}
+
+
+# ── Approval Queue ─────────────────────────────────────────────────
+
+@app.get("/api/payroll/approval-queue")
+async def get_approval_queue(status: str = "received", admin=Depends(require_admin)):
+    """Admin: get recipients filtered by status."""
+    params = {
+        "select": "*, users(first_name, last_name, role), pay_periods(start_date, end_date, label)",
+        "order": "updated_at.desc",
+    }
+    if status != "all":
+        params["status"] = f"eq.{status}"
+
+    recipients = await sb_request("GET", "pay_period_recipients", params=params)
+
+    result = []
+    for r in (recipients or []):
+        user = r.pop("users", {}) or {}
+        period = r.pop("pay_periods", {}) or {}
+        r["first_name"] = user.get("first_name", "")
+        r["last_name"] = user.get("last_name", "")
+        r["user_name"] = f"{r['first_name']} {r['last_name']}".strip()
+        r["period_start"] = period.get("start_date")
+        r["period_end"] = period.get("end_date")
+        r["period_label"] = period.get("label")
+        result.append(r)
+
+    return result
+
+
+class ApproveRequest(BaseModel):
+    overrides: Optional[dict] = None
+
+class RejectRequest(BaseModel):
+    reason: str
+
+class ZeroHoursRequest(BaseModel):
+    reason: str
+
+
+@app.post("/api/payroll/recipients/{recipient_id}/approve")
+async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depends(require_admin)):
+    """
+    Admin: approve a submission.
+    - Writes immutable time_entries from invoice_data
+    - Calculates est_bill and est_pay using rate tables
+    - Updates rollups
+    """
+    # Get recipient
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "id": f"eq.{recipient_id}",
+        "select": "*",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    recipient = recipients[0]
+
+    if recipient["status"] not in ("received",):
+        raise HTTPException(status_code=400, detail="Can only approve received submissions")
+
+    invoice_data = recipient.get("invoice_data") or {}
+    user_id = recipient["user_id"]
+    period_id = recipient["pay_period_id"]
+
+    # Get user's pay rates
+    pay_rates = await sb_request("GET", "user_pay_rates", params={
+        "user_id": f"eq.{user_id}",
+        "select": "*, rate_types(name, unit)",
+    })
+    pay_rate_map = {}
+    for pr in (pay_rates or []):
+        rt = pr.get("rate_types") or {}
+        pay_rate_map[rt.get("name", "")] = {
+            "rate_type_id": pr["rate_type_id"],
+            "pay_rate": float(pr["pay_rate"]),
+            "unit": rt.get("unit", "hourly"),
+        }
+
+    # Get bill rate defaults
+    bill_defaults = await sb_request("GET", "bill_rate_defaults", params={
+        "select": "*, rate_types(name)",
+    })
+    bill_rate_map = {}
+    for bd in (bill_defaults or []):
+        rt = bd.get("rate_types") or {}
+        bill_rate_map[rt.get("name", "")] = float(bd["default_bill_rate"])
+
+    # Write time entries from invoice_data
+    total_bill = 0.0
+    total_pay = 0.0
+    total_hours = 0.0
+    total_sessions = 0
+
+    # invoice_data format: { "rate_type_name": { quantity, duration_minutes?, client_initials?, notes? }, ... }
+    # or simple: { "rate_type_name": quantity_number }
+    for rate_name, entry_data in invoice_data.items():
+        if rate_name in ("notes", "op_sessions"):
+            continue
+
+        rate_info = pay_rate_map.get(rate_name, {})
+        rate_type_id = rate_info.get("rate_type_id")
+        pay_rate = rate_info.get("pay_rate", 0)
+        bill_rate = bill_rate_map.get(rate_name, 0)
+        unit = rate_info.get("unit", "hourly")
+
+        if isinstance(entry_data, dict):
+            qty = float(entry_data.get("quantity", 0))
+            duration = entry_data.get("duration_minutes")
+            initials = entry_data.get("client_initials")
+            notes = entry_data.get("notes")
+        else:
+            qty = float(entry_data) if entry_data else 0
+            duration = None
+            initials = None
+            notes = None
+
+        if qty == 0:
+            continue
+
+        # Apply admin overrides
+        override_data = req.overrides or {}
+        o_bill = override_data.get(f"{rate_name}_bill")
+        o_pay = override_data.get(f"{rate_name}_pay")
+
+        est_bill = float(o_bill) if o_bill is not None else (bill_rate * qty)
+        est_pay = float(o_pay) if o_pay is not None else (pay_rate * qty)
+
+        if rate_type_id:
+            await sb_request("POST", "time_entries", data={
+                "recipient_id": recipient_id,
+                "user_id": user_id,
+                "pay_period_id": period_id,
+                "rate_type_id": rate_type_id,
+                "quantity": qty,
+                "duration_minutes": duration,
+                "client_initials": initials,
+                "est_bill_amount": round(est_bill, 2),
+                "est_pay_amount": round(est_pay, 2),
+                "admin_bill_override": round(float(o_bill), 2) if o_bill is not None else None,
+                "admin_pay_override": round(float(o_pay), 2) if o_pay is not None else None,
+                "notes": notes,
+                "locked": True,
+            })
+
+        total_bill += est_bill
+        total_pay += est_pay
+
+        if unit == "hourly":
+            total_hours += qty
+        else:
+            total_sessions += int(qty)
+
+    # Update recipient status
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "status": "approved",
+        "approved_at": datetime.utcnow().isoformat(),
+        "approved_by": admin["id"],
+        "admin_override_data": req.overrides,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+    # Update/Insert rollup_pay_period
+    existing_rollup = await sb_request("GET", "rollup_pay_period", params={
+        "pay_period_id": f"eq.{period_id}",
+        "user_id": f"eq.{user_id}",
+    })
+    rollup_data = {
+        "pay_period_id": period_id,
+        "user_id": user_id,
+        "total_hours": round(total_hours, 2),
+        "total_sessions": total_sessions,
+        "est_bill_total": round(total_bill, 2),
+        "est_pay_total": round(total_pay, 2),
+        "margin": round(total_bill - total_pay, 2),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    if existing_rollup:
+        await sb_request("PATCH", f"rollup_pay_period?pay_period_id=eq.{period_id}&user_id=eq.{user_id}", data=rollup_data)
+    else:
+        await sb_request("POST", "rollup_pay_period", data=rollup_data)
+
+    # Update rollup_monthly based on service_date month
+    # For simplicity, use the pay period's start_date month
+    period_data = await sb_request("GET", "pay_periods", params={"id": f"eq.{period_id}", "select": "start_date"})
+    if period_data:
+        month_year = period_data[0]["start_date"][:7]  # 'YYYY-MM'
+        existing_monthly = await sb_request("GET", "rollup_monthly", params={
+            "user_id": f"eq.{user_id}",
+            "month_year": f"eq.{month_year}",
+        })
+        monthly_data = {
+            "user_id": user_id,
+            "month_year": month_year,
+            "total_hours": round(total_hours, 2),
+            "total_sessions": total_sessions,
+            "est_bill_total": round(total_bill, 2),
+            "est_pay_total": round(total_pay, 2),
+            "margin": round(total_bill - total_pay, 2),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        if existing_monthly:
+            # Accumulate
+            old = existing_monthly[0]
+            monthly_data["total_hours"] = round(float(old.get("total_hours", 0)) + total_hours, 2)
+            monthly_data["total_sessions"] = int(old.get("total_sessions", 0)) + total_sessions
+            monthly_data["est_bill_total"] = round(float(old.get("est_bill_total", 0)) + total_bill, 2)
+            monthly_data["est_pay_total"] = round(float(old.get("est_pay_total", 0)) + total_pay, 2)
+            monthly_data["margin"] = round(monthly_data["est_bill_total"] - monthly_data["est_pay_total"], 2)
+            await sb_request("PATCH", f"rollup_monthly?user_id=eq.{user_id}&month_year=eq.{month_year}", data=monthly_data)
+        else:
+            await sb_request("POST", "rollup_monthly", data=monthly_data)
+
+    # Audit log
+    await sb_request("POST", "audit_log", data={
+        "action": "recipient_approved",
+        "entity_type": "pay_period_recipient",
+        "entity_id": recipient_id,
+        "user_id": admin["id"],
+        "details": {"total_bill": round(total_bill, 2), "total_pay": round(total_pay, 2)},
+    })
+
+    return {"status": "approved", "total_bill": round(total_bill, 2), "total_pay": round(total_pay, 2)}
+
+
+@app.post("/api/payroll/recipients/{recipient_id}/reject")
+async def reject_recipient(recipient_id: str, req: RejectRequest, admin=Depends(require_admin)):
+    """Admin: reject a submission."""
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "status": "rejected",
+        "rejection_reason": req.reason,
+        "approved_by": admin["id"],
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    return {"status": "rejected"}
+
+
+@app.post("/api/payroll/recipients/{recipient_id}/zero-hours")
+async def zero_hours_recipient(recipient_id: str, req: ZeroHoursRequest, admin=Depends(require_admin)):
+    """Admin: mark as zero hours with reason."""
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "status": "zero_hours",
+        "zero_hours_reason": req.reason,
+        "approved_by": admin["id"],
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    return {"status": "zero_hours"}
+
+
+# ── Export Batches ─────────────────────────────────────────────────
+
+@app.get("/api/payroll/export-batches")
+async def get_export_batches(admin=Depends(require_admin)):
+    """Admin: list all export batches + count of exportable."""
+    batches = await sb_request("GET", "export_batches", params={
+        "select": "*",
+        "order": "created_at.desc",
+    })
+    # Count approved (not yet exported)
+    approved = await sb_request("GET", "pay_period_recipients", params={
+        "status": "eq.approved",
+        "select": "id",
+    })
+    return {
+        "batches": batches or [],
+        "exportable_count": len(approved) if approved else 0,
+    }
+
+
+@app.post("/api/payroll/export-batches/generate")
+async def generate_export_batch(admin=Depends(require_admin)):
+    """
+    Admin: generate an export batch from all approved (not yet exported) recipients.
+    Prevents double export.
+    """
+    # Get all approved recipients
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "status": "eq.approved",
+        "select": "*, users(first_name, last_name, email), pay_periods(start_date, end_date, label)",
+    })
+
+    if not recipients:
+        raise HTTPException(status_code=400, detail="No approved recipients to export")
+
+    # Build CSV
+    csv_lines = ["Name,Email,Pay Period,Total Hours,Est Bill,Est Pay,Margin"]
+    total_pay = 0.0
+    recipient_ids = []
+
+    for r in recipients:
+        user = r.get("users") or {}
+        period = r.get("pay_periods") or {}
+        name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+        email = user.get("email", "")
+        period_label = period.get("label", f"{period.get('start_date', '')} - {period.get('end_date', '')}")
+
+        # Get rollup for this recipient
+        rollup = await sb_request("GET", "rollup_pay_period", params={
+            "pay_period_id": f"eq.{r['pay_period_id']}",
+            "user_id": f"eq.{r['user_id']}",
+            "select": "*",
+        })
+        rp = rollup[0] if rollup else {}
+
+        hours = rp.get("total_hours", 0)
+        bill = rp.get("est_bill_total", 0)
+        pay = rp.get("est_pay_total", 0)
+        margin = rp.get("margin", 0)
+
+        csv_lines.append(f"{name},{email},{period_label},{hours},{bill},{pay},{margin}")
+        total_pay += float(pay)
+        recipient_ids.append(r["id"])
+
+    csv_text = "\n".join(csv_lines)
+    filename = f"payroll-export-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+
+    # Create batch record
+    batch = await sb_request("POST", "export_batches", data={
+        "record_count": len(recipient_ids),
+        "total_pay": round(total_pay, 2),
+        "csv_text": csv_text,
+        "exported_by": admin["id"],
+        "label": filename,
+    })
+
+    # Mark recipients as exported
+    for rid in recipient_ids:
+        await sb_request("PATCH", f"pay_period_recipients?id=eq.{rid}", data={
+            "status": "exported",
+            "updated_at": datetime.utcnow().isoformat(),
+        })
+
+    # Audit log
+    await sb_request("POST", "audit_log", data={
+        "action": "export_batch_created",
+        "entity_type": "export_batch",
+        "entity_id": batch[0]["id"] if isinstance(batch, list) else batch.get("id"),
+        "user_id": admin["id"],
+        "details": {"record_count": len(recipient_ids), "total_pay": round(total_pay, 2)},
+    })
+
+    return {"status": "exported", "csv_text": csv_text, "filename": filename, "record_count": len(recipient_ids)}
+
+
+@app.get("/api/payroll/export-batches/{batch_id}/download")
+async def download_export_batch(batch_id: str, admin=Depends(require_admin)):
+    """Admin: download a previously generated batch."""
+    batches = await sb_request("GET", "export_batches", params={
+        "id": f"eq.{batch_id}",
+        "select": "*",
+    })
+    if not batches:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    b = batches[0]
+    return {"csv_text": b.get("csv_text", ""), "filename": b.get("label", "export.csv")}
+
+
+# ── Public Invoice Flow (no auth required) ─────────────────────────
+
+@app.get("/api/public/invoice/{draft_token}")
+async def get_public_invoice(draft_token: str):
+    """
+    Public: get invoice form for a recipient via draft token.
+    Returns rate types and any existing draft data.
+    """
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "draft_token": f"eq.{draft_token}",
+        "select": "*, users(first_name, last_name), pay_periods(start_date, end_date, label, due_date, status)",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Invoice link not found or expired")
+
+    r = recipients[0]
+    period = r.get("pay_periods") or {}
+
+    if period.get("status") != "open":
+        raise HTTPException(status_code=400, detail="This pay period is no longer accepting submissions")
+
+    if r["status"] in ("received", "approved", "exported"):
+        return {"already_submitted": True, "submitted_at": r.get("submitted_at")}
+
+    # Get rate types
+    rate_types = await sb_request("GET", "rate_types", params={
+        "is_active": "eq.true",
+        "select": "*",
+        "order": "sort_order.asc",
+    })
+
+    user = r.get("users") or {}
+    return {
+        "recipient_id": r["id"],
+        "user_name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+        "period_label": period.get("label", ""),
+        "due_date": period.get("due_date"),
+        "draft_data": r.get("invoice_data"),
+        "submit_token": r.get("submit_token"),
+        "rate_types": rate_types or [],
+    }
+
+
+class DraftSaveRequest(BaseModel):
+    invoice_data: dict
+
+
+@app.post("/api/public/invoice/{draft_token}/save-draft")
+async def save_draft(draft_token: str, req: DraftSaveRequest):
+    """Public: save draft invoice data."""
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "draft_token": f"eq.{draft_token}",
+        "select": "id,status",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    r = recipients[0]
+    if r["status"] in ("received", "approved", "exported"):
+        raise HTTPException(status_code=400, detail="Already submitted")
+
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{r['id']}", data={
+        "invoice_data": req.invoice_data,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+    return {"status": "draft_saved"}
+
+
+class SubmitRequest(BaseModel):
+    submit_token: str
+    invoice_data: dict
+
+
+@app.post("/api/public/invoice/{draft_token}/submit")
+async def submit_invoice(draft_token: str, req: SubmitRequest):
+    """
+    Public: submit the invoice (single submit only).
+    Validates submit_token, saves final invoice_data, marks as received.
+    """
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "draft_token": f"eq.{draft_token}",
+        "select": "id,status,submit_token",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    r = recipients[0]
+    if r["status"] in ("received", "approved", "exported"):
+        raise HTTPException(status_code=400, detail="Already submitted — single submit only")
+
+    if str(r.get("submit_token")) != req.submit_token:
+        raise HTTPException(status_code=403, detail="Invalid submit token")
+
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{r['id']}", data={
+        "invoice_data": req.invoice_data,
+        "status": "received",
+        "submitted_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+    return {"status": "submitted"}
+
+
+# ── Reminders ──────────────────────────────────────────────────────
+
+@app.post("/api/payroll/send-reminders")
+async def send_reminders(admin=Depends(require_admin)):
+    """
+    Admin: send reminders for open pay periods.
+    Cadence: on open, day 3, day before due, morning of due.
+    Only sends if status is 'sent' (not yet received).
+    """
+    # Get open periods
+    periods = await sb_request("GET", "pay_periods", params={
+        "status": "eq.open",
+        "select": "*",
+    })
+
+    if not periods:
+        return {"status": "no_open_periods", "sent": 0}
+
+    sent_count = 0
+    today = date.today()
+
+    for period in periods:
+        due = date.fromisoformat(period["due_date"])
+        opened = period.get("opened_at")
+        if opened:
+            opened_date = datetime.fromisoformat(opened.replace("Z", "+00:00")).date()
+        else:
+            opened_date = today
+
+        days_since_open = (today - opened_date).days
+        days_until_due = (due - today).days
+
+        # Check if today is a reminder day
+        should_send = (
+            days_since_open == 3 or
+            days_until_due == 1 or
+            days_until_due == 0
+        )
+
+        if not should_send:
+            continue
+
+        # Get recipients who haven't submitted
+        recipients = await sb_request("GET", "pay_period_recipients", params={
+            "pay_period_id": f"eq.{period['id']}",
+            "status": "eq.sent",
+            "select": "*, users(first_name, phone_number, sms_enabled)",
+        })
+
+        for r in (recipients or []):
+            user = r.get("users") or {}
+            name = user.get("first_name", "")
+            phone = user.get("phone_number")
+            sms_ok = user.get("sms_enabled", False)
+
+            if phone and sms_ok:
+                if days_until_due == 0:
+                    msg = f"Hi {name} — your BestLife invoice for {period['label']} is due TODAY! Please submit ASAP."
+                elif days_until_due == 1:
+                    msg = f"Hi {name} — reminder: your BestLife invoice for {period['label']} is due tomorrow."
+                else:
+                    msg = f"Hi {name} — friendly reminder to submit your BestLife invoice for {period['label']} (due {period['due_date']})."
+
+                sid = send_sms(phone, msg)
+                if sid:
+                    await sb_request("POST", "reminder_log", data={
+                        "recipient_id": r["id"],
+                        "channel": "sms",
+                        "status": "sent",
+                    })
+                    await sb_request("PATCH", f"pay_period_recipients?id=eq.{r['id']}", data={
+                        "reminder_count": (r.get("reminder_count") or 0) + 1,
+                        "last_reminder_at": datetime.utcnow().isoformat(),
+                    })
+                    sent_count += 1
+
+    return {"status": "ok", "sent": sent_count}
+
+
+# ── Analytics (Rollup-Based) ───────────────────────────────────────
+
+@app.get("/api/analytics/hours-margin")
+async def analytics_hours_margin(view: str = "pay_period", user=Depends(verify_token)):
+    """Analytics: Hours & Margin from rollups."""
+    if view == "monthly":
+        rollups = await sb_request("GET", "rollup_monthly", params={
+            "select": "*, users(first_name, last_name)",
+            "order": "month_year.desc",
+        })
+    else:
+        rollups = await sb_request("GET", "rollup_pay_period", params={
+            "select": "*, users(first_name, last_name), pay_periods(label)",
+            "order": "updated_at.desc",
+        })
+
+    rows = []
+    for r in (rollups or []):
+        u = r.get("users") or {}
+        rows.append({
+            "user_name": f"{u.get('first_name', '')} {u.get('last_name', '')}".strip(),
+            "total_hours": float(r.get("total_hours", 0)),
+            "est_bill": float(r.get("est_bill_total", 0)),
+            "est_pay": float(r.get("est_pay_total", 0)),
+            "margin": float(r.get("margin", 0)),
+            "period": r.get("pay_periods", {}).get("label") if view != "monthly" else r.get("month_year"),
+        })
+
+    return {"rows": rows}
+
+
+@app.get("/api/analytics/performance")
+async def analytics_performance(user=Depends(verify_token)):
+    """Analytics: Performance tracking with threshold flags."""
+    rollups = await sb_request("GET", "rollup_monthly", params={
+        "select": "*, users(first_name, last_name, role)",
+        "order": "user_id.asc",
+    })
+
+    # Aggregate by user
+    user_hours = {}
+    for r in (rollups or []):
+        uid = r["user_id"]
+        u = r.get("users") or {}
+        if uid not in user_hours:
+            user_hours[uid] = {
+                "user_name": f"{u.get('first_name', '')} {u.get('last_name', '')}".strip(),
+                "role": u.get("role", ""),
+                "total_hours": 0,
+                "months": 0,
+            }
+        user_hours[uid]["total_hours"] += float(r.get("total_hours", 0))
+        user_hours[uid]["months"] += 1
+
+    result = []
+    for uid, data in user_hours.items():
+        weeks = max(data["months"] * 4.33, 1)
+        avg_weekly = data["total_hours"] / weeks
+        result.append({
+            "user_name": data["user_name"],
+            "role": data["role"],
+            "avg_weekly_hours": round(avg_weekly, 1),
+            "client_count": None,
+        })
+
+    return result
+
+
+@app.get("/api/analytics/supervision-compliance")
+async def analytics_supervision(user=Depends(verify_token)):
+    """Analytics: Supervision compliance for clinical leaders."""
+    profile = user
+    role = profile.get("role")
+
+    # Get users who require supervision
+    params = {
+        "supervision_required": "eq.true",
+        "select": "id, first_name, last_name, clinical_supervisor_id",
+    }
+
+    # Scope: admin sees all, clinical_leader sees own supervisees, others see self
+    if role == "clinical_leader":
+        params["clinical_supervisor_id"] = f"eq.{profile['id']}"
+    elif role != "admin":
+        params["id"] = f"eq.{profile['id']}"
+
+    supervisees = await sb_request("GET", "users", params=params)
+
+    result = []
+    for s in (supervisees or []):
+        # Get supervisor name
+        sup_name = "—"
+        if s.get("clinical_supervisor_id"):
+            sups = await sb_request("GET", "users", params={
+                "id": f"eq.{s['clinical_supervisor_id']}",
+                "select": "first_name,last_name",
+            })
+            if sups:
+                sup_name = f"{sups[0]['first_name']} {sups[0]['last_name']}"
+
+        result.append({
+            "supervisee_name": f"{s['first_name']} {s['last_name']}",
+            "supervisor_name": sup_name,
+            "sessions_required": None,
+            "sessions_completed": 0,
+            "compliant": s.get("clinical_supervisor_id") is not None,
+        })
+
+    return result
+
+
 # ── Static File Serving (Production) ────────────────────────────
 
 # Mount the built frontend in production

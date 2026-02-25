@@ -96,6 +96,8 @@ export function AuthProvider({ children }) {
     isAdmin: profile?.role === 'admin',
     isClinicalLeader: profile?.role === 'clinical_leader',
     isTherapist: profile?.role === 'therapist',
+    isApn: profile?.role === 'apn',
+    isFrontDesk: profile?.role === 'front_desk',
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
