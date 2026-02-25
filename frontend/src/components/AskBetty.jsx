@@ -102,18 +102,22 @@ export default function AskBetty() {
                 <div className="modal-label">Betty says</div>
                 <div style={{
                   marginTop: '0.5rem',
-                  padding: '1rem',
+                  padding: '1.25rem',
                   background: 'var(--bg-elevated)',
                   borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
                   color: 'var(--text-muted)',
-                  fontSize: '0.9rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem'
+                  fontSize: '0.875rem',
+                  lineHeight: 1.6,
                 }}>
-                  <div className="loading-spinner loading-spinner--small" style={{ flexShrink: 0 }} />
-                  Betty is thinking… (AI integration coming soon)
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                    AI Integration Coming Soon
+                  </div>
+                  Betty is not connected to an AI provider yet. To enable Betty, an OpenAI (or other LLM) API key needs to be configured in the backend environment settings.
+                  <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', opacity: 0.7 }}>
+                    Once configured, Betty will be able to answer questions about your dashboard, tasks, meetings, and more.
+                  </div>
                 </div>
               </div>
               <div className="modal-section" style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
