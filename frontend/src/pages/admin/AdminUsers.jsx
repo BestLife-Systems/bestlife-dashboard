@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { apiPost, apiPatch } from '../../lib/api'
+import { apiPost, apiPatch, apiGet } from '../../lib/api'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
 
@@ -36,6 +36,13 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Pay rates step
+  const [payRateStep, setPayRateStep] = useState(false)
+  const [newUserId, setNewUserId] = useState(null)
+  const [newUserName, setNewUserName] = useState('')
+  const [rateTypes, setRateTypes] = useState([])
+  const [editRates, setEditRates] = useState({})
+  const [savingRates, setSavingRates] = useState(false)
 
   const clinicalLeaders = users.filter(u => u.role === 'clinical_leader' && u.is_active)
 
@@ -69,7 +76,7 @@ export default function AdminUsers() {
         setSaving(false)
         return
       }
-      await apiPost('/admin/invite-user', {
+      const result = await apiPost('/admin/invite-user', {
         email: form.email,
         first_name: form.first_name,
         last_name: form.last_name,
@@ -79,9 +86,21 @@ export default function AdminUsers() {
         supervision_required: form.supervision_required,
         clinical_supervisor_id: form.clinical_supervisor_id || null,
       })
+      // Transition to pay rates step
+      setNewUserId(result.user_id)
+      setNewUserName(`${form.first_name} ${form.last_name}`)
       setShowAdd(false)
       setForm({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
-      loadUsers()
+      // Load rate types for pay rates step
+      try {
+        const ratesData = await apiGet('/payroll/rate-catalog')
+        setRateTypes(ratesData.rate_types || [])
+        setEditRates({})
+        setPayRateStep(true)
+      } catch {
+        // If rate catalog fails, just skip to done
+        loadUsers()
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -288,6 +307,52 @@ export default function AdminUsers() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Pay Rates Step Modal */}
+      <Modal open={payRateStep} onClose={() => { setPayRateStep(false); setNewUserId(null); loadUsers() }} title={`Pay Rates — ${newUserName}`} wide>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          Set the pay rate per unit for each rate type. Leave blank if not applicable. You can always update these later in Users &rarr; Pay Rates.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {rateTypes.map(rt => (
+            <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
+              <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>{rt.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span></label>
+              <div style={{ width: '120px' }}>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="$ rate"
+                  value={editRates[rt.id] || ''}
+                  onChange={e => setEditRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn--ghost" onClick={() => { setPayRateStep(false); setNewUserId(null); loadUsers() }}>Skip</button>
+          <button className="btn btn--primary" onClick={async () => {
+            setSavingRates(true)
+            try {
+              const entries = Object.entries(editRates)
+                .filter(([, val]) => val !== '' && val !== null)
+                .map(([rateTypeId, payRate]) => ({ rate_type_id: rateTypeId, pay_rate: parseFloat(payRate) }))
+              if (entries.length > 0) {
+                await apiPost(`/payroll/user-pay-rates/${newUserId}`, { rates: entries })
+              }
+              setPayRateStep(false)
+              setNewUserId(null)
+              loadUsers()
+            } catch (err) {
+              alert('Error saving rates: ' + err.message)
+            } finally {
+              setSavingRates(false)
+            }
+          }} disabled={savingRates}>
+            {savingRates ? 'Saving...' : 'Save Rates'}
+          </button>
+        </div>
       </Modal>
 
       {/* Edit User Modal */}

@@ -111,6 +111,10 @@ class InviteUserRequest(BaseModel):
     first_name: str
     last_name: str
     role: str
+    phone_number: str = None
+    sms_enabled: bool = True
+    supervision_required: bool = False
+    clinical_supervisor_id: str = None
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -153,14 +157,26 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
         auth_user = resp.json()
 
     # Insert into users table
-    await sb_request("POST", "users", data={
+    user_data = {
         "auth_id": auth_user["id"],
         "email": req.email,
         "first_name": req.first_name,
         "last_name": req.last_name,
         "role": req.role,
         "is_active": True,
-    })
+    }
+    # Optional fields
+    if hasattr(req, 'phone_number') and req.phone_number:
+        user_data["phone_number"] = req.phone_number
+    if hasattr(req, 'sms_enabled'):
+        user_data["sms_enabled"] = req.sms_enabled
+    if hasattr(req, 'supervision_required'):
+        user_data["supervision_required"] = req.supervision_required
+    if hasattr(req, 'clinical_supervisor_id') and req.clinical_supervisor_id:
+        user_data["clinical_supervisor_id"] = req.clinical_supervisor_id
+
+    new_user = await sb_request("POST", "users", data=user_data)
+    user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
 
     # Send invite email via Supabase Auth
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -179,7 +195,7 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
         if invite_resp.status_code >= 400:
             print(f"Warning: invite email failed for {req.email}: {invite_resp.text}")
 
-    return {"status": "invited", "email": req.email}
+    return {"status": "invited", "email": req.email, "user_id": user_id}
 
 
 # ── TherapyNotes Upload & Processing ────────────────────────────
@@ -1815,11 +1831,11 @@ async def download_export_batch(batch_id: str, admin=Depends(require_admin)):
 async def get_public_invoice(draft_token: str):
     """
     Public: get invoice form for a recipient via draft token.
-    Returns rate types and any existing draft data.
+    Returns rate types, user role, supervisees (for clinical leaders), and draft data.
     """
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "draft_token": f"eq.{draft_token}",
-        "select": "*, users!user_id(first_name, last_name), pay_periods(start_date, end_date, label, due_date, status)",
+        "select": "*, users!user_id(id, first_name, last_name, role), pay_periods(start_date, end_date, label, due_date, status)",
     })
     if not recipients:
         raise HTTPException(status_code=404, detail="Invoice link not found or expired")
@@ -1841,14 +1857,32 @@ async def get_public_invoice(draft_token: str):
     })
 
     user = r.get("users") or {}
+    user_role = user.get("role", "therapist")
+
+    # If clinical leader, fetch their supervisees for the supervision section
+    supervisees = []
+    if user_role == "clinical_leader":
+        team = await sb_request("GET", "users", params={
+            "clinical_supervisor_id": f"eq.{user.get('id', r['user_id'])}",
+            "is_active": "eq.true",
+            "select": "id,first_name,last_name",
+            "order": "first_name.asc",
+        })
+        supervisees = [
+            {"id": s["id"], "name": f"{s.get('first_name', '')} {s.get('last_name', '')}".strip()}
+            for s in (team or [])
+        ]
+
     return {
         "recipient_id": r["id"],
         "user_name": f"{user.get('first_name', '')} {user.get('last_name', '')}".strip(),
+        "user_role": user_role,
         "period_label": period.get("label", ""),
         "due_date": period.get("due_date"),
         "draft_data": r.get("invoice_data"),
         "submit_token": r.get("submit_token"),
         "rate_types": rate_types or [],
+        "supervisees": supervisees,
     }
 
 

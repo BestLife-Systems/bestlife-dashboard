@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
@@ -25,33 +25,69 @@ async function pubPost(path, body) {
   return res.json()
 }
 
-function emptyLine(rt) {
-  const line = { rate_type_id: rt.id, rate_name: rt.name, unit: rt.unit }
-  if (rt.unit === 'hourly') line.hours = ''
-  if (rt.unit === 'session') line.quantity = 1
-  if (rt.unit === 'day') line.days = ''
-  if (rt.unit === 'event') line.quantity = ''
-  if (rt.name.startsWith('OP ') && rt.name !== 'OP Cancellation') line.client_initials = ''
-  if (rt.name.startsWith('APN') && !rt.default_duration_minutes) line.duration_minutes = ''
-  if (rt.default_duration_minutes) line.duration_minutes = rt.default_duration_minutes
-  return line
+// ── IIC valid hours ──
+const IIC_HOUR_OPTIONS = ['.25', '.5', '.75', '1', '1.25', '1.5', '1.75', '2', '2.25', '2.5', '2.75', '3']
+
+const IIC_CODES = [
+  { code: 'IICLC-H0036TJU1', label: 'IICLC (LPC/LCSW)' },
+  { code: 'IICMA-H0036TJU2', label: 'IICMA (LAC/LSW)' },
+  { code: 'BA-H2014TJ', label: 'BA (Behavioral Assistant)' },
+]
+
+const SICK_LEAVE_POLICY = `To be eligible for sick leave, you must:
+1. Have been employed for at least 120 calendar days
+2. Have worked at least 1,000 hours in the 12 months preceding the request
+3. Provide documentation if absent for 3 or more consecutive days
+Sick leave is for personal illness, injury, or medical appointments only.`
+
+// ── Collapsible Section Component ──
+function Section({ title, total, totalLabel, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="invoice-section">
+      <button type="button" className="invoice-section-header" onClick={() => setOpen(!open)}>
+        <span className="invoice-section-title">{title}</span>
+        {total !== undefined && total !== null && (
+          <span className="invoice-section-total">{total} {totalLabel || 'hrs'}</span>
+        )}
+        <svg className={`invoice-section-chevron ${open ? 'invoice-section-chevron--open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && <div className="invoice-section-body">{children}</div>}
+    </div>
+  )
 }
 
+// ── Main Component ──
 export default function PublicInvoice() {
   const { draftToken } = useParams()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [data, setData] = useState(null)
-  const [lines, setLines] = useState([])
-  const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [draftSaved, setDraftSaved] = useState(false)
 
-  useEffect(() => {
-    loadInvoice()
-  }, [draftToken])
+  // ── Section state ──
+  const [iic, setIic] = useState({ 'IICLC-H0036TJU1': [], 'IICMA-H0036TJU2': [], 'BA-H2014TJ': [] })
+  const [op, setOp] = useState([])
+  const [opCount, setOpCount] = useState('')
+  const [opGenerated, setOpGenerated] = useState(false)
+  const [sbys, setSbys] = useState([])
+  const [ados, setAdos] = useState([])
+  const [adosCount, setAdosCount] = useState('')
+  const [adosGenerated, setAdosGenerated] = useState(false)
+  const [adminEntries, setAdminEntries] = useState([])
+  const [supervisionIndiv, setSupervisionIndiv] = useState([])
+  const [supervisionGroup, setSupervisionGroup] = useState([])
+  const [sickLeave, setSickLeave] = useState({ date: '', hours: '', policyAck: false })
+  const [pto, setPto] = useState({ hours: '' })
+  const [notes, setNotes] = useState('')
+
+  // ── IIC hours validation ──
+  const [iicHoursError, setIicHoursError] = useState({})
+
+  useEffect(() => { loadInvoice() }, [draftToken])
 
   async function loadInvoice() {
     setLoading(true)
@@ -63,10 +99,19 @@ export default function PublicInvoice() {
         setData(result)
       } else {
         setData(result)
-        // Restore draft or start fresh
-        if (result.draft_data?.lines) {
-          setLines(result.draft_data.lines)
-          setNotes(result.draft_data.notes || '')
+        // Restore draft
+        if (result.draft_data) {
+          const d = result.draft_data
+          if (d.iic) setIic(prev => ({ ...prev, ...d.iic }))
+          if (d.op?.sessions) { setOp(d.op.sessions); setOpGenerated(true) }
+          if (d.sbys) setSbys(d.sbys)
+          if (d.ados) { setAdos(d.ados); setAdosGenerated(true) }
+          if (d.admin) setAdminEntries(d.admin)
+          if (d.supervision?.individual) setSupervisionIndiv(d.supervision.individual)
+          if (d.supervision?.group) setSupervisionGroup(d.supervision.group)
+          if (d.sick_leave) setSickLeave(d.sick_leave)
+          if (d.pto) setPto(d.pto)
+          if (d.notes) setNotes(d.notes)
         }
       }
     } catch (err) {
@@ -76,90 +121,243 @@ export default function PublicInvoice() {
     }
   }
 
-  function addLine(rateType) {
-    setLines([...lines, emptyLine(rateType)])
-    setDraftSaved(false)
+  function markDirty() { setDraftSaved(false) }
+
+  // ── Build submit data ──
+  function buildInvoiceData() {
+    return {
+      iic,
+      op: { sessions: op },
+      sbys,
+      ados,
+      admin: adminEntries,
+      supervision: { individual: supervisionIndiv, group: supervisionGroup },
+      sick_leave: sickLeave,
+      pto,
+      notes,
+    }
   }
 
-  function updateLine(index, field, value) {
-    const updated = [...lines]
-    updated[index] = { ...updated[index], [field]: value }
-    setLines(updated)
-    setDraftSaved(false)
+  // ── Totals ──
+  function iicTotal() {
+    return Object.values(iic).flat().reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+  }
+  function opTotal() { return op.length }
+  function sbysTotal() { return sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function adosTotal() { return ados.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function adminTotal() { return adminEntries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function supervisionTotal() { return supervisionIndiv.length + supervisionGroup.length }
+  function sickTotal() { return parseFloat(sickLeave.hours) || 0 }
+  function ptoTotal() { return parseFloat(pto.hours) || 0 }
+  function grandTotal() {
+    return iicTotal() + sbysTotal() + adosTotal() + adminTotal() + supervisionTotal() + sickTotal() + ptoTotal()
   }
 
-  function removeLine(index) {
-    setLines(lines.filter((_, i) => i !== index))
-    setDraftSaved(false)
+  // ── IIC helpers ──
+  function addIicClient(code) {
+    setIic(prev => ({ ...prev, [code]: [...prev[code], { cyber_initials: '', date: '', hours: '' }] }))
+    markDirty()
+  }
+  function updateIicClient(code, idx, field, value) {
+    setIic(prev => {
+      const arr = [...prev[code]]
+      arr[idx] = { ...arr[idx], [field]: value }
+      return { ...prev, [code]: arr }
+    })
+    markDirty()
+    if (field === 'hours') {
+      const key = `${code}-${idx}`
+      setIicHoursError(prev => ({ ...prev, [key]: false }))
+    }
+  }
+  function removeIicClient(code, idx) {
+    setIic(prev => ({ ...prev, [code]: prev[code].filter((_, i) => i !== idx) }))
+    markDirty()
+  }
+  function validateIicHours(code, idx, value) {
+    const key = `${code}-${idx}`
+    if (value && !IIC_HOUR_OPTIONS.includes(value)) {
+      setIicHoursError(prev => ({ ...prev, [key]: true }))
+    }
   }
 
+  // ── OP helpers ──
+  function generateOpRows() {
+    const count = parseInt(opCount) || 0
+    if (count <= 0) return
+    setOp(Array.from({ length: count }, () => ({ client_initials: '', date: '', cancel_fee: false })))
+    setOpGenerated(true)
+    markDirty()
+  }
+  function addOpRow() {
+    setOp(prev => [...prev, { client_initials: '', date: '', cancel_fee: false }])
+    markDirty()
+  }
+  function updateOp(idx, field, value) {
+    setOp(prev => { const a = [...prev]; a[idx] = { ...a[idx], [field]: value }; return a })
+    markDirty()
+  }
+  function removeOp(idx) { setOp(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  // ── SBYS helpers ──
+  function addSbys() { setSbys(prev => [...prev, { date: '', hours: '' }]); markDirty() }
+  function updateSbys(idx, field, value) {
+    setSbys(prev => { const a = [...prev]; a[idx] = { ...a[idx], [field]: value }; return a })
+    markDirty()
+  }
+  function removeSbys(idx) { setSbys(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  // ── ADOS helpers ──
+  function generateAdosRows() {
+    const count = parseInt(adosCount) || 0
+    if (count <= 0) return
+    setAdos(Array.from({ length: count }, () => ({ client_initials: '', location: 'In home', id_number: '', date: '', hours: '' })))
+    setAdosGenerated(true)
+    markDirty()
+  }
+  function addAdosRow() {
+    setAdos(prev => [...prev, { client_initials: '', location: 'In home', id_number: '', date: '', hours: '' }])
+    markDirty()
+  }
+  function updateAdos(idx, field, value) {
+    setAdos(prev => { const a = [...prev]; a[idx] = { ...a[idx], [field]: value }; return a })
+    markDirty()
+  }
+  function removeAdos(idx) { setAdos(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  // ── Admin helpers ──
+  function addAdmin() { setAdminEntries(prev => [...prev, { date: '', hours: '' }]); markDirty() }
+  function updateAdmin(idx, field, value) {
+    setAdminEntries(prev => { const a = [...prev]; a[idx] = { ...a[idx], [field]: value }; return a })
+    markDirty()
+  }
+  function removeAdmin(idx) { setAdminEntries(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  // ── Supervision helpers ──
+  function addSupervisionIndiv() {
+    setSupervisionIndiv(prev => [...prev, { date: '', supervisee_id: '', supervisee_name: '' }])
+    markDirty()
+  }
+  function updateSupervisionIndiv(idx, field, value) {
+    setSupervisionIndiv(prev => {
+      const a = [...prev]; a[idx] = { ...a[idx], [field]: value }
+      // Auto-fill name when selecting from dropdown
+      if (field === 'supervisee_id' && data?.supervisees) {
+        const s = data.supervisees.find(s => s.id === value)
+        if (s) a[idx].supervisee_name = s.name
+      }
+      return a
+    })
+    markDirty()
+  }
+  function removeSupervisionIndiv(idx) { setSupervisionIndiv(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  function addSupervisionGroup() {
+    setSupervisionGroup(prev => [...prev, { date: '', supervisee_ids: [], supervisee_names: [] }])
+    markDirty()
+  }
+  function updateSupervisionGroupDate(idx, value) {
+    setSupervisionGroup(prev => { const a = [...prev]; a[idx] = { ...a[idx], date: value }; return a })
+    markDirty()
+  }
+  function toggleGroupSupervisee(idx, supervisee) {
+    setSupervisionGroup(prev => {
+      const a = [...prev]
+      const entry = { ...a[idx] }
+      const ids = [...(entry.supervisee_ids || [])]
+      const names = [...(entry.supervisee_names || [])]
+      const sIdx = ids.indexOf(supervisee.id)
+      if (sIdx >= 0) {
+        ids.splice(sIdx, 1)
+        names.splice(sIdx, 1)
+      } else {
+        ids.push(supervisee.id)
+        names.push(supervisee.name)
+      }
+      entry.supervisee_ids = ids
+      entry.supervisee_names = names
+      a[idx] = entry
+      return a
+    })
+    markDirty()
+  }
+  function removeSupervisionGroup(idx) { setSupervisionGroup(prev => prev.filter((_, i) => i !== idx)); markDirty() }
+
+  // ── Save & Submit ──
   async function handleSaveDraft() {
     setSaving(true)
     setError('')
     try {
-      await pubPost(`/public/invoice/${draftToken}/save-draft`, {
-        invoice_data: { lines, notes },
-      })
+      await pubPost(`/public/invoice/${draftToken}/save-draft`, { invoice_data: buildInvoiceData() })
       setDraftSaved(true)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
   }
 
   async function handleSubmit() {
-    if (!lines.length) {
-      setError('Add at least one line item before submitting.')
-      return
-    }
-    // Validate required fields
-    for (const line of lines) {
-      if (line.unit === 'hourly' && (!line.hours || parseFloat(line.hours) <= 0)) {
-        setError(`Enter hours for ${line.rate_name}`)
-        return
-      }
-      if (line.unit === 'day' && (!line.days || parseFloat(line.days) <= 0)) {
-        setError(`Enter days for ${line.rate_name}`)
-        return
-      }
-      if (line.unit === 'event' && (!line.quantity || parseInt(line.quantity) <= 0)) {
-        setError(`Enter quantity for ${line.rate_name}`)
-        return
-      }
-      if ('client_initials' in line && !line.client_initials?.trim()) {
-        setError(`Client initials required for ${line.rate_name}`)
-        return
-      }
-      if ('duration_minutes' in line && !line.duration_minutes) {
-        setError(`Duration required for ${line.rate_name}`)
-        return
+    setError('')
+    // Validate IIC
+    for (const [code, entries] of Object.entries(iic)) {
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i]
+        if (!e.cyber_initials?.trim()) { setError(`IIC ${code}: Cyber # / Initials required for entry ${i + 1}`); return }
+        if (!e.date) { setError(`IIC ${code}: Date required for entry ${i + 1}`); return }
+        if (!e.hours || !IIC_HOUR_OPTIONS.includes(String(e.hours))) { setError(`IIC ${code}: Valid hours required for entry ${i + 1} (${IIC_HOUR_OPTIONS.join(', ')})`); return }
       }
     }
+    // Validate OP
+    for (let i = 0; i < op.length; i++) {
+      if (!op[i].client_initials?.trim()) { setError(`OP: Client initials required for session ${i + 1}`); return }
+      if (!op[i].date) { setError(`OP: Date required for session ${i + 1}`); return }
+    }
+    // Validate SBYS
+    for (let i = 0; i < sbys.length; i++) {
+      if (!sbys[i].date) { setError(`SBYS: Date required for entry ${i + 1}`); return }
+      if (!sbys[i].hours || parseFloat(sbys[i].hours) <= 0) { setError(`SBYS: Hours required for entry ${i + 1}`); return }
+    }
+    // Validate ADOS
+    for (let i = 0; i < ados.length; i++) {
+      if (!ados[i].client_initials?.trim()) { setError(`ADOS: Client initials required for entry ${i + 1}`); return }
+      if (!ados[i].date) { setError(`ADOS: Date required for entry ${i + 1}`); return }
+      if (!ados[i].hours || parseFloat(ados[i].hours) <= 0) { setError(`ADOS: Assessment length required for entry ${i + 1}`); return }
+    }
+    // Validate Admin
+    for (let i = 0; i < adminEntries.length; i++) {
+      if (!adminEntries[i].date) { setError(`Administration: Date required for entry ${i + 1}`); return }
+      if (!adminEntries[i].hours || parseFloat(adminEntries[i].hours) <= 0) { setError(`Administration: Hours required for entry ${i + 1}`); return }
+    }
+    // Validate Supervision
+    for (let i = 0; i < supervisionIndiv.length; i++) {
+      if (!supervisionIndiv[i].date) { setError(`Supervision: Date required for individual session ${i + 1}`); return }
+      if (!supervisionIndiv[i].supervisee_id) { setError(`Supervision: Supervisee required for individual session ${i + 1}`); return }
+    }
+    for (let i = 0; i < supervisionGroup.length; i++) {
+      if (!supervisionGroup[i].date) { setError(`Supervision: Date required for group session ${i + 1}`); return }
+      if (!supervisionGroup[i].supervisee_ids?.length) { setError(`Supervision: Select attendees for group session ${i + 1}`); return }
+    }
+    // Validate Sick Leave
+    if (sickLeave.hours && parseFloat(sickLeave.hours) > 0) {
+      if (!sickLeave.date) { setError('Sick Leave: Date required'); return }
+      if (!sickLeave.policyAck) { setError('Sick Leave: You must acknowledge the sick leave policy'); return }
+    }
+    // Check at least something was entered
+    const hasData = Object.values(iic).some(a => a.length > 0) || op.length > 0 || sbys.length > 0 ||
+      ados.length > 0 || adminEntries.length > 0 || supervisionIndiv.length > 0 || supervisionGroup.length > 0 ||
+      (sickLeave.hours && parseFloat(sickLeave.hours) > 0) || (pto.hours && parseFloat(pto.hours) > 0)
+    if (!hasData) { setError('Please add at least one entry before submitting.'); return }
 
     setSubmitting(true)
-    setError('')
     try {
       await pubPost(`/public/invoice/${draftToken}/submit`, {
         submit_token: data.submit_token,
-        invoice_data: { lines, notes },
+        invoice_data: buildInvoiceData(),
       })
       setSubmitted(true)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSubmitting(false)
-    }
+    } catch (err) { setError(err.message) }
+    finally { setSubmitting(false) }
   }
 
-  // Group rate types by unit for the add-line menu
-  const grouped = (data?.rate_types || []).reduce((acc, rt) => {
-    const g = rt.unit
-    if (!acc[g]) acc[g] = []
-    acc[g].push(rt)
-    return acc
-  }, {})
-
+  // ── Render ──
   if (loading) {
     return (
       <div className="public-invoice-page">
@@ -194,167 +392,337 @@ export default function PublicInvoice() {
     return (
       <div className="public-invoice-page">
         <div className="public-invoice-card">
-          <div className="public-invoice-header">
-            <h1>BestLife Hub</h1>
-          </div>
+          <div className="public-invoice-header"><h1>BestLife Hub</h1></div>
           <div className="public-invoice-error">{error}</div>
         </div>
       </div>
     )
   }
 
+  const isCliLeader = data?.user_role === 'clinical_leader'
+
   return (
     <div className="public-invoice-page">
       <div className="public-invoice-card">
         <div className="public-invoice-header">
           <h1>BestLife Hub</h1>
-          <p className="public-invoice-subtitle">
-            {data.user_name} &mdash; {data.period_label}
-          </p>
-          {data.due_date && (
-            <p className="public-invoice-muted">Due: {new Date(data.due_date + 'T00:00:00').toLocaleDateString()}</p>
-          )}
+          <p className="public-invoice-subtitle">{data.user_name} &mdash; {data.period_label}</p>
+          {data.due_date && <p className="public-invoice-muted">Due: {new Date(data.due_date + 'T00:00:00').toLocaleDateString()}</p>}
         </div>
 
         {error && <div className="public-invoice-error">{error}</div>}
 
-        {/* Line Items */}
-        <div className="public-invoice-lines">
-          {lines.length === 0 && (
-            <p className="public-invoice-muted" style={{ textAlign: 'center', padding: '1rem' }}>
-              No line items yet. Use the buttons below to add entries.
-            </p>
-          )}
-          {lines.map((line, i) => (
-            <div key={i} className="public-invoice-line">
-              <div className="public-invoice-line-header">
-                <strong>{line.rate_name}</strong>
-                <span className="public-invoice-unit">{line.unit}</span>
-                <button type="button" className="btn btn--small btn--danger-ghost" onClick={() => removeLine(i)}>Remove</button>
+        {/* ═══ IIC Section ═══ */}
+        <Section title="IIC (In-home Intensive Counseling)" total={iicTotal()} totalLabel="hrs">
+          {IIC_CODES.map(({ code, label }) => (
+            <div key={code} className="invoice-subgroup">
+              <div className="invoice-subgroup-header">
+                <span className="invoice-subgroup-title">{label}</span>
+                <span className="invoice-subgroup-code">{code}</span>
+                {iic[code].length > 0 && (
+                  <span className="invoice-section-total">
+                    {iic[code].reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)} hrs
+                  </span>
+                )}
               </div>
-              <div className="public-invoice-line-fields">
-                {line.unit === 'hourly' && (
-                  <div className="form-field">
-                    <label>Hours</label>
-                    <input
-                      type="number"
-                      step="0.25"
-                      min="0"
-                      value={line.hours}
-                      onChange={e => updateLine(i, 'hours', e.target.value)}
-                      placeholder="0.00"
-                    />
+              {iic[code].map((entry, idx) => (
+                <div key={idx} className="invoice-entry">
+                  <div className="invoice-entry-fields">
+                    <div className="form-field invoice-field-md">
+                      <label>Cyber # / Initials</label>
+                      <input type="text" value={entry.cyber_initials} onChange={e => updateIicClient(code, idx, 'cyber_initials', e.target.value)} placeholder="12345/AD" />
+                    </div>
+                    <div className="form-field invoice-field-md">
+                      <label>Date</label>
+                      <input type="date" value={entry.date} onChange={e => updateIicClient(code, idx, 'date', e.target.value)} />
+                    </div>
+                    <div className="form-field invoice-field-sm">
+                      <label>Hours</label>
+                      <input
+                        list={`iic-hours-${code}-${idx}`}
+                        type="text"
+                        value={entry.hours}
+                        onChange={e => updateIicClient(code, idx, 'hours', e.target.value)}
+                        onBlur={e => validateIicHours(code, idx, e.target.value)}
+                        placeholder="1"
+                        className={iicHoursError[`${code}-${idx}`] ? 'input-error' : ''}
+                      />
+                      <datalist id={`iic-hours-${code}-${idx}`}>
+                        {IIC_HOUR_OPTIONS.map(h => <option key={h} value={h} />)}
+                      </datalist>
+                      {iicHoursError[`${code}-${idx}`] && <span className="field-error">Use: {IIC_HOUR_OPTIONS.join(', ')}</span>}
+                    </div>
+                    <button type="button" className="invoice-remove-btn" onClick={() => removeIicClient(code, idx)} title="Remove">&times;</button>
                   </div>
-                )}
-                {line.unit === 'session' && (
-                  <div className="form-field">
-                    <label>Sessions</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.quantity}
-                      onChange={e => updateLine(i, 'quantity', e.target.value)}
-                    />
+                </div>
+              ))}
+              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={() => addIicClient(code)}>+ Add Client</button>
+            </div>
+          ))}
+        </Section>
+
+        {/* ═══ OP Section ═══ */}
+        <Section title="OP (Outpatient)" total={opTotal()} totalLabel="sessions">
+          {!opGenerated ? (
+            <div className="invoice-generate-row">
+              <label>Total # of completed OP sessions:</label>
+              <input type="number" min="1" value={opCount} onChange={e => setOpCount(e.target.value)} placeholder="0" style={{ width: '80px' }} />
+              <button type="button" className="btn btn--small btn--primary" onClick={generateOpRows} disabled={!opCount || parseInt(opCount) <= 0}>Generate</button>
+            </div>
+          ) : (
+            <>
+              <div className="invoice-disclaimer">
+                <strong>Outpatient Cancellations</strong> * This ONLY pertains to no call / no shows that gave less than 24hr notice, and is at your discretion. Clients added to this list are CHARGED the cancellation fee - $50.00. Do not add clients you do not wish to charge.
+              </div>
+              {op.map((entry, idx) => (
+                <div key={idx} className="invoice-entry">
+                  <div className="invoice-entry-fields">
+                    <div className="form-field invoice-field-sm">
+                      <label>Client Initials</label>
+                      <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateOp(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
+                    </div>
+                    <div className="form-field invoice-field-md">
+                      <label>Date</label>
+                      <input type="date" value={entry.date} onChange={e => updateOp(idx, 'date', e.target.value)} />
+                    </div>
+                    <div className="form-field">
+                      <label className="checkbox-label">
+                        <input type="checkbox" checked={entry.cancel_fee} onChange={e => updateOp(idx, 'cancel_fee', e.target.checked)} />
+                        Charge Cancellation Fee
+                      </label>
+                    </div>
+                    <button type="button" className="invoice-remove-btn" onClick={() => removeOp(idx)} title="Remove">&times;</button>
                   </div>
-                )}
-                {line.unit === 'day' && (
-                  <div className="form-field">
-                    <label>Days</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={line.days}
-                      onChange={e => updateLine(i, 'days', e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                )}
-                {line.unit === 'event' && (
-                  <div className="form-field">
-                    <label>Quantity</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.quantity}
-                      onChange={e => updateLine(i, 'quantity', e.target.value)}
-                      placeholder="1"
-                    />
-                  </div>
-                )}
-                {'client_initials' in line && (
-                  <div className="form-field">
-                    <label>Client Initials</label>
-                    <input
-                      type="text"
-                      maxLength={5}
-                      value={line.client_initials}
-                      onChange={e => updateLine(i, 'client_initials', e.target.value.toUpperCase())}
-                      placeholder="AB"
-                    />
-                  </div>
-                )}
-                {'duration_minutes' in line && !line.duration_minutes && (
-                  <div className="form-field">
-                    <label>Duration (min)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={line.duration_minutes || ''}
-                      onChange={e => updateLine(i, 'duration_minutes', e.target.value)}
-                      placeholder="30"
-                    />
-                  </div>
-                )}
+                </div>
+              ))}
+              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addOpRow}>+ Add Session</button>
+            </>
+          )}
+        </Section>
+
+        {/* ═══ SBYS Section ═══ */}
+        <Section title="SBYS (Step By Your Side)" total={sbysTotal()} totalLabel="hrs">
+          {sbys.map((entry, idx) => (
+            <div key={idx} className="invoice-entry">
+              <div className="invoice-entry-fields">
+                <div className="form-field invoice-field-md">
+                  <label>Date Worked</label>
+                  <input type="date" value={entry.date} onChange={e => updateSbys(idx, 'date', e.target.value)} />
+                </div>
+                <div className="form-field invoice-field-sm">
+                  <label>Hours</label>
+                  <input type="number" step="0.25" min="0" value={entry.hours} onChange={e => updateSbys(idx, 'hours', e.target.value)} placeholder="0" />
+                </div>
+                <button type="button" className="invoice-remove-btn" onClick={() => removeSbys(idx)} title="Remove">&times;</button>
               </div>
             </div>
           ))}
-        </div>
+          <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addSbys}>+ Add Day</button>
+        </Section>
 
-        {/* Add Line Buttons */}
-        <div className="public-invoice-add">
-          <p className="public-invoice-add-label">Add line item:</p>
-          <div className="public-invoice-add-groups">
-            {Object.entries(grouped).map(([unit, types]) => (
-              <div key={unit} className="public-invoice-add-group">
-                <span className="public-invoice-add-unit">{unit}</span>
-                {types.map(rt => (
-                  <button key={rt.id} type="button" className="btn btn--small btn--ghost" onClick={() => addLine(rt)}>
-                    + {rt.name}
-                  </button>
-                ))}
+        {/* ═══ ADOS Section ═══ */}
+        <Section title="ADOS Assessments" total={adosTotal()} totalLabel="hrs">
+          {!adosGenerated ? (
+            <div className="invoice-generate-row">
+              <label>Total # of completed ADOS Assessments:</label>
+              <input type="number" min="1" value={adosCount} onChange={e => setAdosCount(e.target.value)} placeholder="0" style={{ width: '80px' }} />
+              <button type="button" className="btn btn--small btn--primary" onClick={generateAdosRows} disabled={!adosCount || parseInt(adosCount) <= 0}>Generate</button>
+            </div>
+          ) : (
+            <>
+              {ados.map((entry, idx) => (
+                <div key={idx} className="invoice-entry">
+                  <div className="invoice-entry-fields invoice-entry-fields--wrap">
+                    <div className="form-field invoice-field-sm">
+                      <label>Client Initials</label>
+                      <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateAdos(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
+                    </div>
+                    <div className="form-field invoice-field-md">
+                      <label>Location</label>
+                      <select value={entry.location} onChange={e => updateAdos(idx, 'location', e.target.value)}>
+                        <option value="In home">In home</option>
+                        <option value="At office">At office</option>
+                      </select>
+                    </div>
+                    <div className="form-field invoice-field-sm">
+                      <label>ID #</label>
+                      <input type="text" value={entry.id_number} onChange={e => updateAdos(idx, 'id_number', e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div className="form-field invoice-field-md">
+                      <label>Date</label>
+                      <input type="date" value={entry.date} onChange={e => updateAdos(idx, 'date', e.target.value)} />
+                    </div>
+                    <div className="form-field invoice-field-sm">
+                      <label>Length (hrs)</label>
+                      <input type="number" step="0.25" min="0" value={entry.hours} onChange={e => updateAdos(idx, 'hours', e.target.value)} placeholder="0" />
+                    </div>
+                    <button type="button" className="invoice-remove-btn" onClick={() => removeAdos(idx)} title="Remove">&times;</button>
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addAdosRow}>+ Add Assessment</button>
+            </>
+          )}
+        </Section>
+
+        {/* ═══ Administration Section ═══ */}
+        <Section title="Administration" total={adminTotal()} totalLabel="hrs">
+          {adminEntries.map((entry, idx) => (
+            <div key={idx} className="invoice-entry">
+              <div className="invoice-entry-fields">
+                <div className="form-field invoice-field-md">
+                  <label>Date Worked</label>
+                  <input type="date" value={entry.date} onChange={e => updateAdmin(idx, 'date', e.target.value)} />
+                </div>
+                <div className="form-field invoice-field-sm">
+                  <label>Hours</label>
+                  <input type="number" step="0.25" min="0" value={entry.hours} onChange={e => updateAdmin(idx, 'hours', e.target.value)} placeholder="0" />
+                </div>
+                <button type="button" className="invoice-remove-btn" onClick={() => removeAdmin(idx)} title="Remove">&times;</button>
               </div>
-            ))}
+            </div>
+          ))}
+          <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addAdmin}>+ Add Day</button>
+        </Section>
+
+        {/* ═══ Clinical Supervision (clinical leaders only) ═══ */}
+        {isCliLeader && (
+          <Section title="Clinical Supervision" total={supervisionTotal()} totalLabel="hrs">
+            {/* Individual */}
+            <div className="invoice-subgroup">
+              <div className="invoice-subgroup-header">
+                <span className="invoice-subgroup-title">Individual Supervision</span>
+                <span className="invoice-subgroup-code">1 hr per session</span>
+              </div>
+              {supervisionIndiv.map((entry, idx) => (
+                <div key={idx} className="invoice-entry">
+                  <div className="invoice-entry-fields">
+                    <div className="form-field invoice-field-md">
+                      <label>Date</label>
+                      <input type="date" value={entry.date} onChange={e => updateSupervisionIndiv(idx, 'date', e.target.value)} />
+                    </div>
+                    <div className="form-field invoice-field-lg">
+                      <label>Supervisee</label>
+                      <select value={entry.supervisee_id} onChange={e => updateSupervisionIndiv(idx, 'supervisee_id', e.target.value)}>
+                        <option value="">Select...</option>
+                        {(data?.supervisees || []).map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button type="button" className="invoice-remove-btn" onClick={() => removeSupervisionIndiv(idx)} title="Remove">&times;</button>
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addSupervisionIndiv}>+ Add Individual Session</button>
+            </div>
+
+            {/* Group */}
+            <div className="invoice-subgroup">
+              <div className="invoice-subgroup-header">
+                <span className="invoice-subgroup-title">Group Supervision</span>
+                <span className="invoice-subgroup-code">1 hr per session</span>
+              </div>
+              {supervisionGroup.map((entry, idx) => (
+                <div key={idx} className="invoice-entry">
+                  <div className="invoice-entry-fields invoice-entry-fields--wrap">
+                    <div className="form-field invoice-field-md">
+                      <label>Date</label>
+                      <input type="date" value={entry.date} onChange={e => updateSupervisionGroupDate(idx, e.target.value)} />
+                    </div>
+                    <div className="form-field invoice-field-full">
+                      <label>Supervisees Attended</label>
+                      <div className="invoice-multi-select">
+                        {(data?.supervisees || []).map(s => (
+                          <label key={s.id} className="checkbox-label invoice-checkbox-item">
+                            <input
+                              type="checkbox"
+                              checked={(entry.supervisee_ids || []).includes(s.id)}
+                              onChange={() => toggleGroupSupervisee(idx, s)}
+                            />
+                            {s.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <button type="button" className="invoice-remove-btn" onClick={() => removeSupervisionGroup(idx)} title="Remove">&times;</button>
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addSupervisionGroup}>+ Add Group Session</button>
+            </div>
+          </Section>
+        )}
+
+        {/* ═══ Sick Leave Section ═══ */}
+        <Section title="Sick Leave" total={sickTotal()} totalLabel="hrs">
+          <div className="invoice-disclaimer invoice-disclaimer--info">
+            <strong>Sick Leave Policy</strong>
+            <pre className="invoice-policy-text">{SICK_LEAVE_POLICY}</pre>
+          </div>
+          <div className="invoice-entry">
+            <div className="invoice-entry-fields invoice-entry-fields--wrap">
+              <div className="form-field invoice-field-md">
+                <label>Date Missed</label>
+                <input type="date" value={sickLeave.date} onChange={e => { setSickLeave(prev => ({ ...prev, date: e.target.value })); markDirty() }} />
+              </div>
+              <div className="form-field invoice-field-sm">
+                <label>Hours Requested</label>
+                <input type="number" step="0.5" min="0" value={sickLeave.hours} onChange={e => { setSickLeave(prev => ({ ...prev, hours: e.target.value })); markDirty() }} placeholder="0" />
+              </div>
+              <div className="form-field invoice-field-full">
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={sickLeave.policyAck} onChange={e => { setSickLeave(prev => ({ ...prev, policyAck: e.target.checked })); markDirty() }} />
+                  I confirm I meet the eligibility criteria for sick leave
+                </label>
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* ═══ PTO Section ═══ */}
+        <Section title="PTO (Paid Time Off)" total={ptoTotal()} totalLabel="hrs">
+          <div className="invoice-entry">
+            <div className="invoice-entry-fields">
+              <div className="form-field invoice-field-sm">
+                <label>Total Hours Requested</label>
+                <input type="number" step="0.5" min="0" value={pto.hours} onChange={e => { setPto({ hours: e.target.value }); markDirty() }} placeholder="0" />
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* ═══ Grand Total ═══ */}
+        <div className="invoice-grand-total">
+          <div className="invoice-grand-total-title">Summary</div>
+          <div className="invoice-grand-total-rows">
+            {iicTotal() > 0 && <div className="invoice-total-row"><span>IIC</span><span>{iicTotal()} hrs</span></div>}
+            {opTotal() > 0 && <div className="invoice-total-row"><span>OP</span><span>{opTotal()} sessions</span></div>}
+            {sbysTotal() > 0 && <div className="invoice-total-row"><span>SBYS</span><span>{sbysTotal()} hrs</span></div>}
+            {adosTotal() > 0 && <div className="invoice-total-row"><span>ADOS</span><span>{adosTotal()} hrs</span></div>}
+            {adminTotal() > 0 && <div className="invoice-total-row"><span>Administration</span><span>{adminTotal()} hrs</span></div>}
+            {isCliLeader && supervisionTotal() > 0 && <div className="invoice-total-row"><span>Supervision</span><span>{supervisionTotal()} hrs</span></div>}
+            {sickTotal() > 0 && <div className="invoice-total-row"><span>Sick Leave</span><span>{sickTotal()} hrs</span></div>}
+            {ptoTotal() > 0 && <div className="invoice-total-row"><span>PTO</span><span>{ptoTotal()} hrs</span></div>}
+          </div>
+          <div className="invoice-total-row invoice-total-row--grand">
+            <span>Total Hours</span>
+            <span>{grandTotal()}</span>
           </div>
         </div>
 
-        {/* Notes */}
+        {/* ═══ Notes ═══ */}
         <div className="form-field" style={{ marginTop: '1rem' }}>
           <label>Notes (optional)</label>
-          <textarea
-            rows={3}
-            value={notes}
-            onChange={e => { setNotes(e.target.value); setDraftSaved(false) }}
-            placeholder="Any notes for the admin..."
-          />
+          <textarea rows={3} value={notes} onChange={e => { setNotes(e.target.value); markDirty() }} placeholder="Any notes for the admin..." />
         </div>
 
-        {/* Actions */}
+        {/* ═══ Actions ═══ */}
         <div className="public-invoice-actions">
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={handleSaveDraft}
-            disabled={saving}
-          >
+          <button type="button" className="btn btn--ghost" onClick={handleSaveDraft} disabled={saving}>
             {saving ? 'Saving...' : draftSaved ? 'Draft Saved' : 'Save Draft'}
           </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={handleSubmit}
-            disabled={submitting}
-          >
+          <button type="button" className="btn btn--primary" onClick={handleSubmit} disabled={submitting}>
             {submitting ? 'Submitting...' : 'Submit Invoice'}
           </button>
         </div>
