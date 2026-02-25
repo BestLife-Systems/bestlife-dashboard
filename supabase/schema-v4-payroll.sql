@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS pay_periods (
   closed_at timestamptz,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
-  UNIQUE(start_date, end_date)
+  -- No unique constraint on dates — allow multiple periods for same date range
+  -- (e.g. late submissions)
 );
 
 -- ── 6. Pay Period Recipients ────────────────────────────────────

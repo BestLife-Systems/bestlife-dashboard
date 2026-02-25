@@ -162,20 +162,22 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
         "is_active": True,
     })
 
-    # Send magic link / invite email
+    # Send invite email via Supabase Auth
     async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.post(
-            f"{SUPABASE_URL}/auth/v1/admin/generate_link",
+        invite_resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/invite",
             headers={
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
                 "Content-Type": "application/json",
             },
             json={
-                "type": "invite",
                 "email": req.email,
             },
         )
+        # Log if invite fails but don't block — user is already created
+        if invite_resp.status_code >= 400:
+            print(f"Warning: invite email failed for {req.email}: {invite_resp.text}")
 
     return {"status": "invited", "email": req.email}
 
