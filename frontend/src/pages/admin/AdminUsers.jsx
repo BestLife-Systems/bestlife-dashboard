@@ -69,7 +69,12 @@ export default function AdminUsers() {
     try {
       const { error: err } = await supabase
         .from('users')
-        .update({ role: editUser.role })
+        .update({
+          first_name: editUser.first_name,
+          last_name: editUser.last_name,
+          email: editUser.email,
+          role: editUser.role,
+        })
         .eq('id', editUser.id)
 
       if (err) throw err
@@ -207,15 +212,21 @@ export default function AdminUsers() {
         {editUser && (
           <form onSubmit={handleEditUser}>
             {error && <div className="form-error">{error}</div>}
-            <div className="modal-section">
-              <div className="modal-label">Name</div>
-              <div className="modal-value">{editUser.first_name} {editUser.last_name}</div>
+            <div className="form-row">
+              <div className="form-field">
+                <label>First Name</label>
+                <input value={editUser.first_name} onChange={e => setEditUser({ ...editUser, first_name: e.target.value })} />
+              </div>
+              <div className="form-field">
+                <label>Last Name</label>
+                <input value={editUser.last_name} onChange={e => setEditUser({ ...editUser, last_name: e.target.value })} />
+              </div>
             </div>
-            <div className="modal-section">
-              <div className="modal-label">Email</div>
-              <div className="modal-value">{editUser.email}</div>
+            <div className="form-field" style={{ marginTop: '0.75rem' }}>
+              <label>Email</label>
+              <input type="email" value={editUser.email} onChange={e => setEditUser({ ...editUser, email: e.target.value })} />
             </div>
-            <div className="form-field">
+            <div className="form-field" style={{ marginTop: '0.75rem' }}>
               <label>Role</label>
               <select value={editUser.role} onChange={e => setEditUser({ ...editUser, role: e.target.value })}>
                 {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
