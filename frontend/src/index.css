@@ -1334,12 +1334,25 @@ a { color: var(--accent); text-decoration: none; }
 .public-invoice-success {
   text-align: center;
   padding: 2rem 1rem;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .public-invoice-success h2 {
   margin: 0 0 0.5rem;
-  color: #28a745;
+  color: var(--accent);
+}
+
+.invoice-success-checkmark {
+  margin-bottom: 1rem;
+}
+
+/* White calendar icons on date inputs in invoice */
+.invoice-entry input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+[data-theme="light"] .invoice-entry input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 
 /* ── Invoice Sections ── */
@@ -1366,8 +1379,8 @@ a { color: var(--accent); text-decoration: none; }
 .invoice-section-header:hover { background: var(--bg-card-hover); }
 .invoice-section-title { flex: 1; }
 .invoice-section-total {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
+  background: rgba(0, 187, 238, 0.12);
+  color: var(--accent);
   padding: 0.15rem 0.5rem;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -1517,7 +1530,7 @@ a { color: var(--accent); text-decoration: none; }
   border-top: 1px solid var(--border);
   font-weight: 700;
   font-size: 1rem;
-  color: #22c55e;
+  color: var(--accent);
 }
 
 [data-theme="light"] .invoice-entry { border-bottom-color: rgba(0,0,0,0.06); }

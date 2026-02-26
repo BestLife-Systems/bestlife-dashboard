@@ -29,16 +29,43 @@ async function pubPost(path, body) {
 const IIC_HOUR_OPTIONS = ['.25', '.5', '.75', '1', '1.25', '1.5', '1.75', '2', '2.25', '2.5', '2.75', '3']
 
 const IIC_CODES = [
-  { code: 'IICLC-H0036TJU1', label: 'IICLC (LPC/LCSW)' },
-  { code: 'IICMA-H0036TJU2', label: 'IICMA (LAC/LSW)' },
-  { code: 'BA-H2014TJ', label: 'BA (Behavioral Assistant)' },
+  { code: 'IICLC-H0036TJU1', label: 'LPC/LCSW' },
+  { code: 'IICMA-H0036TJU2', label: 'LAC/LSW' },
+  { code: 'BA-H2014TJ', label: 'Behavioral Assistant' },
 ]
 
-const SICK_LEAVE_POLICY = `To be eligible for sick leave, you must:
-1. Have been employed for at least 120 calendar days
-2. Have worked at least 1,000 hours in the 12 months preceding the request
-3. Provide documentation if absent for 3 or more consecutive days
-Sick leave is for personal illness, injury, or medical appointments only.`
+const SICK_LEAVE_SUMMARY = `• Accrual: 0.0333 hrs per hour worked (max 40 hrs/year)
+• Use: Personal illness, injury, medical appointments, or care for immediate family
+• Minimum increment: 1 hour
+• Documentation required if absent 3+ consecutive days
+• Unused hours carry over (up to 40 hrs), no payout upon separation
+• Rate calculated as the average of your combined pay types`
+
+const SICK_LEAVE_FULL_POLICY = `Sick Leave Policy
+
+Purpose: This policy provides guidelines for employees to utilize sick leave benefits when unable to work due to illness or injury, supporting employee well-being and ensuring continuity of quality services.
+
+Eligibility: All regular full-time and part-time employees are eligible. Temporary employees, independent contractors, interns, and consultants are not eligible.
+
+Accrual: Employees accrue sick leave at 0.0333 hours per hour worked, on a pro-rata basis beginning on the first day of employment.
+
+Maximum Accrual: Employees may accrue up to 40 hours per calendar year. Once the limit is reached, no further accrual occurs until existing balance is used.
+
+Requesting Sick Leave Pay: Submit a sick leave request on your invoice form with dates and hours requested.
+
+Notification: Notify your immediate supervisor or designated contact as early as possible. If illness prevents prior notice, notify as soon as reasonably possible.
+
+Documentation: Absences exceeding 3 consecutive work days may require a medical certificate. BestLife reserves the right to request documentation for any absence.
+
+Use: Accrued sick leave may be used for personal illness, injury, medical appointments, or to care for immediate family (spouse, domestic partner, child, parent, sibling, grandparent, or household member).
+
+Usage Increment: Minimum of 1 hour, up to available balance.
+
+Carryover & Payout: Unused hours carry over up to 40 hours. No payout upon termination, resignation, or retirement. Rate is calculated as the average of combined pay types.
+
+Abuse: BestLife reserves the right to investigate suspected abuse. Confirmed abuse may result in disciplinary action up to termination.
+
+Compliance: This policy complies with all applicable federal, state, and local laws.`
 
 // ── Collapsible Section Component ──
 function Section({ title, total, totalLabel, children, defaultOpen = false }) {
@@ -83,6 +110,7 @@ export default function PublicInvoice() {
   const [sickLeave, setSickLeave] = useState({ date: '', hours: '', policyAck: false })
   const [pto, setPto] = useState({ hours: '' })
   const [notes, setNotes] = useState('')
+  const [showFullPolicy, setShowFullPolicy] = useState(false)
 
   // ── IIC hours validation ──
   const [iicHoursError, setIicHoursError] = useState({})
@@ -143,14 +171,18 @@ export default function PublicInvoice() {
     return Object.values(iic).flat().reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
   }
   function opTotal() { return op.length }
+  function opSessionCount() { return op.filter(e => !e.cancel_fee).length }
+  function opCancelCount() { return op.filter(e => e.cancel_fee).length }
   function sbysTotal() { return sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
-  function adosTotal() { return ados.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function adosTotal() { return ados.length }
+  function adosInHomeCount() { return ados.filter(e => e.location === 'In home').length }
+  function adosAtOfficeCount() { return ados.filter(e => e.location === 'At office').length }
   function adminTotal() { return adminEntries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
   function supervisionTotal() { return supervisionIndiv.length + supervisionGroup.length }
   function sickTotal() { return parseFloat(sickLeave.hours) || 0 }
   function ptoTotal() { return parseFloat(pto.hours) || 0 }
   function grandTotal() {
-    return iicTotal() + sbysTotal() + adosTotal() + adminTotal() + supervisionTotal() + sickTotal() + ptoTotal()
+    return iicTotal() + sbysTotal() + adminTotal() + supervisionTotal() + sickTotal() + ptoTotal()
   }
 
   // ── IIC helpers ──
@@ -211,12 +243,12 @@ export default function PublicInvoice() {
   function generateAdosRows() {
     const count = parseInt(adosCount) || 0
     if (count <= 0) return
-    setAdos(Array.from({ length: count }, () => ({ client_initials: '', location: 'In home', id_number: '', date: '', hours: '' })))
+    setAdos(Array.from({ length: count }, () => ({ client_initials: '', location: 'In home', id_number: '', date: '' })))
     setAdosGenerated(true)
     markDirty()
   }
   function addAdosRow() {
-    setAdos(prev => [...prev, { client_initials: '', location: 'In home', id_number: '', date: '', hours: '' }])
+    setAdos(prev => [...prev, { client_initials: '', location: 'In home', id_number: '', date: '' }])
     markDirty()
   }
   function updateAdos(idx, field, value) {
@@ -319,7 +351,6 @@ export default function PublicInvoice() {
     for (let i = 0; i < ados.length; i++) {
       if (!ados[i].client_initials?.trim()) { setError(`ADOS: Client initials required for entry ${i + 1}`); return }
       if (!ados[i].date) { setError(`ADOS: Date required for entry ${i + 1}`); return }
-      if (!ados[i].hours || parseFloat(ados[i].hours) <= 0) { setError(`ADOS: Assessment length required for entry ${i + 1}`); return }
     }
     // Validate Admin
     for (let i = 0; i < adminEntries.length; i++) {
@@ -373,11 +404,16 @@ export default function PublicInvoice() {
       <div className="public-invoice-page">
         <div className="public-invoice-card">
           <div className="public-invoice-header">
-            <h1>BestLife Hub</h1>
+            <h1>Payroll Invoice</h1>
           </div>
           <div className="public-invoice-success">
-            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>&#10003;</div>
-            <h2>Invoice Submitted</h2>
+            <div className="invoice-success-checkmark">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="24" r="22" stroke="var(--accent)" strokeWidth="3" fill="rgba(0,187,238,0.1)" />
+                <polyline points="14,25 21,32 34,18" stroke="var(--accent)" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <h2 style={{ color: 'var(--accent)' }}>Invoice Submitted</h2>
             <p>Your hours have been submitted successfully. You can close this page.</p>
             {data?.submitted_at && (
               <p className="public-invoice-muted">Submitted {new Date(data.submitted_at).toLocaleString()}</p>
@@ -392,7 +428,7 @@ export default function PublicInvoice() {
     return (
       <div className="public-invoice-page">
         <div className="public-invoice-card">
-          <div className="public-invoice-header"><h1>BestLife Hub</h1></div>
+          <div className="public-invoice-header"><h1>Payroll Invoice</h1></div>
           <div className="public-invoice-error">{error}</div>
         </div>
       </div>
@@ -405,7 +441,7 @@ export default function PublicInvoice() {
     <div className="public-invoice-page">
       <div className="public-invoice-card">
         <div className="public-invoice-header">
-          <h1>BestLife Hub</h1>
+          <h1>Payroll Invoice</h1>
           <p className="public-invoice-subtitle">{data.user_name} &mdash; {data.period_label}</p>
           {data.due_date && <p className="public-invoice-muted">Due: {new Date(data.due_date + 'T00:00:00').toLocaleDateString()}</p>}
         </div>
@@ -413,7 +449,7 @@ export default function PublicInvoice() {
         {error && <div className="public-invoice-error">{error}</div>}
 
         {/* ═══ IIC Section ═══ */}
-        <Section title="IIC (In-home Intensive Counseling)" total={iicTotal()} totalLabel="hrs">
+        <Section title="IIC Sessions" total={iicTotal()} totalLabel="hrs">
           {IIC_CODES.map(({ code, label }) => (
             <div key={code} className="invoice-subgroup">
               <div className="invoice-subgroup-header">
@@ -462,7 +498,7 @@ export default function PublicInvoice() {
         </Section>
 
         {/* ═══ OP Section ═══ */}
-        <Section title="OP (Outpatient)" total={opTotal()} totalLabel="sessions">
+        <Section title="OP Sessions" total={opTotal()} totalLabel="sessions">
           {!opGenerated ? (
             <div className="invoice-generate-row">
               <label>Total # of completed OP sessions:</label>
@@ -501,7 +537,7 @@ export default function PublicInvoice() {
         </Section>
 
         {/* ═══ SBYS Section ═══ */}
-        <Section title="SBYS (Step By Your Side)" total={sbysTotal()} totalLabel="hrs">
+        <Section title="School Based Youth Services" total={sbysTotal()} totalLabel="hrs">
           {sbys.map((entry, idx) => (
             <div key={idx} className="invoice-entry">
               <div className="invoice-entry-fields">
@@ -521,7 +557,7 @@ export default function PublicInvoice() {
         </Section>
 
         {/* ═══ ADOS Section ═══ */}
-        <Section title="ADOS Assessments" total={adosTotal()} totalLabel="hrs">
+        <Section title="ADOS Assessments" total={adosTotal()} totalLabel="assessments">
           {!adosGenerated ? (
             <div className="invoice-generate-row">
               <label>Total # of completed ADOS Assessments:</label>
@@ -551,10 +587,6 @@ export default function PublicInvoice() {
                     <div className="form-field invoice-field-md">
                       <label>Date</label>
                       <input type="date" value={entry.date} onChange={e => updateAdos(idx, 'date', e.target.value)} />
-                    </div>
-                    <div className="form-field invoice-field-sm">
-                      <label>Length (hrs)</label>
-                      <input type="number" step="0.25" min="0" value={entry.hours} onChange={e => updateAdos(idx, 'hours', e.target.value)} placeholder="0" />
                     </div>
                     <button type="button" className="invoice-remove-btn" onClick={() => removeAdos(idx)} title="Remove">&times;</button>
                   </div>
@@ -658,7 +690,15 @@ export default function PublicInvoice() {
         <Section title="Sick Leave" total={sickTotal()} totalLabel="hrs">
           <div className="invoice-disclaimer invoice-disclaimer--info">
             <strong>Sick Leave Policy</strong>
-            <pre className="invoice-policy-text">{SICK_LEAVE_POLICY}</pre>
+            <pre className="invoice-policy-text">{showFullPolicy ? SICK_LEAVE_FULL_POLICY : SICK_LEAVE_SUMMARY}</pre>
+            <button
+              type="button"
+              className="btn btn--small btn--ghost"
+              style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}
+              onClick={() => setShowFullPolicy(prev => !prev)}
+            >
+              {showFullPolicy ? 'Hide Full Policy' : 'View Full Policy'}
+            </button>
           </div>
           <div className="invoice-entry">
             <div className="invoice-entry-fields invoice-entry-fields--wrap">
@@ -681,7 +721,7 @@ export default function PublicInvoice() {
         </Section>
 
         {/* ═══ PTO Section ═══ */}
-        <Section title="PTO (Paid Time Off)" total={ptoTotal()} totalLabel="hrs">
+        <Section title="Paid Time Off" total={ptoTotal()} totalLabel="hrs">
           <div className="invoice-entry">
             <div className="invoice-entry-fields">
               <div className="form-field invoice-field-sm">
@@ -697,9 +737,11 @@ export default function PublicInvoice() {
           <div className="invoice-grand-total-title">Summary</div>
           <div className="invoice-grand-total-rows">
             {iicTotal() > 0 && <div className="invoice-total-row"><span>IIC</span><span>{iicTotal()} hrs</span></div>}
-            {opTotal() > 0 && <div className="invoice-total-row"><span>OP</span><span>{opTotal()} sessions</span></div>}
+            {opSessionCount() > 0 && <div className="invoice-total-row"><span>OP Sessions</span><span>{opSessionCount()}</span></div>}
+            {opCancelCount() > 0 && <div className="invoice-total-row"><span>OP Cancellations</span><span>{opCancelCount()}</span></div>}
             {sbysTotal() > 0 && <div className="invoice-total-row"><span>SBYS</span><span>{sbysTotal()} hrs</span></div>}
-            {adosTotal() > 0 && <div className="invoice-total-row"><span>ADOS</span><span>{adosTotal()} hrs</span></div>}
+            {adosInHomeCount() > 0 && <div className="invoice-total-row"><span>ADOS (In home)</span><span>{adosInHomeCount()}</span></div>}
+            {adosAtOfficeCount() > 0 && <div className="invoice-total-row"><span>ADOS (At office)</span><span>{adosAtOfficeCount()}</span></div>}
             {adminTotal() > 0 && <div className="invoice-total-row"><span>Administration</span><span>{adminTotal()} hrs</span></div>}
             {isCliLeader && supervisionTotal() > 0 && <div className="invoice-total-row"><span>Supervision</span><span>{supervisionTotal()} hrs</span></div>}
             {sickTotal() > 0 && <div className="invoice-total-row"><span>Sick Leave</span><span>{sickTotal()} hrs</span></div>}

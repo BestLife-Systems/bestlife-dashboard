@@ -15,7 +15,9 @@ export async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`, { headers })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Request failed')
+    const detail = err.detail
+    const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(detail) || 'Request failed')
+    throw new Error(msg)
   }
   return res.json()
 }
@@ -29,7 +31,9 @@ export async function apiPost(path, body) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Request failed')
+    const detail = err.detail
+    const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(detail) || 'Request failed')
+    throw new Error(msg)
   }
   return res.json()
 }

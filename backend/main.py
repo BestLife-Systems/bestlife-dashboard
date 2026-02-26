@@ -130,56 +130,9 @@ async def health():
 
 @app.post("/api/admin/invite-user")
 async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
-    """Create a new user via Supabase Auth and add to users table."""
-    # Create auth user with Supabase Admin API
+    """Create a new user via Supabase Auth invite and add to users table."""
+    # Step 1: Invite via Supabase Auth — this creates the auth user AND sends the email
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            f"{SUPABASE_URL}/auth/v1/admin/users",
-            headers={
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "email": req.email,
-                "email_confirm": False,
-                "user_metadata": {
-                    "first_name": req.first_name,
-                    "last_name": req.last_name,
-                },
-            },
-        )
-
-        if resp.status_code >= 400:
-            error_detail = resp.json().get("msg", resp.text)
-            raise HTTPException(status_code=400, detail=f"Auth error: {error_detail}")
-
-        auth_user = resp.json()
-
-    # Insert into users table
-    user_data = {
-        "auth_id": auth_user["id"],
-        "email": req.email,
-        "first_name": req.first_name,
-        "last_name": req.last_name,
-        "role": req.role,
-        "is_active": True,
-    }
-    # Optional fields
-    if hasattr(req, 'phone_number') and req.phone_number:
-        user_data["phone_number"] = req.phone_number
-    if hasattr(req, 'sms_enabled'):
-        user_data["sms_enabled"] = req.sms_enabled
-    if hasattr(req, 'supervision_required'):
-        user_data["supervision_required"] = req.supervision_required
-    if hasattr(req, 'clinical_supervisor_id') and req.clinical_supervisor_id:
-        user_data["clinical_supervisor_id"] = req.clinical_supervisor_id
-
-    new_user = await sb_request("POST", "users", data=user_data)
-    user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
-
-    # Send invite email via Supabase Auth
-    async with httpx.AsyncClient(timeout=10.0) as client:
         invite_resp = await client.post(
             f"{SUPABASE_URL}/auth/v1/invite",
             headers={
@@ -189,11 +142,41 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
             },
             json={
                 "email": req.email,
+                "data": {
+                    "first_name": req.first_name,
+                    "last_name": req.last_name,
+                },
             },
         )
-        # Log if invite fails but don't block — user is already created
+
         if invite_resp.status_code >= 400:
-            print(f"Warning: invite email failed for {req.email}: {invite_resp.text}")
+            err_body = invite_resp.json() if invite_resp.headers.get("content-type", "").startswith("application/json") else {}
+            error_detail = err_body.get("msg") or err_body.get("error_description") or err_body.get("message") or invite_resp.text
+            raise HTTPException(status_code=400, detail=f"Auth error: {error_detail}")
+
+        auth_user = invite_resp.json()
+        auth_id = auth_user.get("id", "")
+
+    # Step 2: Insert into users table
+    user_data = {
+        "auth_id": auth_id,
+        "email": req.email,
+        "first_name": req.first_name,
+        "last_name": req.last_name,
+        "role": req.role,
+        "is_active": True,
+    }
+    if req.phone_number:
+        user_data["phone_number"] = req.phone_number
+    if req.sms_enabled is not None:
+        user_data["sms_enabled"] = req.sms_enabled
+    if req.supervision_required is not None:
+        user_data["supervision_required"] = req.supervision_required
+    if req.clinical_supervisor_id:
+        user_data["clinical_supervisor_id"] = req.clinical_supervisor_id
+
+    new_user = await sb_request("POST", "users", data=user_data)
+    user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
 
     return {"status": "invited", "email": req.email, "user_id": user_id}
 

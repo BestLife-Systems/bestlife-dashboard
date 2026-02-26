@@ -102,7 +102,7 @@ export default function AdminUsers() {
         loadUsers()
       }
     } catch (err) {
-      setError(err.message)
+      setError(typeof err?.message === 'string' ? err.message : String(err))
     } finally {
       setSaving(false)
     }
