@@ -382,6 +382,18 @@ a { color: var(--accent); text-decoration: none; }
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
+/* Make date picker calendar icon visible in dark mode */
+.review-edit-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+  opacity: 0.7;
+}
+.review-edit-input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+[data-theme="light"] .review-edit-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.6;
+}
+[data-theme="light"] .review-edit-input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 .review-edit-input--narrow { width: 70px; min-width: 50px; }
 /* Remove mode X button */
 .review-remove-x {

@@ -1593,70 +1593,103 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
         rt = bd.get("rate_types") or {}
         bill_rate_map[rt.get("name", "")] = float(bd["default_bill_rate"])
 
-    # Write time entries from invoice_data
+    # ── Parse structured invoice_data ──
+    # Format: { iic: { CODE: [{cyber_initials, date, hours},...] }, op: { sessions: [{client_initials, date, cancel_fee?},...] },
+    #   sbys: [{date, hours},...], ados: [{client_initials, location, id_number, date},...],
+    #   admin: [{date, hours},...], supervision: { individual: [...], group: [...] },
+    #   sick_leave: { date, hours, reason }, pto: { hours }, notes: "..." }
     total_bill = 0.0
     total_pay = 0.0
     total_hours = 0.0
     total_sessions = 0
 
-    # invoice_data format: { "rate_type_name": { quantity, duration_minutes?, client_initials?, notes? }, ... }
-    # or simple: { "rate_type_name": quantity_number }
-    for rate_name, entry_data in invoice_data.items():
-        if rate_name in ("notes", "op_sessions"):
-            continue
-
+    # Helper: write a time entry and accumulate totals
+    async def write_entry(rate_name, qty, initials=None, duration=None, notes=None):
+        nonlocal total_bill, total_pay, total_hours, total_sessions
+        if qty == 0:
+            return
         rate_info = pay_rate_map.get(rate_name, {})
         rate_type_id = rate_info.get("rate_type_id")
         pay_rate = rate_info.get("pay_rate", 0)
         bill_rate = bill_rate_map.get(rate_name, 0)
         unit = rate_info.get("unit", "hourly")
-
-        if isinstance(entry_data, dict):
-            qty = float(entry_data.get("quantity", 0))
-            duration = entry_data.get("duration_minutes")
-            initials = entry_data.get("client_initials")
-            notes = entry_data.get("notes")
-        else:
-            qty = float(entry_data) if entry_data else 0
-            duration = None
-            initials = None
-            notes = None
-
-        if qty == 0:
-            continue
-
-        # Apply admin overrides
-        override_data = req.overrides or {}
-        o_bill = override_data.get(f"{rate_name}_bill")
-        o_pay = override_data.get(f"{rate_name}_pay")
-
-        est_bill = float(o_bill) if o_bill is not None else (bill_rate * qty)
-        est_pay = float(o_pay) if o_pay is not None else (pay_rate * qty)
-
+        est_bill = bill_rate * qty
+        est_pay = pay_rate * qty
         if rate_type_id:
             await sb_request("POST", "time_entries", data={
-                "recipient_id": recipient_id,
-                "user_id": user_id,
-                "pay_period_id": period_id,
-                "rate_type_id": rate_type_id,
-                "quantity": qty,
-                "duration_minutes": duration,
-                "client_initials": initials,
-                "est_bill_amount": round(est_bill, 2),
-                "est_pay_amount": round(est_pay, 2),
-                "admin_bill_override": round(float(o_bill), 2) if o_bill is not None else None,
-                "admin_pay_override": round(float(o_pay), 2) if o_pay is not None else None,
-                "notes": notes,
-                "locked": True,
+                "recipient_id": recipient_id, "user_id": user_id, "pay_period_id": period_id,
+                "rate_type_id": rate_type_id, "quantity": qty,
+                "duration_minutes": duration, "client_initials": initials,
+                "est_bill_amount": round(est_bill, 2), "est_pay_amount": round(est_pay, 2),
+                "notes": notes, "locked": True,
             })
-
         total_bill += est_bill
         total_pay += est_pay
-
         if unit == "hourly":
             total_hours += qty
         else:
             total_sessions += int(qty)
+
+    # IIC sessions
+    iic = invoice_data.get("iic") or {}
+    for code, entries in iic.items():
+        if not isinstance(entries, list):
+            continue
+        # Map IIC code to rate type name
+        iic_rate_names = {
+            "IICLC-H0036TJU1": "IIC LPC/LCSW",
+            "IICMA-H0036TJU2": "IIC LAC/LSW",
+            "BA-H2014TJ": "Behavioral Assistant",
+        }
+        rate_name = iic_rate_names.get(code, code)
+        for entry in entries:
+            hrs = float(entry.get("hours") or 0)
+            await write_entry(rate_name, hrs, initials=entry.get("cyber_initials"))
+
+    # OP sessions (each session = 1 hour, cancellations also = 1 hour)
+    op = invoice_data.get("op") or {}
+    op_sessions = op.get("sessions") or []
+    for entry in op_sessions:
+        is_cancel = entry.get("cancel_fee")
+        rate_name = "OP Cancellation" if is_cancel else "OP Session"
+        await write_entry(rate_name, 1.0, initials=entry.get("client_initials"))
+
+    # SBYS
+    sbys = invoice_data.get("sbys") or []
+    for entry in sbys:
+        hrs = float(entry.get("hours") or 0)
+        await write_entry("SBYS", hrs)
+
+    # ADOS (each assessment = 3 hours toward time worked)
+    ados = invoice_data.get("ados") or []
+    for entry in ados:
+        await write_entry("ADOS", 3.0, initials=entry.get("client_initials"),
+                          notes=f"{entry.get('location','')} ID:{entry.get('id_number','')}")
+
+    # Admin
+    admin_entries = invoice_data.get("admin") or []
+    for entry in admin_entries:
+        hrs = float(entry.get("hours") or 0)
+        await write_entry("Administration", hrs)
+
+    # Supervision (individual + group, each session = 1 hour)
+    sup = invoice_data.get("supervision") or {}
+    for s in (sup.get("individual") or []):
+        await write_entry("Individual Supervision", 1.0, notes=f"Supervisor: {s.get('supervisor_name','')}")
+    for s in (sup.get("group") or []):
+        await write_entry("Group Supervision", 1.0, notes=f"Supervisees: {','.join(s.get('supervisee_names',[]))}")
+
+    # Sick Leave (only if admin approved)
+    sick = invoice_data.get("sick_leave") or {}
+    sick_hrs = float(sick.get("hours") or 0)
+    if sick_hrs > 0:
+        await write_entry("Sick Leave", sick_hrs, notes=sick.get("reason"))
+
+    # PTO
+    pto = invoice_data.get("pto") or {}
+    pto_hrs = float(pto.get("hours") or 0)
+    if pto_hrs > 0:
+        await write_entry("PTO", pto_hrs)
 
     # Update recipient status
     await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
@@ -2238,7 +2271,9 @@ async def analytics_supervision(user=Depends(verify_token)):
 @app.post("/api/ai/chat")
 async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
     """Send a prompt to Claude (Sonnet) and return the response."""
-    if not ANTHROPIC_API_KEY:
+    # Read API key at request time (not module load) so Railway env vars are always fresh
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    if not api_key:
         raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
 
     import anthropic
@@ -2254,7 +2289,7 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
         system_message += f"\n\nAdditional context: {req.context}"
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=req.max_tokens,
@@ -2278,7 +2313,8 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
 @app.post("/api/ai/kb-assist")
 async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
     """AI-assisted content generation for Knowledge Base articles."""
-    if not ANTHROPIC_API_KEY:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    if not api_key:
         raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
 
     import anthropic
@@ -2294,7 +2330,7 @@ async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
         system_message += f"\n\nArticle context — Category: {req.context}"
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=req.max_tokens or 2048,

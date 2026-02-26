@@ -79,6 +79,12 @@ const DEFAULT_MEETING_FORM = {
   day_of_week: 1, day_of_month: 1, month: 1, week_of_month: 1,
 }
 
+const ChevronIcon = ({ open }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+    <polyline points="9 18 15 12 9 6" />
+  </svg>
+)
+
 export default function AdminSettings() {
   // Upload state
   const [uploading, setUploading] = useState(false)
@@ -103,6 +109,10 @@ export default function AdminSettings() {
   const [meetingTmplForm, setMeetingTmplForm] = useState(DEFAULT_MEETING_FORM)
   const [meetingTmplSaving, setMeetingTmplSaving] = useState(false)
   const [meetingTmplError, setMeetingTmplError] = useState(null)
+
+  // Collapse states
+  const [taskTmplOpen, setTaskTmplOpen] = useState(false)
+  const [meetingTmplOpen, setMeetingTmplOpen] = useState(false)
 
   useEffect(() => {
     apiGet('/settings/last-upload').then(setLastUpload).catch(() => {})
@@ -318,84 +328,100 @@ export default function AdminSettings() {
         <h2 className="page-title">Settings</h2>
       </div>
 
-      {/* ── Task Templates ── */}
+      {/* ── Task Templates (collapsible) ── */}
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h3 className="card-title" style={{ margin: 0 }}>Task Templates</h3>
-          <button className="btn btn--primary btn--small" onClick={openNewTaskTmpl}>+ New Template</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setTaskTmplOpen(o => !o)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ChevronIcon open={taskTmplOpen} />
+            <h3 className="card-title" style={{ margin: 0 }}>Task Templates</h3>
+            <span className="badge badge--muted" style={{ fontSize: '0.7rem' }}>{taskTemplates.length}</span>
+          </div>
+          <button className="btn btn--primary btn--small" onClick={e => { e.stopPropagation(); openNewTaskTmpl() }}>+ New</button>
         </div>
-        <p className="card-description" style={{ marginBottom: '0.75rem' }}>
-          Recurring task templates auto-generate task instances. Changes take effect on next generation.
-        </p>
-        {taskTmplError && <div className="form-error" style={{ marginBottom: '0.5rem' }}>{taskTmplError}</div>}
-        {loadingTaskTmpl ? (
-          <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</div>
-        ) : taskTemplates.length === 0 ? (
-          <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No task templates yet.</div>
-        ) : (
-          <div className="card-list">
-            {taskTemplates.map(tmpl => (
-              <div key={tmpl.id} className="card" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>{tmpl.title}</span>
-                      <span className={`task-priority task-priority--${tmpl.priority}`}>{tmpl.priority}</span>
-                      {!tmpl.active && <span className="badge badge--muted">inactive</span>}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                      {scheduleLabel(tmpl)}
-                      {tmpl.assigned_to_role && ` · ${tmpl.assigned_to_role}`}
+        {taskTmplOpen && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <p className="card-description" style={{ marginBottom: '0.75rem' }}>
+              Recurring task templates auto-generate task instances. Changes take effect on next generation.
+            </p>
+            {taskTmplError && <div className="form-error" style={{ marginBottom: '0.5rem' }}>{taskTmplError}</div>}
+            {loadingTaskTmpl ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</div>
+            ) : taskTemplates.length === 0 ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No task templates yet.</div>
+            ) : (
+              <div className="card-list">
+                {taskTemplates.map(tmpl => (
+                  <div key={tmpl.id} className="card" style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>{tmpl.title}</span>
+                          <span className={`task-priority task-priority--${tmpl.priority}`}>{tmpl.priority}</span>
+                          {!tmpl.active && <span className="badge badge--muted">inactive</span>}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                          {scheduleLabel(tmpl)}
+                          {tmpl.assigned_to_role && ` · ${tmpl.assigned_to_role}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                        <button className="btn btn--ghost btn--small" onClick={() => openEditTaskTmpl(tmpl)}>Edit</button>
+                        <button className="btn btn--danger-ghost btn--small" onClick={() => handleDeleteTaskTmpl(tmpl)}>Remove</button>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
-                    <button className="btn btn--ghost btn--small" onClick={() => openEditTaskTmpl(tmpl)}>Edit</button>
-                    <button className="btn btn--danger-ghost btn--small" onClick={() => handleDeleteTaskTmpl(tmpl)}>Remove</button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Meeting Templates ── */}
+      {/* ── Meeting Templates (collapsible) ── */}
       <div className="card" style={{ marginTop: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h3 className="card-title" style={{ margin: 0 }}>Meeting Templates</h3>
-          <button className="btn btn--primary btn--small" onClick={openNewMeetingTmpl}>+ New Template</button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setMeetingTmplOpen(o => !o)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ChevronIcon open={meetingTmplOpen} />
+            <h3 className="card-title" style={{ margin: 0 }}>Meeting Templates</h3>
+            <span className="badge badge--muted" style={{ fontSize: '0.7rem' }}>{meetingTemplates.length}</span>
+          </div>
+          <button className="btn btn--primary btn--small" onClick={e => { e.stopPropagation(); openNewMeetingTmpl() }}>+ New</button>
         </div>
-        <p className="card-description" style={{ marginBottom: '0.75rem' }}>
-          Recurring meeting templates auto-generate meeting instances on the Home page.
-        </p>
-        {meetingTmplError && <div className="form-error" style={{ marginBottom: '0.5rem' }}>{meetingTmplError}</div>}
-        {loadingMeetingTmpl ? (
-          <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</div>
-        ) : meetingTemplates.length === 0 ? (
-          <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No meeting templates yet.</div>
-        ) : (
-          <div className="card-list">
-            {meetingTemplates.map(tmpl => (
-              <div key={tmpl.id} className="card" style={{ padding: '0.75rem 1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>{tmpl.title}</span>
-                      <span className="badge badge--info">{tmpl.cadence}</span>
-                      {!tmpl.active && <span className="badge badge--muted">inactive</span>}
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                      {tmpl.meeting_time && `@ ${tmpl.meeting_time}`}
-                      {(tmpl.audience_roles || []).length > 0 && ` · ${tmpl.audience_roles.join(', ')}`}
+        {meetingTmplOpen && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <p className="card-description" style={{ marginBottom: '0.75rem' }}>
+              Recurring meeting templates auto-generate meeting instances on the Home page.
+            </p>
+            {meetingTmplError && <div className="form-error" style={{ marginBottom: '0.5rem' }}>{meetingTmplError}</div>}
+            {loadingMeetingTmpl ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</div>
+            ) : meetingTemplates.length === 0 ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No meeting templates yet.</div>
+            ) : (
+              <div className="card-list">
+                {meetingTemplates.map(tmpl => (
+                  <div key={tmpl.id} className="card" style={{ padding: '0.75rem 1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-bright)' }}>{tmpl.title}</span>
+                          <span className="badge badge--info">{tmpl.cadence}</span>
+                          {!tmpl.active && <span className="badge badge--muted">inactive</span>}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                          {tmpl.meeting_time && `@ ${tmpl.meeting_time}`}
+                          {(tmpl.audience_roles || []).length > 0 && ` · ${tmpl.audience_roles.join(', ')}`}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                        <button className="btn btn--ghost btn--small" onClick={() => openEditMeetingTmpl(tmpl)}>Edit</button>
+                        <button className="btn btn--danger-ghost btn--small" onClick={() => handleDeleteMeetingTmpl(tmpl)}>Remove</button>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
-                    <button className="btn btn--ghost btn--small" onClick={() => openEditMeetingTmpl(tmpl)}>Edit</button>
-                    <button className="btn btn--danger-ghost btn--small" onClick={() => handleDeleteMeetingTmpl(tmpl)}>Remove</button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
@@ -423,7 +449,7 @@ export default function AdminSettings() {
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Anthropic Claude Sonnet · Powers Ask Betty & KB Assist</div>
                 </div>
               </div>
-              <span className="badge badge--muted">Add ANTHROPIC_API_KEY</span>
+              <span className="badge badge--muted">Configured in Railway</span>
             </div>
           </div>
 
