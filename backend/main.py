@@ -1260,21 +1260,31 @@ class UserPayRatesRequest(BaseModel):
 @app.post("/api/payroll/user-pay-rates/{user_id}")
 async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depends(require_admin)):
     """Admin: set pay rates for a user (upsert)."""
-    # Delete existing rates for this user
-    try:
-        await sb_request("DELETE", f"user_pay_rates?user_id=eq.{user_id}")
-    except Exception:
-        pass
-
-    # Insert new rates
+    saved = 0
     for rate in req.rates:
-        await sb_request("POST", "user_pay_rates", data={
-            "user_id": user_id,
-            "rate_type_id": rate["rate_type_id"],
-            "pay_rate": rate["pay_rate"],
+        rt_id = rate["rate_type_id"]
+        pay_rate = rate["pay_rate"]
+        # Check if existing rate exists for this user + rate_type (any date)
+        existing = await sb_request("GET", "user_pay_rates", params={
+            "user_id": f"eq.{user_id}",
+            "rate_type_id": f"eq.{rt_id}",
+            "select": "id",
+            "limit": "1",
         })
+        if existing:
+            await sb_request("PATCH", f"user_pay_rates?user_id=eq.{user_id}&rate_type_id=eq.{rt_id}", data={
+                "pay_rate": pay_rate,
+                "updated_at": datetime.utcnow().isoformat(),
+            })
+        else:
+            await sb_request("POST", "user_pay_rates", data={
+                "user_id": user_id,
+                "rate_type_id": rt_id,
+                "pay_rate": pay_rate,
+            })
+        saved += 1
 
-    return {"status": "saved", "count": len(req.rates)}
+    return {"status": "saved", "count": saved}
 
 
 # ── Pay Periods ────────────────────────────────────────────────────

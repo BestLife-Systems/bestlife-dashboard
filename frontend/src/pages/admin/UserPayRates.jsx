@@ -3,6 +3,11 @@ import { apiGet, apiPost, apiPatch } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import Modal from '../../components/Modal'
 
+// Display name overrides for cleaner labels
+const DISPLAY_NAMES = {
+  'Community Event (Day)': 'Community Event',
+}
+
 // Define display groups for rate types in the Pay Rates modal
 const RATE_GROUPS = [
   { label: 'IIC', patterns: ['IIC-LC', 'IIC-MA', 'IIC-BA'] },
@@ -10,7 +15,7 @@ const RATE_GROUPS = [
   { label: 'SBYS', patterns: ['SBYS'] },
   { label: 'ADOS', patterns: ['ADOS Assessment'] },
   { label: 'APN', patterns: ['APN Session', 'APN Intake'] },
-  { label: 'Other', patterns: ['Administration', 'PTO', 'Sick Leave', 'Community Event', 'OP Cancellation'] },
+  { label: 'General', patterns: ['Administration', 'PTO', 'Sick Leave', 'Community Event', 'OP Cancellation'] },
 ]
 
 function groupRateTypes(rateTypes) {
@@ -28,13 +33,22 @@ function groupRateTypes(rateTypes) {
     }
   }
 
-  // Catch any remaining
+  // Any remaining go into General (no separate "Other" section)
   const remaining = rateTypes.filter(rt => !used.has(rt.id))
   if (remaining.length > 0) {
-    grouped.push({ label: 'Other', items: remaining })
+    const general = grouped.find(g => g.label === 'General')
+    if (general) {
+      remaining.forEach(r => { general.items.push(r); used.add(r.id) })
+    } else {
+      grouped.push({ label: 'General', items: remaining })
+    }
   }
 
   return grouped
+}
+
+function displayName(rt) {
+  return DISPLAY_NAMES[rt.name] || rt.name
 }
 
 export default function UserPayRates() {
@@ -164,7 +178,7 @@ export default function UserPayRates() {
                     {group.items.map(rt => (
                       <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
                         <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>
-                          {rt.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span>
+                          {displayName(rt)} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span>
                         </label>
                         <div style={{ width: '120px' }}>
                           <input
