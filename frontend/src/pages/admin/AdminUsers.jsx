@@ -10,7 +10,6 @@ const ROLES = [
   { value: 'therapist', label: 'Therapist' },
   { value: 'apn', label: 'APN' },
   { value: 'front_desk', label: 'Front Desk' },
-  { value: 'ba', label: 'Billing Admin' },
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
 
@@ -315,20 +314,36 @@ export default function AdminUsers() {
           Set the pay rate per unit for each rate type. Leave blank if not applicable. You can always update these later in Users &rarr; Pay Rates.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {rateTypes.map(rt => (
-            <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>{rt.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span></label>
-              <div style={{ width: '120px' }}>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="$ rate"
-                  value={editRates[rt.id] || ''}
-                  onChange={e => setEditRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
-                />
-              </div>
-            </div>
-          ))}
+          {rateTypes
+            .filter(rt => {
+              const hide = ['Other (Hourly)', 'APN Other (Custom)', 'Other (Day)']
+              return !hide.includes(rt.name)
+            })
+            .map(rt => {
+              const nameMap = {
+                'ADOS Assessment (In Home)': 'ADOS Assessment - In Home',
+                'ADOS Assessment (In Office)': 'ADOS Assessment - At Office',
+                'APN Session (30)': 'APN Session - 30 minute',
+                'APN Intake (60)': 'APN Session - Intake',
+                'Community Event (Day)': 'Community Event',
+              }
+              const displayName = nameMap[rt.name] || rt.name
+              return (
+                <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>{displayName} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span></label>
+                  <div style={{ width: '120px' }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="$ rate"
+                      value={editRates[rt.id] || ''}
+                      onChange={e => setEditRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-focus)', color: 'var(--text-bright)', fontSize: '0.95rem', padding: '0.5rem 0.625rem' }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
         </div>
         <div className="modal-actions">
           <button className="btn btn--ghost" onClick={() => { setPayRateStep(false); setNewUserId(null); loadUsers() }}>Skip</button>

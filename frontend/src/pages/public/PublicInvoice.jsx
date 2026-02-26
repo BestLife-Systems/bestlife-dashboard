@@ -34,8 +34,7 @@ const IIC_CODES = [
   { code: 'BA-H2014TJ', label: 'Behavioral Assistant' },
 ]
 
-const SICK_LEAVE_SUMMARY = `• Accrual: 0.0333 hrs per hour worked (max 40 hrs/year)
-• Use: Personal illness, injury, medical appointments, or care for immediate family
+const SICK_LEAVE_SUMMARY = `• Use: Personal illness, injury, medical appointments, or care for immediate family
 • Minimum increment: 1 hour
 • Documentation required if absent 3+ consecutive days
 • Unused hours carry over (up to 40 hrs), no payout upon separation
@@ -100,13 +99,11 @@ export default function PublicInvoice() {
   const [op, setOp] = useState([])
   const [opCount, setOpCount] = useState('')
   const [opGenerated, setOpGenerated] = useState(false)
-  const [sbys, setSbys] = useState([])
-  const [ados, setAdos] = useState([])
-  const [adosCount, setAdosCount] = useState('')
-  const [adosGenerated, setAdosGenerated] = useState(false)
-  const [adminEntries, setAdminEntries] = useState([])
+  const [sbys, setSbys] = useState([{ date: '', hours: '' }])
+  const [ados, setAdos] = useState([{ client_initials: '', location: 'In home', id_number: '', date: '' }])
+  const [adminEntries, setAdminEntries] = useState([{ date: '', hours: '' }])
   const [supervisionIndiv, setSupervisionIndiv] = useState([])
-  const [supervisionGroup, setSupervisionGroup] = useState([])
+  const [supervisionGroup, setSupervisionGroup] = useState([{ date: '', supervisee_ids: [], supervisee_names: [] }])
   const [sickLeave, setSickLeave] = useState({ date: '', hours: '', policyAck: false })
   const [pto, setPto] = useState({ hours: '' })
   const [notes, setNotes] = useState('')
@@ -132,11 +129,11 @@ export default function PublicInvoice() {
           const d = result.draft_data
           if (d.iic) setIic(prev => ({ ...prev, ...d.iic }))
           if (d.op?.sessions) { setOp(d.op.sessions); setOpGenerated(true) }
-          if (d.sbys) setSbys(d.sbys)
-          if (d.ados) { setAdos(d.ados); setAdosGenerated(true) }
-          if (d.admin) setAdminEntries(d.admin)
+          if (d.sbys && d.sbys.length > 0) setSbys(d.sbys)
+          if (d.ados && d.ados.length > 0) setAdos(d.ados)
+          if (d.admin && d.admin.length > 0) setAdminEntries(d.admin)
           if (d.supervision?.individual) setSupervisionIndiv(d.supervision.individual)
-          if (d.supervision?.group) setSupervisionGroup(d.supervision.group)
+          if (d.supervision?.group && d.supervision.group.length > 0) setSupervisionGroup(d.supervision.group)
           if (d.sick_leave) setSickLeave(d.sick_leave)
           if (d.pto) setPto(d.pto)
           if (d.notes) setNotes(d.notes)
@@ -153,13 +150,18 @@ export default function PublicInvoice() {
 
   // ── Build submit data ──
   function buildInvoiceData() {
+    // Filter out empty default rows
+    const filledSbys = sbys.filter(e => e.date || (e.hours && parseFloat(e.hours) > 0))
+    const filledAdos = ados.filter(e => e.client_initials?.trim() || e.date)
+    const filledAdmin = adminEntries.filter(e => e.date || (e.hours && parseFloat(e.hours) > 0))
+    const filledSupGroup = supervisionGroup.filter(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0))
     return {
       iic,
       op: { sessions: op },
-      sbys,
-      ados,
-      admin: adminEntries,
-      supervision: { individual: supervisionIndiv, group: supervisionGroup },
+      sbys: filledSbys,
+      ados: filledAdos,
+      admin: filledAdmin,
+      supervision: { individual: supervisionIndiv, group: filledSupGroup },
       sick_leave: sickLeave,
       pto,
       notes,
@@ -173,16 +175,17 @@ export default function PublicInvoice() {
   function opTotal() { return op.length }
   function opSessionCount() { return op.filter(e => !e.cancel_fee).length }
   function opCancelCount() { return op.filter(e => e.cancel_fee).length }
-  function sbysTotal() { return sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
-  function adosTotal() { return ados.length }
-  function adosInHomeCount() { return ados.filter(e => e.location === 'In home').length }
-  function adosAtOfficeCount() { return ados.filter(e => e.location === 'At office').length }
-  function adminTotal() { return adminEntries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
-  function supervisionTotal() { return supervisionIndiv.length + supervisionGroup.length }
+  function sbysTotal() { return sbys.filter(e => e.date).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function adosTotal() { return ados.filter(e => e.client_initials?.trim() || e.date).length }
+  function adosInHomeCount() { return ados.filter(e => (e.client_initials?.trim() || e.date) && e.location === 'In home').length }
+  function adosAtOfficeCount() { return ados.filter(e => (e.client_initials?.trim() || e.date) && e.location === 'At office').length }
+  function adminTotal() { return adminEntries.filter(e => e.date).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function supervisionTotal() { return supervisionIndiv.length + supervisionGroup.filter(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0)).length }
   function sickTotal() { return parseFloat(sickLeave.hours) || 0 }
   function ptoTotal() { return parseFloat(pto.hours) || 0 }
+  function adosHoursWorked() { return adosTotal() * 3 }
   function grandTotal() {
-    return iicTotal() + sbysTotal() + adminTotal() + supervisionTotal() + sickTotal() + ptoTotal()
+    return iicTotal() + sbysTotal() + adosHoursWorked() + adminTotal() + supervisionTotal() + sickTotal() + ptoTotal()
   }
 
   // ── IIC helpers ──
@@ -240,13 +243,6 @@ export default function PublicInvoice() {
   function removeSbys(idx) { setSbys(prev => prev.filter((_, i) => i !== idx)); markDirty() }
 
   // ── ADOS helpers ──
-  function generateAdosRows() {
-    const count = parseInt(adosCount) || 0
-    if (count <= 0) return
-    setAdos(Array.from({ length: count }, () => ({ client_initials: '', location: 'In home', id_number: '', date: '' })))
-    setAdosGenerated(true)
-    markDirty()
-  }
   function addAdosRow() {
     setAdos(prev => [...prev, { client_initials: '', location: 'In home', id_number: '', date: '' }])
     markDirty()
@@ -342,18 +338,24 @@ export default function PublicInvoice() {
       if (!op[i].client_initials?.trim()) { setError(`OP: Client initials required for session ${i + 1}`); return }
       if (!op[i].date) { setError(`OP: Date required for session ${i + 1}`); return }
     }
-    // Validate SBYS
+    // Validate SBYS (skip completely empty default rows)
     for (let i = 0; i < sbys.length; i++) {
+      const hasAny = sbys[i].date || (sbys[i].hours && parseFloat(sbys[i].hours) > 0)
+      if (!hasAny) continue // skip empty default row
       if (!sbys[i].date) { setError(`SBYS: Date required for entry ${i + 1}`); return }
       if (!sbys[i].hours || parseFloat(sbys[i].hours) <= 0) { setError(`SBYS: Hours required for entry ${i + 1}`); return }
     }
-    // Validate ADOS
+    // Validate ADOS (skip completely empty default rows)
     for (let i = 0; i < ados.length; i++) {
+      const hasAny = ados[i].client_initials?.trim() || ados[i].date
+      if (!hasAny) continue
       if (!ados[i].client_initials?.trim()) { setError(`ADOS: Client initials required for entry ${i + 1}`); return }
       if (!ados[i].date) { setError(`ADOS: Date required for entry ${i + 1}`); return }
     }
-    // Validate Admin
+    // Validate Admin (skip completely empty default rows)
     for (let i = 0; i < adminEntries.length; i++) {
+      const hasAny = adminEntries[i].date || (adminEntries[i].hours && parseFloat(adminEntries[i].hours) > 0)
+      if (!hasAny) continue
       if (!adminEntries[i].date) { setError(`Administration: Date required for entry ${i + 1}`); return }
       if (!adminEntries[i].hours || parseFloat(adminEntries[i].hours) <= 0) { setError(`Administration: Hours required for entry ${i + 1}`); return }
     }
@@ -363,6 +365,8 @@ export default function PublicInvoice() {
       if (!supervisionIndiv[i].supervisee_id) { setError(`Supervision: Supervisee required for individual session ${i + 1}`); return }
     }
     for (let i = 0; i < supervisionGroup.length; i++) {
+      const hasAny = supervisionGroup[i].date || (supervisionGroup[i].supervisee_ids && supervisionGroup[i].supervisee_ids.length > 0)
+      if (!hasAny) continue
       if (!supervisionGroup[i].date) { setError(`Supervision: Date required for group session ${i + 1}`); return }
       if (!supervisionGroup[i].supervisee_ids?.length) { setError(`Supervision: Select attendees for group session ${i + 1}`); return }
     }
@@ -371,9 +375,13 @@ export default function PublicInvoice() {
       if (!sickLeave.date) { setError('Sick Leave: Date required'); return }
       if (!sickLeave.policyAck) { setError('Sick Leave: You must acknowledge the sick leave policy'); return }
     }
-    // Check at least something was entered
-    const hasData = Object.values(iic).some(a => a.length > 0) || op.length > 0 || sbys.length > 0 ||
-      ados.length > 0 || adminEntries.length > 0 || supervisionIndiv.length > 0 || supervisionGroup.length > 0 ||
+    // Check at least something was entered (ignore default empty rows)
+    const hasFilledSbys = sbys.some(e => e.date || (e.hours && parseFloat(e.hours) > 0))
+    const hasFilledAdos = ados.some(e => e.client_initials?.trim() || e.date)
+    const hasFilledAdmin = adminEntries.some(e => e.date || (e.hours && parseFloat(e.hours) > 0))
+    const hasFilledSupGroup = supervisionGroup.some(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0))
+    const hasData = Object.values(iic).some(a => a.length > 0) || op.length > 0 || hasFilledSbys ||
+      hasFilledAdos || hasFilledAdmin || supervisionIndiv.length > 0 || hasFilledSupGroup ||
       (sickLeave.hours && parseFloat(sickLeave.hours) > 0) || (pto.hours && parseFloat(pto.hours) > 0)
     if (!hasData) { setError('Please add at least one entry before submitting.'); return }
 
@@ -558,43 +566,34 @@ export default function PublicInvoice() {
 
         {/* ═══ ADOS Section ═══ */}
         <Section title="ADOS Assessments" total={adosTotal()} totalLabel="assessments">
-          {!adosGenerated ? (
-            <div className="invoice-generate-row">
-              <label>Total # of completed ADOS Assessments:</label>
-              <input type="number" min="1" value={adosCount} onChange={e => setAdosCount(e.target.value)} placeholder="0" style={{ width: '80px' }} />
-              <button type="button" className="btn btn--small btn--primary" onClick={generateAdosRows} disabled={!adosCount || parseInt(adosCount) <= 0}>Generate</button>
-            </div>
-          ) : (
-            <>
-              {ados.map((entry, idx) => (
-                <div key={idx} className="invoice-entry">
-                  <div className="invoice-entry-fields invoice-entry-fields--wrap">
-                    <div className="form-field invoice-field-sm">
-                      <label>Client Initials</label>
-                      <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateAdos(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
-                    </div>
-                    <div className="form-field invoice-field-md">
-                      <label>Location</label>
-                      <select value={entry.location} onChange={e => updateAdos(idx, 'location', e.target.value)}>
-                        <option value="In home">In home</option>
-                        <option value="At office">At office</option>
-                      </select>
-                    </div>
-                    <div className="form-field invoice-field-sm">
-                      <label>ID #</label>
-                      <input type="text" value={entry.id_number} onChange={e => updateAdos(idx, 'id_number', e.target.value)} placeholder="Optional" />
-                    </div>
-                    <div className="form-field invoice-field-md">
-                      <label>Date</label>
-                      <input type="date" value={entry.date} onChange={e => updateAdos(idx, 'date', e.target.value)} />
-                    </div>
-                    <button type="button" className="invoice-remove-btn" onClick={() => removeAdos(idx)} title="Remove">&times;</button>
-                  </div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Each assessment = 1 unit for payroll, 3 hours toward time worked.</p>
+          {ados.map((entry, idx) => (
+            <div key={idx} className="invoice-entry">
+              <div className="invoice-entry-fields invoice-entry-fields--wrap">
+                <div className="form-field invoice-field-sm">
+                  <label>Client Initials</label>
+                  <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateAdos(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
                 </div>
-              ))}
-              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addAdosRow}>+ Add Assessment</button>
-            </>
-          )}
+                <div className="form-field invoice-field-md">
+                  <label>Location</label>
+                  <select value={entry.location} onChange={e => updateAdos(idx, 'location', e.target.value)}>
+                    <option value="In home">In home</option>
+                    <option value="At office">At office</option>
+                  </select>
+                </div>
+                <div className="form-field invoice-field-sm">
+                  <label>ID #</label>
+                  <input type="text" value={entry.id_number} onChange={e => updateAdos(idx, 'id_number', e.target.value)} placeholder="Optional" />
+                </div>
+                <div className="form-field invoice-field-md">
+                  <label>Date</label>
+                  <input type="date" value={entry.date} onChange={e => updateAdos(idx, 'date', e.target.value)} />
+                </div>
+                <button type="button" className="invoice-remove-btn" onClick={() => removeAdos(idx)} title="Remove">&times;</button>
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addAdosRow}>+ Add Assessment</button>
         </Section>
 
         {/* ═══ Administration Section ═══ */}
@@ -740,8 +739,8 @@ export default function PublicInvoice() {
             {opSessionCount() > 0 && <div className="invoice-total-row"><span>OP Sessions</span><span>{opSessionCount()}</span></div>}
             {opCancelCount() > 0 && <div className="invoice-total-row"><span>OP Cancellations</span><span>{opCancelCount()}</span></div>}
             {sbysTotal() > 0 && <div className="invoice-total-row"><span>SBYS</span><span>{sbysTotal()} hrs</span></div>}
-            {adosInHomeCount() > 0 && <div className="invoice-total-row"><span>ADOS (In home)</span><span>{adosInHomeCount()}</span></div>}
-            {adosAtOfficeCount() > 0 && <div className="invoice-total-row"><span>ADOS (At office)</span><span>{adosAtOfficeCount()}</span></div>}
+            {adosInHomeCount() > 0 && <div className="invoice-total-row"><span>ADOS (In home)</span><span>{adosInHomeCount()} ({adosInHomeCount() * 3} hrs)</span></div>}
+            {adosAtOfficeCount() > 0 && <div className="invoice-total-row"><span>ADOS (At office)</span><span>{adosAtOfficeCount()} ({adosAtOfficeCount() * 3} hrs)</span></div>}
             {adminTotal() > 0 && <div className="invoice-total-row"><span>Administration</span><span>{adminTotal()} hrs</span></div>}
             {isCliLeader && supervisionTotal() > 0 && <div className="invoice-total-row"><span>Supervision</span><span>{supervisionTotal()} hrs</span></div>}
             {sickTotal() > 0 && <div className="invoice-total-row"><span>Sick Leave</span><span>{sickTotal()} hrs</span></div>}

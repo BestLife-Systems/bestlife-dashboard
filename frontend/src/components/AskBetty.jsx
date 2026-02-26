@@ -7,7 +7,6 @@ const ROLE_LABELS = {
   clinical_leader: 'Clinical Leader',
   therapist: 'Therapist',
   front_desk: 'Front Desk',
-  ba: 'Billing Admin',
   medical_biller: 'Medical Biller',
   apn: 'APN',
 }
@@ -41,7 +40,7 @@ export default function AskBetty() {
               <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
             </svg>
           </div>
-          <span className="betty-label">Ask Betty</span>
+          <span className="betty-label">Go ahead</span>
           <input
             className="betty-input"
             type="text"
@@ -49,7 +48,6 @@ export default function AskBetty() {
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
           />
-          <span className="betty-context">{pageName} · {roleName}</span>
           <button className="betty-submit btn btn--primary btn--small" type="submit">Ask</button>
         </form>
       </div>
