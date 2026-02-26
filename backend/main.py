@@ -2345,6 +2345,19 @@ async def billing_summary(admin=Depends(require_admin)):
             rate = bill_rate_map.get(st, 0)
         service_bill_rates[st] = rate
 
+    # Get pay rates for all users (needed for per-service pay calculation)
+    all_pay_rates_list = await sb_request("GET", "user_pay_rates", params={
+        "select": "user_id, pay_rate, rate_types(name)",
+    })
+    user_pay_map_list = {}
+    for pr in (all_pay_rates_list or []):
+        uid = pr["user_id"]
+        rt = pr.get("rate_types") or {}
+        rname = rt.get("name", "")
+        if uid not in user_pay_map_list:
+            user_pay_map_list[uid] = {}
+        user_pay_map_list[uid][rname] = float(pr["pay_rate"])
+
     period_summaries = []
 
     for period in periods:
@@ -2356,13 +2369,30 @@ async def billing_summary(admin=Depends(require_admin)):
             "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
         })
 
-        # Aggregate by service type
+        # Aggregate by service type AND compute per-service pay
         service_totals = {st: 0.0 for st in SERVICE_TYPES}
+        service_pay = {st: 0.0 for st in SERVICE_TYPES}
         ados_counts = {"ADOS In Home": 0, "ADOS At Office": 0}
         for r in (recipients or []):
+            uid = r["user_id"]
             hours, counts = _extract_service_hours(r.get("invoice_data") or {})
+            user_rates = user_pay_map_list.get(uid, {})
             for st, h in hours.items():
                 service_totals[st] += h
+                # Compute pay for this user's hours in this service type
+                rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+                pay_rate = user_rates.get(rate_name, 0)
+                if not pay_rate:
+                    for rn, rv in user_rates.items():
+                        if st.lower() in rn.lower() or rn.lower() in st.lower():
+                            pay_rate = rv
+                            break
+                if st.startswith("ADOS"):
+                    # ADOS pay = assessments × session rate
+                    num_a = counts.get(st, 0)
+                    service_pay[st] += num_a * pay_rate
+                else:
+                    service_pay[st] += h * pay_rate
             for k, v in counts.items():
                 ados_counts[k] = ados_counts.get(k, 0) + v
 
@@ -2384,26 +2414,21 @@ async def billing_summary(admin=Depends(require_admin)):
                 revenue = hrs * bill_rate
             else:
                 revenue = 0
+            pay = service_pay.get(st, 0)
             grand_hours += hrs
             grand_revenue += revenue
+            grand_pay += pay
             entry = {
                 "service": st,
                 "hours": round(hrs, 2),
                 "revenue": round(revenue, 2),
+                "pay": round(pay, 2),
                 "bill_rate": bill_rate,
             }
             # Add assessment count for ADOS
             if st.startswith("ADOS"):
                 entry["assessments"] = ados_counts.get(st, 0)
             service_breakdown.append(entry)
-
-        # Get pay totals from rollup if available
-        rollup = await sb_request("GET", "rollup_pay_period", params={
-            "pay_period_id": f"eq.{pid}",
-            "select": "est_pay_total",
-        })
-        total_pay = sum(float(r.get("est_pay_total", 0)) for r in (rollup or []))
-        grand_pay = total_pay
 
         period_summaries.append({
             "id": pid,
@@ -2425,12 +2450,13 @@ async def billing_summary(admin=Depends(require_admin)):
         if month_key not in monthly:
             monthly[month_key] = {
                 "month": month_key,
-                "services": {st: {"hours": 0.0, "revenue": 0.0, "assessments": 0} for st in SERVICE_TYPES},
+                "services": {st: {"hours": 0.0, "revenue": 0.0, "pay": 0.0, "assessments": 0} for st in SERVICE_TYPES},
                 "total_hours": 0, "total_revenue": 0, "total_pay": 0,
             }
         for svc in ps["services"]:
             monthly[month_key]["services"][svc["service"]]["hours"] += svc["hours"]
             monthly[month_key]["services"][svc["service"]]["revenue"] += svc.get("revenue", 0)
+            monthly[month_key]["services"][svc["service"]]["pay"] += svc.get("pay", 0)
             monthly[month_key]["services"][svc["service"]]["assessments"] += svc.get("assessments", 0)
         monthly[month_key]["total_hours"] += ps["total_hours"]
         monthly[month_key]["total_revenue"] += ps["total_revenue"]
@@ -2444,7 +2470,12 @@ async def billing_summary(admin=Depends(require_admin)):
             hrs = sd["hours"]
             if hrs == 0:
                 continue
-            entry = {"service": st, "hours": round(hrs, 2), "revenue": round(sd["revenue"], 2)}
+            entry = {
+                "service": st,
+                "hours": round(hrs, 2),
+                "revenue": round(sd["revenue"], 2),
+                "pay": round(sd["pay"], 2),
+            }
             if st.startswith("ADOS"):
                 entry["assessments"] = sd["assessments"]
             svc_list.append(entry)
@@ -2557,7 +2588,12 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
                 pay_rate = user_rates.get("hourly", user_rates.get("Hourly", 0))
                 if not pay_rate and user_rates:
                     pay_rate = list(user_rates.values())[0]
-            pay = hrs * pay_rate
+            # ADOS pay = assessments × session rate (not hours × rate)
+            if st.startswith("ADOS"):
+                num_a = counts_map.get(st, 0)
+                pay = num_a * pay_rate
+            else:
+                pay = hrs * pay_rate
             profit = revenue - pay
             margin = (profit / revenue * 100) if revenue > 0 else 0
 

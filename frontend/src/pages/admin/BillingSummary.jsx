@@ -338,6 +338,42 @@ function TotalsRow({ data, isMonthly }) {
   )
 }
 
+// ── Service pay breakdown for monthly totals ──
+function ServicePayBreakdown({ services }) {
+  if (!services || services.length === 0) return null
+
+  // Group into PILL_GROUPS to combine IIC, ADOS etc.
+  const rows = PILL_GROUPS
+    .map(g => {
+      const memberData = g.members.map(m => services.find(s => s.service === m)).filter(Boolean)
+      if (memberData.length === 0) return null
+      const totalPay = memberData.reduce((sum, s) => sum + (s.pay || 0), 0)
+      if (totalPay === 0) return null
+      return { label: g.label, pay: totalPay, color: g.color }
+    })
+    .filter(Boolean)
+
+  if (rows.length === 0) return null
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.25rem' }}>
+      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', alignSelf: 'center', marginRight: '0.25rem' }}>
+        Pay by Type:
+      </span>
+      {rows.map(r => (
+        <span key={r.label} style={{
+          display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+          padding: '0.15rem 0.5rem', borderRadius: '12px', fontSize: '0.7rem',
+          fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+          background: `${r.color}15`, color: r.color, border: `1px solid ${r.color}30`,
+        }}>
+          {r.label}: {fmtDollar(r.pay)}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 // ── Main Component ──
 export default function BillingSummary() {
   const [data, setData] = useState(null)
@@ -471,9 +507,10 @@ export default function BillingSummary() {
                       <TotalsRow data={monthSummary} isMonthly />
                     </div>
 
-                    {/* BOTTOM: service pills */}
+                    {/* BOTTOM: service pills + pay breakdown */}
                     <div style={{ padding: '0.75rem 1.25rem' }}>
                       <ServicePills services={monthSummary.services} />
+                      <ServicePayBreakdown services={monthSummary.services} />
                     </div>
                   </div>
                 )}
