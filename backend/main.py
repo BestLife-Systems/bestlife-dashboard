@@ -111,10 +111,10 @@ class InviteUserRequest(BaseModel):
     first_name: str
     last_name: str
     role: str
-    phone_number: str = None
+    phone_number: Optional[str] = None
     sms_enabled: bool = True
     supervision_required: bool = False
-    clinical_supervisor_id: str = None
+    clinical_supervisor_id: Optional[str] = None
 
 
 # ────────────────────────────────────────────────────────────────────
