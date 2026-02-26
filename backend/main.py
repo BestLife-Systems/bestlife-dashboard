@@ -30,21 +30,42 @@ logger = logging.getLogger("bestlife")
 
 app = FastAPI(title="BestLife Hub API")
 
-# Startup logging
+# Startup: load secrets from Supabase if not in env vars
 @app.on_event("startup")
 async def startup_event():
+    global ANTHROPIC_API_KEY
     logger.info("BestLife Hub API starting up...")
     logger.info(f"Supabase URL: {SUPABASE_URL}")
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
-    logger.info(f"Anon key configured: {'Yes' if SUPABASE_ANON_KEY else 'No'}")
-    ak = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
-    logger.info(f"Anthropic key configured: {'Yes' if ak else 'No'} (len={len(ak)}, prefix={ak[:8]}...)" if ak else "Anthropic key configured: No")
-    # Log all env var names containing 'ANTHRO' or 'API' to debug
-    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper() or 'CLAUDE' in k.upper()]
-    logger.info(f"Env vars matching ANTHRO*/CLAUDE*: {anthro_vars}")
-    # Log ALL env var names (not values) to see what Railway actually injects
-    all_keys = sorted(os.environ.keys())
-    logger.info(f"All env var names ({len(all_keys)}): {all_keys}")
+
+    # If Anthropic key not in env vars, try loading from Supabase app_settings
+    if not ANTHROPIC_API_KEY and SUPABASE_SERVICE_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/app_settings",
+                    params={"key": "eq.ANTHROPIC_API_KEY", "select": "value"},
+                    headers={
+                        "apikey": SUPABASE_SERVICE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    },
+                )
+                if resp.status_code == 200:
+                    rows = resp.json()
+                    if rows and rows[0].get("value"):
+                        ANTHROPIC_API_KEY = rows[0]["value"]
+                        logger.info(f"Loaded ANTHROPIC_API_KEY from Supabase app_settings (len={len(ANTHROPIC_API_KEY)})")
+                    else:
+                        logger.warning("app_settings table exists but no ANTHROPIC_API_KEY row found")
+                else:
+                    logger.warning(f"Could not read app_settings: {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Failed to load API key from Supabase: {e}")
+
+    if ANTHROPIC_API_KEY:
+        logger.info(f"Anthropic key ready: Yes (len={len(ANTHROPIC_API_KEY)}, prefix={ANTHROPIC_API_KEY[:8]}...)")
+    else:
+        logger.warning("Anthropic key: NOT configured (Betty AI will be unavailable)")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -2776,24 +2797,19 @@ async def analytics_supervision(user=Depends(verify_token)):
 @app.get("/api/ai/status")
 async def ai_status(admin=Depends(require_admin)):
     """Check if AI is configured (admin only)."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
-    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper()]
     return {
-        "configured": bool(api_key),
-        "key_prefix": api_key[:12] + "..." if api_key else None,
-        "key_length": len(api_key) if api_key else 0,
-        "env_vars_matching": anthro_vars,
-        "module_level_set": bool(ANTHROPIC_API_KEY),
+        "configured": bool(ANTHROPIC_API_KEY),
+        "key_prefix": ANTHROPIC_API_KEY[:12] + "..." if ANTHROPIC_API_KEY else None,
+        "key_length": len(ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else 0,
+        "source": "supabase" if not os.environ.get("ANTHROPIC_API_KEY") else "env",
     }
 
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
     """Send a prompt to Claude (Sonnet) and return the response."""
-    # Read API key at request time (not module load) so Railway env vars are always fresh
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
-    if not api_key:
-        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment or Supabase app_settings.")
 
     import anthropic
 
@@ -2808,7 +2824,7 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
         system_message += f"\n\nAdditional context: {req.context}"
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=req.max_tokens,
@@ -2832,9 +2848,8 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
 @app.post("/api/ai/kb-assist")
 async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
     """AI-assisted content generation for Knowledge Base articles."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
-    if not api_key:
-        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment or Supabase app_settings.")
 
     import anthropic
 
@@ -2849,7 +2864,7 @@ async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
         system_message += f"\n\nArticle context — Category: {req.context}"
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=req.max_tokens or 2048,
