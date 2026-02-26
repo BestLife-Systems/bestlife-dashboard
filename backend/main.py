@@ -41,7 +41,10 @@ async def startup_event():
     logger.info(f"Anthropic key configured: {'Yes' if ak else 'No'} (len={len(ak)}, prefix={ak[:8]}...)" if ak else "Anthropic key configured: No")
     # Log all env var names containing 'ANTHRO' or 'API' to debug
     anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper() or 'CLAUDE' in k.upper()]
-    logger.info(f"Env vars matching ANTHRO*: {anthro_vars}")
+    logger.info(f"Env vars matching ANTHRO*/CLAUDE*: {anthro_vars}")
+    # Log ALL env var names (not values) to see what Railway actually injects
+    all_keys = sorted(os.environ.keys())
+    logger.info(f"All env var names ({len(all_keys)}): {all_keys}")
 
 
 # ────────────────────────────────────────────────────────────────────
