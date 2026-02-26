@@ -154,68 +154,63 @@ function PeriodDetail({ periodId, period, onBack }) {
               <span style={{ fontWeight: 600, color, fontSize: '0.85rem' }}>{section.total_hours} hrs</span>
             </div>
 
-            {/* Combined ADOS: show subsections */}
+            {/* Combined ADOS: one table with subsections + combined total */}
             {section._isAdosCombined ? (
-              <>
-                {section._subsections.map(sub => (
-                  <div key={sub.label} style={{ marginBottom: '1rem' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.375rem' }}>
-                      {sub.label}
-                    </div>
-                    <div className="table-wrapper">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th style={{ textAlign: 'right' }}># Hrs Billed</th>
-                            <th style={{ textAlign: 'right' }}>$ Submitted</th>
-                            <th style={{ textAlign: 'right' }}>Paid to Therapist</th>
-                            <th style={{ textAlign: 'right' }}>Profit</th>
-                            <th style={{ textAlign: 'right' }}>Margin</th>
+              <div className="table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th style={{ textAlign: 'right' }}># Hrs Billed</th>
+                      <th style={{ textAlign: 'right' }}>$ Submitted</th>
+                      <th style={{ textAlign: 'right' }}>Paid to Therapist</th>
+                      <th style={{ textAlign: 'right' }}>Profit</th>
+                      <th style={{ textAlign: 'right' }}>Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {section._subsections.map(sub => (
+                      <>
+                        {/* Subsection label row */}
+                        <tr key={`label-${sub.label}`}>
+                          <td colSpan={6} style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0.75rem 0.75rem 0.25rem', background: 'transparent', border: 'none' }}>
+                            {sub.label}
+                          </td>
+                        </tr>
+                        {/* Therapist rows */}
+                        {sub.rows.map((row, i) => (
+                          <tr key={`${sub.label}-${i}`} className="data-table-row">
+                            <td style={{ fontSize: '0.85rem' }}>{row.name}</td>
+                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.hours}</td>
+                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.revenue)}</td>
+                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.pay)}</td>
+                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(row.profit)}</td>
+                            <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(row.margin)}</td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {sub.rows.map((row, i) => (
-                            <tr key={i} className="data-table-row">
-                              <td style={{ fontSize: '0.85rem' }}>{row.name}</td>
-                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.hours}</td>
-                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.revenue)}</td>
-                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.pay)}</td>
-                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(row.profit)}</td>
-                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(row.margin)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
-                            <td style={{ color: 'var(--text-bright)', fontSize: '0.9rem', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{sub.label} Total</td>
-                            <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{sub.totals.total_hours}</td>
-                            <td style={{ textAlign: 'right', color, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_revenue)}</td>
-                            <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{fmtDollar(sub.totals.total_pay)}</td>
-                            <td style={{ textAlign: 'right', color: sub.totals.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_profit)}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 700, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(sub.totals.total_margin)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-                {/* Combined ADOS total — same table structure as subsection totals */}
-                <div className="table-wrapper" style={{ marginTop: '0.25rem' }}>
-                  <table className="data-table">
-                    <tbody>
-                      <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
-                        <td style={{ color: 'var(--text-bright)', fontSize: '0.95rem', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}` }}>ADOS Combined Total</td>
-                        <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{section.total_hours}</td>
-                        <td style={{ textAlign: 'right', color, padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_revenue)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_pay)}</td>
-                        <td style={{ textAlign: 'right', color: section.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_profit)}</td>
-                        <td style={{ textAlign: 'right', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(section.total_margin)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </>
+                        ))}
+                        {/* Subsection total row */}
+                        <tr key={`total-${sub.label}`} style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
+                          <td style={{ color: 'var(--text-bright)', fontSize: '0.9rem', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{sub.label} Total</td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{sub.totals.total_hours}</td>
+                          <td style={{ textAlign: 'right', color, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_revenue)}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{fmtDollar(sub.totals.total_pay)}</td>
+                          <td style={{ textAlign: 'right', color: sub.totals.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_profit)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(sub.totals.total_margin)}</td>
+                        </tr>
+                      </>
+                    ))}
+                    {/* ADOS Combined Total — inside same table so columns align */}
+                    <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
+                      <td style={{ color: 'var(--text-bright)', fontSize: '0.95rem', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}` }}>ADOS Combined Total</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{section.total_hours}</td>
+                      <td style={{ textAlign: 'right', color, padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_revenue)}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_pay)}</td>
+                      <td style={{ textAlign: 'right', color: section.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_profit)}</td>
+                      <td style={{ textAlign: 'right', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(section.total_margin)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             ) : (
               /* Normal (non-ADOS) sections */
               <div className="table-wrapper">
