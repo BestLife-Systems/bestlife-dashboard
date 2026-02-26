@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useLoadingVerb } from '../hooks/useLoadingVerb'
+import { apiPost } from '../lib/api'
 
 const ROLE_LABELS = {
   admin: 'Admin',
@@ -17,16 +19,37 @@ export default function AskBetty() {
   const [prompt, setPrompt] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [submittedPrompt, setSubmittedPrompt] = useState('')
+  const [response, setResponse] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const pageName = location.pathname.split('/').filter(Boolean).join(' > ') || 'Home'
   const roleName = ROLE_LABELS[profile?.role] || profile?.role || 'User'
+  const verb = useLoadingVerb(loading)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!prompt.trim()) return
-    setSubmittedPrompt(prompt.trim())
+    const q = prompt.trim()
+    setSubmittedPrompt(q)
     setPrompt('')
     setModalOpen(true)
+    setLoading(true)
+    setError(null)
+    setResponse('')
+
+    try {
+      const result = await apiPost('/ai/chat', {
+        prompt: q,
+        context: `User role: ${roleName}. Current page: ${pageName}.`,
+        max_tokens: 1024,
+      })
+      setResponse(result.response)
+    } catch (err) {
+      setError(err.message || 'Failed to get response')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -77,28 +100,21 @@ export default function AskBetty() {
               </div>
               <div className="modal-section" style={{ marginTop: '1.25rem' }}>
                 <div className="modal-label">Betty says</div>
-                <div style={{
-                  marginTop: '0.5rem',
-                  padding: '1.25rem',
-                  background: 'var(--bg-elevated)',
-                  borderRadius: 'var(--radius)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.875rem',
-                  lineHeight: 1.6,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-                    AI Integration Coming Soon
-                  </div>
-                  Betty is not connected to an AI provider yet. To enable Betty, an OpenAI (or other LLM) API key needs to be configured in the backend environment settings.
-                  <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', opacity: 0.7 }}>
-                    Once configured, Betty will be able to answer questions about your dashboard, tasks, meetings, and more.
-                  </div>
+                <div className="betty-response-box">
+                  {loading ? (
+                    <div className="betty-loading">
+                      <span className="loading-spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+                      <span>{verb}...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="betty-error">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                      {error}
+                    </div>
+                  ) : (
+                    <div className="betty-answer">{response}</div>
+                  )}
                 </div>
-              </div>
-              <div className="modal-section" style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Context: {pageName} · {roleName}
               </div>
             </div>
           </div>

@@ -753,6 +753,59 @@ a { color: var(--accent); text-decoration: none; }
 .betty-context { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
 .betty-submit { flex-shrink: 0; }
 
+/* Betty response modal */
+.betty-response-box {
+  margin-top: 0.5rem;
+  padding: 1.25rem;
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  min-height: 60px;
+  white-space: pre-wrap;
+}
+.betty-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+.betty-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: var(--danger, #f87171);
+  font-size: 0.85rem;
+}
+.betty-error svg { flex-shrink: 0; margin-top: 2px; }
+.betty-answer { color: var(--text); }
+
+/* KB AI Assist */
+.kb-ai-assist-toggle {
+  color: var(--accent) !important;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+.kb-ai-assist-toggle:hover { opacity: 1; }
+.kb-ai-assist-box {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding: 0.625rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.kb-ai-assist-box .form-input {
+  flex: 1;
+  margin: 0;
+  font-size: 0.825rem;
+}
+
 /* ── Collapsible Sidebar Nav ── */
 .sidebar-collapsible { display: flex; flex-direction: column; }
 .sidebar-link--parent {

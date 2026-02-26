@@ -23,6 +23,7 @@ from pydantic import BaseModel
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://jvtwvrqityxzcnsbrilk.supabase.co")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bestlife")
@@ -115,6 +116,13 @@ class InviteUserRequest(BaseModel):
     sms_enabled: bool = True
     supervision_required: bool = False
     clinical_supervisor_id: Optional[str] = None
+
+
+class AIChatRequest(BaseModel):
+    prompt: str
+    context: Optional[str] = None
+    system_hint: Optional[str] = None
+    max_tokens: int = 1024
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -2118,6 +2126,87 @@ async def analytics_supervision(user=Depends(verify_token)):
         })
 
     return result
+
+
+# ── AI Features (Claude API) ─────────────────────────────────────
+
+@app.post("/api/ai/chat")
+async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
+    """Send a prompt to Claude (Sonnet) and return the response."""
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
+
+    import anthropic
+
+    system_message = req.system_hint or (
+        "You are Betty, a helpful AI assistant for BestLife Behavioral Health. "
+        "You help staff with questions about their dashboard, tasks, policies, billing, "
+        "clinical workflows, and general practice operations. Be concise, friendly, and professional. "
+        "If you don't know something specific to BestLife, say so honestly."
+    )
+
+    if req.context:
+        system_message += f"\n\nAdditional context: {req.context}"
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=req.max_tokens,
+            system=system_message,
+            messages=[{"role": "user", "content": req.prompt}],
+        )
+        # Extract text from response
+        text = ""
+        for block in message.content:
+            if hasattr(block, "text"):
+                text += block.text
+        return {"response": text, "model": message.model, "usage": {"input_tokens": message.usage.input_tokens, "output_tokens": message.usage.output_tokens}}
+    except anthropic.APIError as e:
+        logger.error(f"Claude API error: {e}")
+        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+    except Exception as e:
+        logger.error(f"AI chat error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get AI response")
+
+
+@app.post("/api/ai/kb-assist")
+async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
+    """AI-assisted content generation for Knowledge Base articles."""
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
+
+    import anthropic
+
+    system_message = (
+        "You are a content writer for BestLife Behavioral Health's internal knowledge base. "
+        "Write clear, professional articles for therapists and staff. "
+        "Use markdown formatting. Be thorough but concise. "
+        "Structure content with headers, bullet points, and numbered lists where appropriate."
+    )
+
+    if req.context:
+        system_message += f"\n\nArticle context — Category: {req.context}"
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=req.max_tokens or 2048,
+            system=system_message,
+            messages=[{"role": "user", "content": req.prompt}],
+        )
+        text = ""
+        for block in message.content:
+            if hasattr(block, "text"):
+                text += block.text
+        return {"response": text, "model": message.model}
+    except anthropic.APIError as e:
+        logger.error(f"Claude API error: {e}")
+        raise HTTPException(status_code=502, detail=f"AI service error: {str(e)}")
+    except Exception as e:
+        logger.error(f"AI KB assist error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate content")
 
 
 # ── Static File Serving (Production) ────────────────────────────

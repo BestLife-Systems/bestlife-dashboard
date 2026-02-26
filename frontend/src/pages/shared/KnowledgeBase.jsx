@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiPost } from '../../lib/api'
 import { useAuth } from '../../hooks/useAuth'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import bettyBrain from '../../assets/betty-brain.png'
@@ -325,39 +326,28 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
   )
 }
 
-// ── Add Article Panel — QuickBooks-style category picker ──
+// ── Add Article Panel ──
 function AddArticlePanel({ categories, onClose, onSaved }) {
   const { profile } = useAuth()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [tagInput, setTagInput] = useState('')
-  const [tags, setTags] = useState([])
-  const [showTagDropdown, setShowTagDropdown] = useState(false)
+  const [category, setCategory] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const tagRef = useRef(null)
-
-  const allCategoryNames = categories.map(c => c.name)
-  const filtered = tagInput.trim()
-    ? allCategoryNames.filter(c => c.toLowerCase().includes(tagInput.toLowerCase()) && !tags.includes(c))
-    : allCategoryNames.filter(c => !tags.includes(c))
-  const exactMatch = allCategoryNames.some(c => c.toLowerCase() === tagInput.trim().toLowerCase())
-
-  const addTag = (t) => {
-    if (!tags.includes(t)) setTags([...tags, t])
-    setTagInput('')
-    setShowTagDropdown(false)
-  }
-  const removeTag = (t) => setTags(tags.filter(x => x !== t))
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [showAiAssist, setShowAiAssist] = useState(false)
+  const aiVerb = useLoadingVerb(aiLoading)
 
   const handleSave = async (status) => {
     if (!title.trim()) { setError('Title is required'); return }
+    if (!category) { setError('Please select a category'); return }
     setSaving(true); setError(null)
     try {
       const { error: err } = await supabase.from('kb_articles').insert({
         title: title.trim(),
         body_markdown: body.trim() || null,
-        tags,
+        tags: [category],
         status,
         created_by_user_id: profile?.id || null,
       })
@@ -369,13 +359,23 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
     } finally { setSaving(false) }
   }
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (tagRef.current && !tagRef.current.contains(e.target)) setShowTagDropdown(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+  const handleAiAssist = async () => {
+    const prompt = aiPrompt.trim() || `Write a knowledge base article titled "${title.trim()}" for a behavioral health practice.`
+    if (!prompt && !title.trim()) { setError('Enter a title or AI prompt first'); return }
+    setAiLoading(true); setError(null)
+    try {
+      const result = await apiPost('/ai/kb-assist', {
+        prompt,
+        context: category || 'General',
+        max_tokens: 2048,
+      })
+      setBody(prev => prev ? prev + '\n\n' + result.response : result.response)
+      setShowAiAssist(false)
+      setAiPrompt('')
+    } catch (e) {
+      setError(e.message || 'AI assist failed')
+    } finally { setAiLoading(false) }
+  }
 
   return (
     <div className="kb-add-panel">
@@ -388,41 +388,59 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
         <label>Title</label>
         <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Article title..." />
       </div>
-      <div className="form-field" style={{ marginBottom: '1rem', position: 'relative' }} ref={tagRef}>
-        <label>Categories</label>
-        <div className="kb-tag-chips">
-          {tags.map(t => (
-            <span key={t} className="kb-tag-chip">
-              {t}
-              <button onClick={() => removeTag(t)}>&times;</button>
-            </span>
-          ))}
-        </div>
-        <input
+      <div className="form-field" style={{ marginBottom: '1rem' }}>
+        <label>Category</label>
+        <select
           className="form-input"
-          value={tagInput}
-          onChange={e => { setTagInput(e.target.value); setShowTagDropdown(true) }}
-          onFocus={() => setShowTagDropdown(true)}
-          placeholder="Type a category..."
-        />
-        {showTagDropdown && (
-          <div className="kb-tag-dropdown">
-            {filtered.map(c => (
-              <div key={c} className="kb-tag-dropdown-item" onClick={() => addTag(c)}>{c}</div>
-            ))}
-            {tagInput.trim() && !exactMatch && (
-              <div className="kb-tag-dropdown-item kb-tag-dropdown-add" onClick={() => addTag(tagInput.trim())}>
-                + Add "{tagInput.trim()}"
-              </div>
-            )}
-            {!tagInput.trim() && filtered.length === 0 && (
-              <div className="kb-tag-dropdown-empty">All categories added</div>
-            )}
-          </div>
-        )}
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+        >
+          <option value="">Select a category...</option>
+          {categories.map(c => (
+            <option key={c.name} value={c.name}>{c.name}</option>
+          ))}
+        </select>
       </div>
       <div className="form-field" style={{ marginBottom: '1.25rem' }}>
-        <label>Content</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+          <label style={{ margin: 0 }}>Content</label>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small kb-ai-assist-toggle"
+            onClick={() => setShowAiAssist(!showAiAssist)}
+            style={{ fontSize: '0.75rem', gap: '0.35rem', display: 'flex', alignItems: 'center' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
+              <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
+            </svg>
+            AI Assist
+          </button>
+        </div>
+        {showAiAssist && (
+          <div className="kb-ai-assist-box">
+            <input
+              className="form-input"
+              value={aiPrompt}
+              onChange={e => setAiPrompt(e.target.value)}
+              placeholder={title.trim() ? `Describe what to write about "${title.trim()}"...` : 'Describe the article content...'}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAiAssist() } }}
+            />
+            <button
+              className="btn btn--primary btn--small"
+              onClick={handleAiAssist}
+              disabled={aiLoading}
+              style={{ flexShrink: 0 }}
+            >
+              {aiLoading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span className="loading-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                  {aiVerb}...
+                </span>
+              ) : 'Generate'}
+            </button>
+          </div>
+        )}
         <textarea className="form-input" rows="6" value={body} onChange={e => setBody(e.target.value)} placeholder="Article content (markdown supported)..." style={{ resize: 'vertical', minHeight: '120px' }} />
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
