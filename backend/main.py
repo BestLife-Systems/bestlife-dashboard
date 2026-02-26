@@ -23,7 +23,7 @@ from pydantic import BaseModel
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://jvtwvrqityxzcnsbrilk.supabase.co")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bestlife")
@@ -37,10 +37,10 @@ async def startup_event():
     logger.info(f"Supabase URL: {SUPABASE_URL}")
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
     logger.info(f"Anon key configured: {'Yes' if SUPABASE_ANON_KEY else 'No'}")
-    ak = os.environ.get("ANTHROPIC_API_KEY", "")
+    ak = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "")
     logger.info(f"Anthropic key configured: {'Yes' if ak else 'No'} (len={len(ak)}, prefix={ak[:8]}...)" if ak else "Anthropic key configured: No")
     # Log all env var names containing 'ANTHRO' or 'API' to debug
-    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper() or k == 'ANTHROPIC_API_KEY']
+    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper() or 'CLAUDE' in k.upper()]
     logger.info(f"Env vars matching ANTHRO*: {anthro_vars}")
 
 
@@ -2773,7 +2773,7 @@ async def analytics_supervision(user=Depends(verify_token)):
 @app.get("/api/ai/status")
 async def ai_status(admin=Depends(require_admin)):
     """Check if AI is configured (admin only)."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
     anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper()]
     return {
         "configured": bool(api_key),
@@ -2788,7 +2788,7 @@ async def ai_status(admin=Depends(require_admin)):
 async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
     """Send a prompt to Claude (Sonnet) and return the response."""
     # Read API key at request time (not module load) so Railway env vars are always fresh
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
     if not api_key:
         raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
 
@@ -2829,7 +2829,7 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
 @app.post("/api/ai/kb-assist")
 async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
     """AI-assisted content generation for Knowledge Base articles."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or os.environ.get("CLAUDE_API_KEY", "") or ANTHROPIC_API_KEY
     if not api_key:
         raise HTTPException(status_code=503, detail="AI is not configured. Add ANTHROPIC_API_KEY to environment variables.")
 
