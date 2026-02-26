@@ -260,7 +260,7 @@ export default function PayPeriods() {
         <h2 className="page-title">Pay Periods</h2>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button
-            className={`btn btn--small ${deleteMode ? 'btn--danger' : 'btn--ghost'}`}
+            className={`btn ${deleteMode ? 'btn--danger' : 'btn--ghost'}`}
             onClick={() => { setDeleteMode(m => !m); setConfirmDelete(null) }}
           >
             {deleteMode ? 'Done' : '- Delete'}

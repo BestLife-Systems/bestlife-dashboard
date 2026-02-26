@@ -273,6 +273,164 @@ a { color: var(--accent); text-decoration: none; }
 .filter-tab--active { background: var(--bg-card); color: var(--text-bright); box-shadow: var(--shadow); }
 .filter-tab-count { background: var(--accent); color: #0a0f0d; font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 999px; }
 
+/* ── Approval Review Page ── */
+.review-action-bar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  padding: 0.875rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.review-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .review-grid { grid-template-columns: 1fr; }
+}
+.review-main { display: flex; flex-direction: column; gap: 0; }
+.review-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.review-section-title {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+  letter-spacing: 0.02em;
+}
+.review-subsection { margin-bottom: 0.75rem; }
+.review-subsection:last-child { margin-bottom: 0; }
+.review-subsection-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+}
+.review-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.825rem;
+}
+.review-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0.375rem 0.625rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.review-table td {
+  padding: 0.4rem 0.625rem;
+  color: var(--text);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.review-table tbody tr:last-child td { border-bottom: none; }
+.review-number { font-variant-numeric: tabular-nums; font-weight: 500; }
+.review-subtotal {
+  text-align: right;
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: var(--accent);
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+.review-leave-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.review-leave-label {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.review-leave-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.375rem;
+  font-style: italic;
+}
+.review-notes-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+.review-grand-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--bg-card);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+.review-grand-total-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+/* Sidebar */
+.review-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+.review-sidebar-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+}
+.review-sidebar-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 0 0 0.25rem;
+}
+.review-sidebar-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+.review-notes-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+.review-note-item {
+  padding: 0.625rem 0.75rem;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.review-note-text { font-size: 0.825rem; color: var(--text); line-height: 1.5; }
+.review-note-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; }
+.review-note-input-wrap { display: flex; flex-direction: column; }
+.review-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.375rem 0;
+  font-size: 0.825rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.review-info-row:last-child { border-bottom: none; }
+.review-info-label { color: var(--text-muted); font-weight: 450; }
+
 /* ── Analytics Layout ── */
 .analytics-layout { display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; }
 .therapist-sidebar { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; max-height: calc(100vh - var(--topbar-height) - 5rem); overflow-y: auto; }

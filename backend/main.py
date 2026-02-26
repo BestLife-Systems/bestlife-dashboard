@@ -1454,16 +1454,30 @@ async def reopen_pay_period(period_id: str, admin=Depends(require_admin)):
 
 @app.delete("/api/payroll/pay-periods/{period_id}")
 async def delete_pay_period(period_id: str, admin=Depends(require_admin)):
-    """Admin: permanently delete a pay period and all its recipients."""
+    """Admin: permanently delete a pay period and all associated data."""
     periods = await sb_request("GET", "pay_periods", params={
         "id": f"eq.{period_id}", "select": "id,status",
     })
     if not periods:
         raise HTTPException(status_code=404, detail="Pay period not found")
-    # Delete recipients first (FK constraint)
+    # Delete time_entries first (FK to pay_period_recipients)
+    await sb_request("DELETE", f"time_entries?pay_period_id=eq.{period_id}")
+    # Delete rollup data
+    await sb_request("DELETE", f"rollup_pay_period?pay_period_id=eq.{period_id}")
+    # Delete recipients (FK to pay_periods)
     await sb_request("DELETE", f"pay_period_recipients?pay_period_id=eq.{period_id}")
     # Delete the period itself
     await sb_request("DELETE", f"pay_periods?id=eq.{period_id}")
+
+    # Audit log
+    await sb_request("POST", "audit_log", data={
+        "action": "pay_period_deleted",
+        "entity_type": "pay_period",
+        "entity_id": period_id,
+        "user_id": admin["id"],
+        "details": {"status": periods[0].get("status")},
+    })
+
     return {"status": "deleted"}
 
 
@@ -1726,6 +1740,65 @@ async def reject_recipient(recipient_id: str, req: RejectRequest, admin=Depends(
         "updated_at": datetime.utcnow().isoformat(),
     })
     return {"status": "rejected"}
+
+
+class AdminNoteRequest(BaseModel):
+    note: str
+
+
+@app.post("/api/payroll/recipients/{recipient_id}/admin-note")
+async def add_admin_note(recipient_id: str, req: AdminNoteRequest, admin=Depends(require_admin)):
+    """Admin: add a note/question to a recipient's submission."""
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "id": f"eq.{recipient_id}", "select": "id,admin_notes",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    existing_notes = recipients[0].get("admin_notes") or []
+    new_note = {
+        "text": req.note,
+        "by": f"{admin['first_name']} {admin['last_name']}",
+        "by_id": admin["id"],
+        "at": datetime.utcnow().isoformat(),
+    }
+    existing_notes.append(new_note)
+
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "admin_notes": existing_notes,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+    return {"status": "note_added", "notes": existing_notes}
+
+
+class UpdateLineItemsRequest(BaseModel):
+    invoice_data: dict
+
+
+@app.patch("/api/payroll/recipients/{recipient_id}/invoice-data")
+async def update_invoice_data(recipient_id: str, req: UpdateLineItemsRequest, admin=Depends(require_admin)):
+    """Admin: edit line items on a submitted invoice before approval."""
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "id": f"eq.{recipient_id}", "select": "id,status",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    if recipients[0]["status"] not in ("received",):
+        raise HTTPException(status_code=400, detail="Can only edit received (pending) submissions")
+
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "invoice_data": req.invoice_data,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+    await sb_request("POST", "audit_log", data={
+        "action": "invoice_data_edited",
+        "entity_type": "pay_period_recipient",
+        "entity_id": recipient_id,
+        "user_id": admin["id"],
+    })
+
+    return {"status": "updated"}
 
 
 @app.post("/api/payroll/recipients/{recipient_id}/zero-hours")
