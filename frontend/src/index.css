@@ -216,6 +216,42 @@ a { color: var(--accent); text-decoration: none; }
 .data-table-primary { font-weight: 500; color: var(--text-bright); }
 .table-actions { display: flex; gap: 0.25rem; }
 
+/* Undo-close bar */
+.undo-close-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  background: rgba(234,179,8,0.1);
+  border: 1px solid rgba(234,179,8,0.3);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: #eab308;
+  font-weight: 500;
+}
+
+/* Pay period delete X */
+.pp-delete-x {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger-bg, rgba(239,68,68,0.12));
+  color: var(--danger, #f87171);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.pp-delete-x:hover {
+  background: rgba(239,68,68,0.25);
+  color: #ef4444;
+  transform: scale(1.1);
+}
+
 /* ── Modal ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; padding: 1rem; }
 .modal-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }

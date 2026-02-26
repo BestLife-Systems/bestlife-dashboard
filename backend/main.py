@@ -1435,6 +1435,38 @@ async def close_pay_period(period_id: str, admin=Depends(require_admin)):
     return {"status": "closed"}
 
 
+@app.post("/api/payroll/pay-periods/{period_id}/reopen")
+async def reopen_pay_period(period_id: str, admin=Depends(require_admin)):
+    """Admin: reopen a closed pay period (undo close)."""
+    periods = await sb_request("GET", "pay_periods", params={
+        "id": f"eq.{period_id}", "select": "id,status",
+    })
+    if not periods:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    if periods[0]["status"] != "closed":
+        raise HTTPException(status_code=400, detail="Only closed periods can be reopened")
+    await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
+        "status": "open",
+        "closed_at": None,
+    })
+    return {"status": "reopened"}
+
+
+@app.delete("/api/payroll/pay-periods/{period_id}")
+async def delete_pay_period(period_id: str, admin=Depends(require_admin)):
+    """Admin: permanently delete a pay period and all its recipients."""
+    periods = await sb_request("GET", "pay_periods", params={
+        "id": f"eq.{period_id}", "select": "id,status",
+    })
+    if not periods:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    # Delete recipients first (FK constraint)
+    await sb_request("DELETE", f"pay_period_recipients?pay_period_id=eq.{period_id}")
+    # Delete the period itself
+    await sb_request("DELETE", f"pay_periods?id=eq.{period_id}")
+    return {"status": "deleted"}
+
+
 @app.get("/api/payroll/pay-periods/{period_id}/recipients")
 async def get_period_recipients(period_id: str, admin=Depends(require_admin)):
     """Admin: list all recipients for a pay period with their draft tokens."""
@@ -1467,7 +1499,7 @@ async def get_period_recipients(period_id: str, admin=Depends(require_admin)):
 async def get_approval_queue(status: str = "received", admin=Depends(require_admin)):
     """Admin: get recipients filtered by status."""
     params = {
-        "select": "*, users(first_name, last_name, role), pay_periods(start_date, end_date, label)",
+        "select": "*, users!user_id(first_name, last_name, role), pay_periods(start_date, end_date, label)",
         "order": "updated_at.desc",
     }
     if status != "all":

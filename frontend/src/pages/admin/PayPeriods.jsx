@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { apiGet, apiPost, apiPatch } from '../../lib/api'
+import { useState, useEffect, useRef } from 'react'
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
@@ -23,7 +23,24 @@ export default function PayPeriods() {
   const [copied, setCopied] = useState(null)
   const verb = useLoadingVerb(loading)
 
+  // Undo close state
+  const [pendingClose, setPendingClose] = useState(null) // { id, label, countdown }
+  const closeTimerRef = useRef(null)
+  const countdownRef = useRef(null)
+
+  // Delete mode state
+  const [deleteMode, setDeleteMode] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(null) // period to confirm
+
   useEffect(() => { loadPeriods() }, [])
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      if (countdownRef.current) clearInterval(countdownRef.current)
+    }
+  }, [])
 
   async function loadPeriods() {
     setLoading(true)
@@ -64,13 +81,54 @@ export default function PayPeriods() {
     }
   }
 
-  async function handleClose(id) {
+  function initiateClose(id) {
+    // Start the 5-second undo timer
+    const period = periods.find(p => p.id === id)
+    const label = period?.label || 'this period'
+    setPendingClose({ id, label, countdown: 5 })
+
+    // Countdown ticker
+    countdownRef.current = setInterval(() => {
+      setPendingClose(prev => {
+        if (!prev) return null
+        const next = prev.countdown - 1
+        if (next <= 0) return prev // let the timeout handle final
+        return { ...prev, countdown: next }
+      })
+    }, 1000)
+
+    // Actually close after 5 seconds
+    closeTimerRef.current = setTimeout(async () => {
+      clearInterval(countdownRef.current)
+      countdownRef.current = null
+      try {
+        await apiPost(`/payroll/pay-periods/${id}/close`)
+        loadPeriods()
+        setDetailPeriod(null)
+      } catch (err) {
+        alert('Error closing pay period: ' + err.message)
+      } finally {
+        setPendingClose(null)
+      }
+    }, 5000)
+  }
+
+  function undoClose() {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    closeTimerRef.current = null
+    countdownRef.current = null
+    setPendingClose(null)
+  }
+
+  async function handleDelete(id) {
     try {
-      await apiPost(`/payroll/pay-periods/${id}/close`)
+      await apiDelete(`/payroll/pay-periods/${id}`)
+      setConfirmDelete(null)
+      setDeleteMode(false)
       loadPeriods()
-      setDetailPeriod(null)
     } catch (err) {
-      alert('Error closing pay period: ' + err.message)
+      alert('Error deleting pay period: ' + err.message)
     }
   }
 
@@ -88,6 +146,7 @@ export default function PayPeriods() {
   }
 
   function viewDetail(period) {
+    if (deleteMode) return // don't navigate in delete mode
     setDetailPeriod(period)
     loadRecipients(period.id)
   }
@@ -134,8 +193,14 @@ export default function PayPeriods() {
         </div>
 
         <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {detailPeriod.status === 'open' && (
-            <button className="btn btn--small btn--secondary" onClick={() => handleClose(detailPeriod.id)}>Close Period</button>
+          {detailPeriod.status === 'open' && !pendingClose && (
+            <button className="btn btn--small btn--secondary" onClick={() => initiateClose(detailPeriod.id)}>Close Period</button>
+          )}
+          {pendingClose && pendingClose.id === detailPeriod.id && (
+            <div className="undo-close-bar">
+              <span>Closing in {pendingClose.countdown}s…</span>
+              <button className="btn btn--small btn--primary" onClick={undoClose}>Undo</button>
+            </div>
           )}
         </div>
 
@@ -193,8 +258,24 @@ export default function PayPeriods() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Pay Periods</h2>
-        <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            className={`btn btn--small ${deleteMode ? 'btn--danger' : 'btn--ghost'}`}
+            onClick={() => { setDeleteMode(m => !m); setConfirmDelete(null) }}
+          >
+            {deleteMode ? 'Done' : '- Delete'}
+          </button>
+          <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
+        </div>
       </div>
+
+      {/* Undo close banner (list view) */}
+      {pendingClose && (
+        <div className="undo-close-bar" style={{ marginBottom: '1rem' }}>
+          <span>Closing "{pendingClose.label}" in {pendingClose.countdown}s…</span>
+          <button className="btn btn--small btn--primary" onClick={undoClose}>Undo</button>
+        </div>
+      )}
 
       {periods.length === 0 ? (
         <div className="empty-state">
@@ -207,6 +288,7 @@ export default function PayPeriods() {
           <table className="data-table">
             <thead>
               <tr>
+                {deleteMode && <th style={{ width: 40 }}></th>}
                 <th>Period</th>
                 <th>Date Range</th>
                 <th>Recipients</th>
@@ -217,7 +299,18 @@ export default function PayPeriods() {
             </thead>
             <tbody>
               {periods.map(p => (
-                <tr key={p.id} className={`data-table-row ${p.status === 'open' ? 'data-table-row--open' : ''} ${p.status === 'closed' ? 'data-table-row--closed' : ''}`} style={{ cursor: 'pointer' }} onClick={() => viewDetail(p)}>
+                <tr key={p.id} className={`data-table-row ${p.status === 'open' ? 'data-table-row--open' : ''} ${p.status === 'closed' ? 'data-table-row--closed' : ''}`} style={{ cursor: deleteMode ? 'default' : 'pointer' }} onClick={() => viewDetail(p)}>
+                  {deleteMode && (
+                    <td onClick={e => e.stopPropagation()}>
+                      <button
+                        className="pp-delete-x"
+                        onClick={() => setConfirmDelete(p)}
+                        title="Delete this pay period"
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  )}
                   <td className="data-table-primary">{p.label || `${formatDate(p.start_date)} – ${formatDate(p.end_date)}`}</td>
                   <td>{formatDate(p.start_date)} – {formatDate(p.end_date)}</td>
                   <td>{p.recipient_count || 0}</td>
@@ -228,10 +321,13 @@ export default function PayPeriods() {
                       {p.status === 'draft' && (
                         <button className="btn btn--small btn--primary" onClick={() => handleOpen(p.id)}>Open & Send</button>
                       )}
-                      {p.status === 'open' && (
-                        <button className="btn btn--small btn--secondary" onClick={() => handleClose(p.id)}>Close</button>
+                      {p.status === 'open' && !pendingClose && (
+                        <button className="btn btn--small btn--secondary" onClick={() => initiateClose(p.id)}>Close</button>
                       )}
-                      <button className="btn btn--small btn--ghost" onClick={() => viewDetail(p)}>View</button>
+                      {p.status === 'open' && pendingClose && pendingClose.id === p.id && (
+                        <button className="btn btn--small btn--primary" onClick={undoClose}>Undo ({pendingClose.countdown})</button>
+                      )}
+                      {!deleteMode && <button className="btn btn--small btn--ghost" onClick={() => viewDetail(p)}>View</button>}
                     </div>
                   </td>
                 </tr>
@@ -240,6 +336,32 @@ export default function PayPeriods() {
           </table>
         </div>
       )}
+
+      {/* Delete confirmation modal */}
+      <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete Pay Period">
+        {confirmDelete && (
+          <div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              Are you sure you want to permanently delete this pay period?
+            </p>
+            <div style={{ padding: '0.75rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-bright)' }}>
+                {confirmDelete.label || `${formatDate(confirmDelete.start_date)} – ${formatDate(confirmDelete.end_date)}`}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                {confirmDelete.recipient_count || 0} recipients · {confirmDelete.received_count || 0} received
+              </div>
+            </div>
+            <div style={{ padding: '0.625rem 0.875rem', background: 'rgba(239,68,68,0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239,68,68,0.2)', fontSize: '0.825rem', color: '#f87171', marginBottom: '1.25rem' }}>
+              ⚠️ This will permanently delete the pay period and all associated recipient data. This cannot be undone.
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn--secondary btn--small" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn--danger btn--small" onClick={() => handleDelete(confirmDelete.id)}>Delete Permanently</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setError('') }} title="Create Pay Period">
         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
