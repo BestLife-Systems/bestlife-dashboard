@@ -31,6 +31,7 @@ function CollapsibleNav({ tab, onLinkClick }) {
             <NavLink
               key={child.path}
               to={child.path}
+              end
               className={({ isActive }) => `sidebar-link sidebar-link--child ${isActive ? 'sidebar-link--active' : ''}`}
               onClick={onLinkClick}
             >
