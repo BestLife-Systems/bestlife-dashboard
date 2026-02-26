@@ -20,43 +20,145 @@ const IIC_CODE_LABELS = {
   'BA-H2014TJ': 'Behavioral Assistant',
 }
 
+// Inline SVG icons
+const PencilIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    <path d="m15 5 4 4" />
+  </svg>
+)
+const XIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
+
 // ── Review Page (full-page detail) ──
 function ReviewPage({ recipient, onBack, onUpdate }) {
   const [editMode, setEditMode] = useState(false)
+  const [removeMode, setRemoveMode] = useState(false)
   const [editData, setEditData] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showReject, setShowReject] = useState(false)
   const [showZeroPrompt, setShowZeroPrompt] = useState(false)
   const [zeroReason, setZeroReason] = useState('')
-  const [sickApproved, setSickApproved] = useState(true)
+  // Sick leave: null = undecided, 'approve' or 'disapprove'
+  const [sickDecision, setSickDecision] = useState(null)
+  const [sickDisapproveReason, setSickDisapproveReason] = useState('')
+  const [showSickDisapprove, setShowSickDisapprove] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [sendingNote, setSendingNote] = useState(false)
   const [adminNotes, setAdminNotes] = useState(recipient.admin_notes || [])
   const [error, setError] = useState(null)
 
-  const data = editMode ? editData : (recipient.invoice_data || {})
+  const liveData = editData || recipient.invoice_data || {}
+  const data = liveData
   const isReceived = recipient.status === 'received'
 
   function startEdit() {
     setEditData(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
     setEditMode(true)
+    setRemoveMode(false)
+  }
+
+  function startRemove() {
+    setEditData(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
+    setRemoveMode(true)
+    setEditMode(false)
+  }
+
+  function cancelEditRemove() {
+    setEditMode(false)
+    setRemoveMode(false)
+    setEditData(null)
   }
 
   async function saveEdits() {
     setProcessing(true); setError(null)
     try {
       await apiPatch(`/payroll/recipients/${recipient.id}/invoice-data`, { invoice_data: editData })
-      recipient.invoice_data = editData
+      recipient.invoice_data = JSON.parse(JSON.stringify(editData))
       setEditMode(false)
+      setRemoveMode(false)
+      setEditData(null)
       onUpdate?.()
     } catch (err) {
       setError(err.message)
     } finally { setProcessing(false) }
   }
 
+  // Remove helpers for editData
+  function removeIicEntry(code, idx) {
+    setEditData(prev => {
+      const next = { ...prev, iic: { ...prev.iic } }
+      next.iic[code] = next.iic[code].filter((_, i) => i !== idx)
+      return next
+    })
+  }
+  function removeOpEntry(idx) {
+    setEditData(prev => {
+      const next = { ...prev, op: { ...prev.op } }
+      next.op.sessions = next.op.sessions.filter((_, i) => i !== idx)
+      return next
+    })
+  }
+  function removeSbysEntry(idx) {
+    setEditData(prev => ({ ...prev, sbys: prev.sbys.filter((_, i) => i !== idx) }))
+  }
+  function removeAdosEntry(idx) {
+    setEditData(prev => ({ ...prev, ados: prev.ados.filter((_, i) => i !== idx) }))
+  }
+  function removeAdminEntry(idx) {
+    setEditData(prev => ({ ...prev, admin: prev.admin.filter((_, i) => i !== idx) }))
+  }
+
+  // Edit helpers for editData cells
+  function editIicField(code, idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, iic: { ...prev.iic } }
+      next.iic[code] = [...next.iic[code]]
+      next.iic[code][idx] = { ...next.iic[code][idx], [field]: value }
+      return next
+    })
+  }
+  function editOpField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, op: { ...prev.op } }
+      next.op.sessions = [...next.op.sessions]
+      next.op.sessions[idx] = { ...next.op.sessions[idx], [field]: value }
+      return next
+    })
+  }
+  function editSbysField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, sbys: [...prev.sbys] }
+      next.sbys[idx] = { ...next.sbys[idx], [field]: value }
+      return next
+    })
+  }
+  function editAdosField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, ados: [...prev.ados] }
+      next.ados[idx] = { ...next.ados[idx], [field]: value }
+      return next
+    })
+  }
+  function editAdminField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, admin: [...prev.admin] }
+      next.admin[idx] = { ...next.admin[idx], [field]: value }
+      return next
+    })
+  }
+
   async function handleApprove() {
-    // If total is zero, prompt for a reason instead
+    // Check sick leave decision
+    const hasSick = data.sick_leave && parseFloat(data.sick_leave.hours) > 0
+    if (hasSick && sickDecision === null) {
+      setError('Please approve or disapprove the sick leave request before approving')
+      return
+    }
     if (calcGrandTotal() === 0) {
       setShowZeroPrompt(true)
       return
@@ -95,6 +197,26 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     } finally { setProcessing(false) }
   }
 
+  function handleSickDisapprove() {
+    setSickDecision('disapprove')
+    setShowSickDisapprove(true)
+  }
+
+  async function confirmSickDisapprove() {
+    if (!sickDisapproveReason.trim()) { setError('Please provide a reason for disapproving sick leave'); return }
+    // Send as admin note
+    setSendingNote(true)
+    try {
+      const result = await apiPost(`/payroll/recipients/${recipient.id}/admin-note`, {
+        note: `Sick Leave Disapproved: ${sickDisapproveReason.trim()}`,
+      })
+      setAdminNotes(result.notes || [...adminNotes, { text: `Sick Leave Disapproved: ${sickDisapproveReason.trim()}`, at: new Date().toISOString() }])
+      setShowSickDisapprove(false)
+    } catch (err) {
+      setError(err.message)
+    } finally { setSendingNote(false) }
+  }
+
   async function sendNote() {
     if (!noteText.trim()) return
     setSendingNote(true)
@@ -106,6 +228,8 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
       setError(err.message)
     } finally { setSendingNote(false) }
   }
+
+  const isEditing = editMode || removeMode
 
   // ── IIC rendering ──
   function renderIIC() {
@@ -125,13 +249,15 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             <div key={code} className="review-subsection">
               <div className="review-subsection-label">{IIC_CODE_LABELS[code] || code} — <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{code}</span></div>
               <table className="review-table">
-                <thead><tr><th>Cyber # / Initials</th><th>Date</th><th>Hours</th></tr></thead>
+                <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Cyber # / Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
                 <tbody>
                   {entries.map((e, i) => (
                     <tr key={i}>
-                      <td>{e.cyber_initials || '—'}</td>
-                      <td>{e.date || '—'}</td>
-                      <td className="review-number">{e.hours || '—'}</td>
+                      {removeMode && <td><button className="review-remove-x" onClick={() => removeIicEntry(code, i)}><XIcon /></button></td>}
+                      <td>{editMode ? <input className="review-edit-input" value={e.cyber_initials || ''} onChange={ev => editIicField(code, i, 'cyber_initials', ev.target.value)} /> : (e.cyber_initials || '—')}</td>
+                      <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editIicField(code, i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
+                      <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editIicField(code, i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                      {editMode && <td><PencilIcon /></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -144,26 +270,31 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     )
   }
 
-  // ── OP rendering ── (all sessions = 1hr, cancellations = 1hr worked)
+  // ── OP rendering ──
   function renderOP() {
     const op = data.op
     if (!op || !op.sessions || op.sessions.length === 0) return null
     const sessions = op.sessions.filter(e => !e.cancel_fee)
     const cancellations = op.sessions.filter(e => e.cancel_fee)
-    const totalHrs = op.sessions.length // every entry = 1 hr (sessions + cancellations)
+    // Map indices back to original array for removal
+    const sessionIndices = []; const cancelIndices = []
+    op.sessions.forEach((e, i) => { if (!e.cancel_fee) sessionIndices.push(i); else cancelIndices.push(i) })
+
     return (
       <div className="review-section">
         <h4 className="review-section-title">OP Sessions</h4>
         {sessions.length > 0 && (
           <>
             <table className="review-table">
-              <thead><tr><th>Initials</th><th>Date</th><th>Hours</th></tr></thead>
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
               <tbody>
                 {sessions.map((e, i) => (
                   <tr key={i}>
-                    <td>{e.client_initials || '—'}</td>
-                    <td>{e.date || '—'}</td>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(sessionIndices[i])}><XIcon /></button></td>}
+                    <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(sessionIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(sessionIndices[i], 'date', ev.target.value)} /> : (e.date || '—')}</td>
                     <td className="review-number">1</td>
+                    {editMode && <td><PencilIcon /></td>}
                   </tr>
                 ))}
               </tbody>
@@ -175,18 +306,20 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           <>
             <div className="review-subsection-label" style={{ marginTop: '0.75rem', color: 'var(--danger, #f87171)' }}>Cancellations</div>
             <table className="review-table">
-              <thead><tr><th>Initials</th><th>Date</th><th>Hours</th></tr></thead>
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
               <tbody>
                 {cancellations.map((e, i) => (
                   <tr key={i}>
-                    <td>{e.client_initials || '—'}</td>
-                    <td>{e.date || '—'}</td>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(cancelIndices[i])}><XIcon /></button></td>}
+                    <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(cancelIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(cancelIndices[i], 'date', ev.target.value)} /> : (e.date || '—')}</td>
                     <td className="review-number">1</td>
+                    {editMode && <td><PencilIcon /></td>}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} hrs (cancellation{cancellations.length !== 1 ? 's' : ''})</div>
+            <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} hrs</div>
           </>
         )}
       </div>
@@ -202,10 +335,15 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
       <div className="review-section">
         <h4 className="review-section-title">School Based Youth Services</h4>
         <table className="review-table">
-          <thead><tr><th>Date</th><th>Hours</th></tr></thead>
+          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
           <tbody>
             {sbys.map((e, i) => (
-              <tr key={i}><td>{e.date || '—'}</td><td className="review-number">{e.hours || '—'}</td></tr>
+              <tr key={i}>
+                {removeMode && <td><button className="review-remove-x" onClick={() => removeSbysEntry(i)}><XIcon /></button></td>}
+                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editSbysField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
+                <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editSbysField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                {editMode && <td><PencilIcon /></td>}
+              </tr>
             ))}
           </tbody>
         </table>
@@ -224,14 +362,16 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
       <div className="review-section">
         <h4 className="review-section-title">ADOS Assessments</h4>
         <table className="review-table">
-          <thead><tr><th>Initials</th><th>Location</th><th>ID #</th><th>Date</th></tr></thead>
+          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Location</th><th>ID #</th><th>Date</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
           <tbody>
             {ados.map((e, i) => (
               <tr key={i}>
-                <td>{e.client_initials || '—'}</td>
-                <td>{e.location || '—'}</td>
-                <td>{e.id_number || '—'}</td>
-                <td>{e.date || '—'}</td>
+                {removeMode && <td><button className="review-remove-x" onClick={() => removeAdosEntry(i)}><XIcon /></button></td>}
+                <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editAdosField(i, 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                <td>{editMode ? <select className="review-edit-input" value={e.location || ''} onChange={ev => editAdosField(i, 'location', ev.target.value)}><option value="In home">In home</option><option value="At office">At office</option></select> : (e.location || '—')}</td>
+                <td>{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.id_number || ''} onChange={ev => editAdosField(i, 'id_number', ev.target.value)} /> : (e.id_number || '—')}</td>
+                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdosField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
+                {editMode && <td><PencilIcon /></td>}
               </tr>
             ))}
           </tbody>
@@ -255,10 +395,15 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
       <div className="review-section">
         <h4 className="review-section-title">Administration</h4>
         <table className="review-table">
-          <thead><tr><th>Date</th><th>Hours</th></tr></thead>
+          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
           <tbody>
             {admin.map((e, i) => (
-              <tr key={i}><td>{e.date || '—'}</td><td className="review-number">{e.hours || '—'}</td></tr>
+              <tr key={i}>
+                {removeMode && <td><button className="review-remove-x" onClick={() => removeAdminEntry(i)}><XIcon /></button></td>}
+                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdminField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
+                <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editAdminField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                {editMode && <td><PencilIcon /></td>}
+              </tr>
             ))}
           </tbody>
         </table>
@@ -312,37 +457,44 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     )
   }
 
-  // ── Sick Leave (separate section, requires admin approval) ──
+  // ── Sick Leave ──
   function renderSickLeave() {
     const sick = data.sick_leave
     if (!sick || !(parseFloat(sick.hours) > 0)) return null
     const hrs = parseFloat(sick.hours) || 0
+    const approved = sickDecision === 'approve'
     return (
       <div className="review-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h4 className="review-section-title" style={{ margin: 0 }}>Sick Leave</h4>
-          {isReceived && (
-            <label className="review-sick-approval" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-              <input type="checkbox" checked={sickApproved} onChange={e => setSickApproved(e.target.checked)} />
-              <span style={{ color: sickApproved ? 'var(--accent)' : 'var(--danger, #f87171)', fontWeight: 600 }}>
-                {sickApproved ? 'Approved' : 'Not Approved'}
-              </span>
-            </label>
-          )}
-        </div>
+        <h4 className="review-section-title" style={{ marginBottom: '0.5rem' }}>Sick Leave</h4>
         <div className="review-leave-detail">
-          <div className="review-leave-row" style={{ marginTop: '0.75rem' }}>
+          <div className="review-leave-row">
             <span className="review-leave-label">Date:</span>
             <span>{sick.date || '—'}</span>
           </div>
+          <div className="review-leave-row" style={{ marginTop: '0.375rem' }}>
+            <span className="review-leave-label">Hours requested:</span>
+            <span className="review-number">{hrs}</span>
+          </div>
           {sick.reason && <div className="review-leave-note" style={{ marginTop: '0.5rem' }}>Reason: {sick.reason}</div>}
         </div>
-        <div className="review-subtotal">{hrs} hrs</div>
+        {isReceived && (
+          <div className="review-sick-choices">
+            <label className={`review-sick-choice ${sickDecision === 'approve' ? 'review-sick-choice--active' : ''}`}>
+              <input type="radio" name="sick_decision" checked={sickDecision === 'approve'} onChange={() => setSickDecision('approve')} />
+              <span>Approve</span>
+            </label>
+            <label className={`review-sick-choice review-sick-choice--deny ${sickDecision === 'disapprove' ? 'review-sick-choice--active-deny' : ''}`}>
+              <input type="radio" name="sick_decision" checked={sickDecision === 'disapprove'} onChange={handleSickDisapprove} />
+              <span>Disapprove</span>
+            </label>
+          </div>
+        )}
+        <div className="review-subtotal">{approved ? <>{hrs} hrs</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
       </div>
     )
   }
 
-  // ── PTO (separate section, no date) ──
+  // ── PTO ──
   function renderPTO() {
     const pto = data.pto
     if (!pto || !(parseFloat(pto.hours) > 0)) return null
@@ -364,37 +516,27 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   // ── Grand total calc ──
   function calcGrandTotal() {
     let total = 0
-    // IIC hours
     const iic = data.iic || {}
     Object.values(iic).forEach(entries => {
       (entries || []).forEach(e => { total += parseFloat(e.hours) || 0 })
     })
-    // OP: every session and cancellation = 1 hr
     const op = data.op || {}
-    const opSessions = op.sessions || []
-    total += opSessions.length
-    // SBYS
+    total += (op.sessions || []).length
     const sbys = data.sbys || []
     sbys.forEach(e => { total += parseFloat(e.hours) || 0 })
-    // ADOS: 3 hrs per assessment
     const ados = data.ados || []
     total += ados.length * 3
-    // Admin
     const admin = data.admin || []
     admin.forEach(e => { total += parseFloat(e.hours) || 0 })
-    // Supervision
     const sup = data.supervision || {}
     total += (sup.individual || []).length + (sup.group || []).length
-    // Sick leave (only if approved)
-    if (sickApproved) total += parseFloat(data.sick_leave?.hours) || 0
-    // PTO
+    if (sickDecision === 'approve') total += parseFloat(data.sick_leave?.hours) || 0
     total += parseFloat(data.pto?.hours) || 0
     return total
   }
 
   return (
     <div>
-      {/* Header */}
       <div className="page-header">
         <div>
           <button className="btn btn--ghost btn--small" onClick={onBack} style={{ marginBottom: '0.5rem' }}>← Back to Approval Queue</button>
@@ -411,25 +553,26 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
 
       {error && <div className="form-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
-      {/* Action bar */}
       {isReceived && (
         <div className="review-action-bar">
           <button className="btn btn--primary" onClick={handleApprove} disabled={processing}>
             {processing ? 'Processing…' : '✓ Approve'}
           </button>
-          {!editMode ? (
-            <button className="btn btn--ghost" onClick={startEdit}>Edit Line Items</button>
+          {!isEditing ? (
+            <>
+              <button className="btn btn--ghost" onClick={startEdit}>Edit Line Items</button>
+              <button className="btn btn--ghost" onClick={startRemove}>Remove Line Items</button>
+            </>
           ) : (
             <>
               <button className="btn btn--primary" onClick={saveEdits} disabled={processing}>Save Changes</button>
-              <button className="btn btn--ghost" onClick={() => { setEditMode(false); setEditData(null) }}>Cancel Edit</button>
+              <button className="btn btn--ghost" onClick={cancelEditRemove}>Cancel</button>
             </>
           )}
           <button className="btn btn--danger-ghost" onClick={() => setShowReject(true)}>Reject</button>
         </div>
       )}
 
-      {/* Invoice sections */}
       <div className="review-grid">
         <div className="review-main">
           {renderIIC()}
@@ -441,7 +584,6 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           {renderSickLeave()}
           {renderPTO()}
 
-          {/* Notes */}
           {data.notes && (
             <div className="review-section">
               <h4 className="review-section-title">Notes</h4>
@@ -449,19 +591,16 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             </div>
           )}
 
-          {/* Grand Total */}
           <div className="review-grand-total">
             <span>Total Hours Worked</span>
             <span className="review-grand-total-value">{calcGrandTotal()}</span>
           </div>
         </div>
 
-        {/* Sidebar — admin notes/questions */}
         <div className="review-sidebar">
           <div className="review-sidebar-card">
             <h4 className="review-sidebar-title">Admin Notes</h4>
             <p className="review-sidebar-hint">Send a question or note to the provider about this submission.</p>
-
             {adminNotes.length > 0 && (
               <div className="review-notes-list">
                 {adminNotes.map((n, i) => (
@@ -472,85 +611,48 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
                 ))}
               </div>
             )}
-
             <div className="review-note-input-wrap">
-              <textarea
-                className="form-input"
-                rows="3"
-                value={noteText}
-                onChange={e => setNoteText(e.target.value)}
-                placeholder="Type a note or question…"
-                style={{ resize: 'vertical', fontSize: '0.825rem' }}
-              />
-              <button
-                className="btn btn--primary btn--small"
-                onClick={sendNote}
-                disabled={sendingNote || !noteText.trim()}
-                style={{ alignSelf: 'flex-end', marginTop: '0.5rem' }}
-              >
+              <textarea className="form-input" rows="3" value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Type a note or question…" style={{ resize: 'vertical', fontSize: '0.825rem' }} />
+              <button className="btn btn--primary btn--small" onClick={sendNote} disabled={sendingNote || !noteText.trim()} style={{ alignSelf: 'flex-end', marginTop: '0.5rem' }}>
                 {sendingNote ? 'Sending…' : 'Send Note'}
               </button>
             </div>
           </div>
 
-          {/* Quick info */}
           <div className="review-sidebar-card">
             <h4 className="review-sidebar-title">Submission Info</h4>
-            <div className="review-info-row">
-              <span className="review-info-label">Status</span>
-              <StatusBadge status={recipient.status} />
-            </div>
-            <div className="review-info-row">
-              <span className="review-info-label">Pay Period</span>
-              <span>{recipient.period_label || `${formatDate(recipient.period_start)} – ${formatDate(recipient.period_end)}`}</span>
-            </div>
-            <div className="review-info-row">
-              <span className="review-info-label">Submitted</span>
-              <span>{formatDateTime(recipient.submitted_at)}</span>
-            </div>
-            <div className="review-info-row">
-              <span className="review-info-label">Total Hours</span>
-              <span style={{ fontWeight: 600, color: 'var(--accent)' }}>{calcGrandTotal()}</span>
-            </div>
+            <div className="review-info-row"><span className="review-info-label">Status</span><StatusBadge status={recipient.status} /></div>
+            <div className="review-info-row"><span className="review-info-label">Pay Period</span><span>{recipient.period_label || `${formatDate(recipient.period_start)} – ${formatDate(recipient.period_end)}`}</span></div>
+            <div className="review-info-row"><span className="review-info-label">Submitted</span><span>{formatDateTime(recipient.submitted_at)}</span></div>
+            <div className="review-info-row"><span className="review-info-label">Total Hours</span><span style={{ fontWeight: 600, color: 'var(--accent)' }}>{calcGrandTotal()}</span></div>
           </div>
         </div>
       </div>
 
-      {/* Reject modal */}
       <Modal open={showReject} onClose={() => { setShowReject(false); setRejectReason('') }} title="Reject Submission">
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-          This will send the invoice back to the provider. Please provide a reason.
-        </p>
-        <textarea
-          className="form-input"
-          rows="3"
-          value={rejectReason}
-          onChange={e => setRejectReason(e.target.value)}
-          placeholder="Reason for rejection…"
-          style={{ resize: 'vertical', marginBottom: '1rem' }}
-        />
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>This will send the invoice back to the provider. Please provide a reason.</p>
+        <textarea className="form-input" rows="3" value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason for rejection…" style={{ resize: 'vertical', marginBottom: '1rem' }} />
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
           <button className="btn btn--secondary" onClick={() => setShowReject(false)}>Cancel</button>
           <button className="btn btn--danger" onClick={handleReject} disabled={processing}>Reject</button>
         </div>
       </Modal>
 
-      {/* Zero hours prompt (auto-triggered when approving with 0 total) */}
       <Modal open={showZeroPrompt} onClose={() => { setShowZeroPrompt(false); setZeroReason('') }} title="Zero Hours Detected">
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-          This invoice has zero total hours. To approve it as zero hours, please provide a reason.
-        </p>
-        <textarea
-          className="form-input"
-          rows="3"
-          value={zeroReason}
-          onChange={e => setZeroReason(e.target.value)}
-          placeholder="Reason for zero hours…"
-          style={{ resize: 'vertical', marginBottom: '1rem' }}
-        />
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>This invoice has zero total hours. To approve it, please provide a reason.</p>
+        <textarea className="form-input" rows="3" value={zeroReason} onChange={e => setZeroReason(e.target.value)} placeholder="Reason for zero hours…" style={{ resize: 'vertical', marginBottom: '1rem' }} />
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
           <button className="btn btn--secondary" onClick={() => setShowZeroPrompt(false)}>Cancel</button>
           <button className="btn btn--primary" onClick={handleZeroApprove} disabled={processing}>Approve as Zero Hours</button>
+        </div>
+      </Modal>
+
+      <Modal open={showSickDisapprove} onClose={() => { setShowSickDisapprove(false); setSickDisapproveReason(''); setSickDecision(null) }} title="Disapprove Sick Leave">
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>Please provide a reason. This will be sent back to the provider.</p>
+        <textarea className="form-input" rows="3" value={sickDisapproveReason} onChange={e => setSickDisapproveReason(e.target.value)} placeholder="Reason for disapproval…" style={{ resize: 'vertical', marginBottom: '1rem' }} />
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <button className="btn btn--secondary" onClick={() => { setShowSickDisapprove(false); setSickDecision(null) }}>Cancel</button>
+          <button className="btn btn--danger" onClick={confirmSickDisapprove} disabled={sendingNote}>Disapprove</button>
         </div>
       </Modal>
     </div>
@@ -583,15 +685,8 @@ export default function ApprovalQueue() {
     return <div className="page-loading"><div className="loading-spinner" /><p>{verb}…</p></div>
   }
 
-  // Full-page review
   if (selected) {
-    return (
-      <ReviewPage
-        recipient={selected}
-        onBack={() => setSelected(null)}
-        onUpdate={loadRecipients}
-      />
-    )
+    return <ReviewPage recipient={selected} onBack={() => setSelected(null)} onUpdate={loadRecipients} />
   }
 
   return (
@@ -601,9 +696,9 @@ export default function ApprovalQueue() {
       </div>
 
       <div className="filter-tabs">
-        {['received', 'approved', 'rejected', 'zero_hours', 'all'].map(f => (
+        {['received', 'approved', 'rejected', 'all'].map(f => (
           <button key={f} className={`filter-tab ${filter === f ? 'filter-tab--active' : ''}`} onClick={() => setFilter(f)}>
-            {f === 'zero_hours' ? 'Zero Hours' : f.charAt(0).toUpperCase() + f.slice(1)}
+            {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
       </div>
