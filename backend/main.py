@@ -37,7 +37,11 @@ async def startup_event():
     logger.info(f"Supabase URL: {SUPABASE_URL}")
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
     logger.info(f"Anon key configured: {'Yes' if SUPABASE_ANON_KEY else 'No'}")
-    logger.info(f"Anthropic key configured: {'Yes' if os.environ.get('ANTHROPIC_API_KEY') else 'No'}")
+    ak = os.environ.get("ANTHROPIC_API_KEY", "")
+    logger.info(f"Anthropic key configured: {'Yes' if ak else 'No'} (len={len(ak)}, prefix={ak[:8]}...)" if ak else "Anthropic key configured: No")
+    # Log all env var names containing 'ANTHRO' or 'API' to debug
+    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper() or k == 'ANTHROPIC_API_KEY']
+    logger.info(f"Env vars matching ANTHRO*: {anthro_vars}")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -2770,9 +2774,13 @@ async def analytics_supervision(user=Depends(verify_token)):
 async def ai_status(admin=Depends(require_admin)):
     """Check if AI is configured (admin only)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    anthro_vars = [k for k in os.environ if 'ANTHRO' in k.upper()]
     return {
         "configured": bool(api_key),
-        "key_prefix": api_key[:8] + "..." if api_key else None,
+        "key_prefix": api_key[:12] + "..." if api_key else None,
+        "key_length": len(api_key) if api_key else 0,
+        "env_vars_matching": anthro_vars,
+        "module_level_set": bool(ANTHROPIC_API_KEY),
     }
 
 
