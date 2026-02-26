@@ -14,19 +14,6 @@ function formatDateTime(d) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-// Section labels for display
-const SECTION_LABELS = {
-  iic: 'IIC Sessions',
-  op: 'OP Sessions',
-  sbys: 'School Based Youth Services',
-  ados: 'ADOS Assessments',
-  admin: 'Administration',
-  supervision: 'Supervision',
-  sick_leave: 'Sick Leave',
-  pto: 'Paid Time Off',
-  notes: 'Notes',
-}
-
 const IIC_CODE_LABELS = {
   'IICLC-H0036TJU1': 'LPC/LCSW',
   'IICMA-H0036TJU2': 'LAC/LSW',
@@ -39,9 +26,10 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   const [editData, setEditData] = useState(null)
   const [processing, setProcessing] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  const [zeroReason, setZeroReason] = useState('')
   const [showReject, setShowReject] = useState(false)
-  const [showZero, setShowZero] = useState(false)
+  const [showZeroPrompt, setShowZeroPrompt] = useState(false)
+  const [zeroReason, setZeroReason] = useState('')
+  const [sickApproved, setSickApproved] = useState(true)
   const [noteText, setNoteText] = useState('')
   const [sendingNote, setSendingNote] = useState(false)
   const [adminNotes, setAdminNotes] = useState(recipient.admin_notes || [])
@@ -68,9 +56,26 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   }
 
   async function handleApprove() {
+    // If total is zero, prompt for a reason instead
+    if (calcGrandTotal() === 0) {
+      setShowZeroPrompt(true)
+      return
+    }
     setProcessing(true); setError(null)
     try {
       await apiPost(`/payroll/recipients/${recipient.id}/approve`, {})
+      onUpdate?.()
+      onBack()
+    } catch (err) {
+      setError(err.message)
+    } finally { setProcessing(false) }
+  }
+
+  async function handleZeroApprove() {
+    if (!zeroReason.trim()) { setError('Please provide a reason for zero hours'); return }
+    setProcessing(true); setError(null)
+    try {
+      await apiPost(`/payroll/recipients/${recipient.id}/zero-hours`, { reason: zeroReason })
       onUpdate?.()
       onBack()
     } catch (err) {
@@ -83,18 +88,6 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     setProcessing(true); setError(null)
     try {
       await apiPost(`/payroll/recipients/${recipient.id}/reject`, { reason: rejectReason })
-      onUpdate?.()
-      onBack()
-    } catch (err) {
-      setError(err.message)
-    } finally { setProcessing(false) }
-  }
-
-  async function handleZeroHours() {
-    if (!zeroReason.trim()) { setError('Please provide a reason'); return }
-    setProcessing(true); setError(null)
-    try {
-      await apiPost(`/payroll/recipients/${recipient.id}/zero-hours`, { reason: zeroReason })
       onUpdate?.()
       onBack()
     } catch (err) {
@@ -127,11 +120,12 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
         <h4 className="review-section-title">IIC Sessions</h4>
         {codes.map(([code, entries]) => {
           if (!entries || entries.length === 0) return null
+          const subtotal = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
           return (
             <div key={code} className="review-subsection">
               <div className="review-subsection-label">{IIC_CODE_LABELS[code] || code} — <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{code}</span></div>
               <table className="review-table">
-                <thead><tr><th>Initials</th><th>Date</th><th>Hours</th></tr></thead>
+                <thead><tr><th>Cyber # / Initials</th><th>Date</th><th>Hours</th></tr></thead>
                 <tbody>
                   {entries.map((e, i) => (
                     <tr key={i}>
@@ -142,7 +136,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
                   ))}
                 </tbody>
               </table>
-              <div className="review-subtotal">{entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)} hrs</div>
+              <div className="review-subtotal">{subtotal} hrs</div>
             </div>
           )
         })}
@@ -150,48 +144,49 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     )
   }
 
-  // ── OP rendering ──
+  // ── OP rendering ── (all sessions = 1hr, cancellations = 1hr worked)
   function renderOP() {
     const op = data.op
     if (!op || !op.sessions || op.sessions.length === 0) return null
     const sessions = op.sessions.filter(e => !e.cancel_fee)
     const cancellations = op.sessions.filter(e => e.cancel_fee)
+    const totalHrs = op.sessions.length // every entry = 1 hr (sessions + cancellations)
     return (
       <div className="review-section">
         <h4 className="review-section-title">OP Sessions</h4>
         {sessions.length > 0 && (
           <>
             <table className="review-table">
-              <thead><tr><th>Initials</th><th>Date</th><th>Duration</th></tr></thead>
+              <thead><tr><th>Initials</th><th>Date</th><th>Hours</th></tr></thead>
               <tbody>
                 {sessions.map((e, i) => (
                   <tr key={i}>
-                    <td>{e.cyber_initials || '—'}</td>
+                    <td>{e.client_initials || '—'}</td>
                     <td>{e.date || '—'}</td>
-                    <td>{e.duration || '—'}</td>
+                    <td className="review-number">1</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="review-subtotal">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</div>
+            <div className="review-subtotal">{sessions.length} hrs</div>
           </>
         )}
         {cancellations.length > 0 && (
           <>
             <div className="review-subsection-label" style={{ marginTop: '0.75rem', color: 'var(--danger, #f87171)' }}>Cancellations</div>
             <table className="review-table">
-              <thead><tr><th>Initials</th><th>Date</th><th>Fee</th></tr></thead>
+              <thead><tr><th>Initials</th><th>Date</th><th>Hours</th></tr></thead>
               <tbody>
                 {cancellations.map((e, i) => (
                   <tr key={i}>
-                    <td>{e.cyber_initials || '—'}</td>
+                    <td>{e.client_initials || '—'}</td>
                     <td>{e.date || '—'}</td>
-                    <td>{e.cancel_fee || '—'}</td>
+                    <td className="review-number">1</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} cancellation{cancellations.length !== 1 ? 's' : ''}</div>
+            <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} hrs (cancellation{cancellations.length !== 1 ? 's' : ''})</div>
           </>
         )}
       </div>
@@ -202,6 +197,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   function renderSBYS() {
     const sbys = data.sbys
     if (!sbys || sbys.length === 0) return null
+    const total = sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
     return (
       <div className="review-section">
         <h4 className="review-section-title">School Based Youth Services</h4>
@@ -213,7 +209,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             ))}
           </tbody>
         </table>
-        <div className="review-subtotal">{sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)} hrs</div>
+        <div className="review-subtotal">{total} hrs</div>
       </div>
     )
   }
@@ -254,6 +250,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   function renderAdmin() {
     const admin = data.admin
     if (!admin || admin.length === 0) return null
+    const total = admin.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
     return (
       <div className="review-section">
         <h4 className="review-section-title">Administration</h4>
@@ -265,7 +262,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             ))}
           </tbody>
         </table>
-        <div className="review-subtotal">{admin.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)} hrs</div>
+        <div className="review-subtotal">{total} hrs</div>
       </div>
     )
   }
@@ -315,39 +312,51 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     )
   }
 
-  // ── Sick / PTO ──
-  function renderLeave() {
+  // ── Sick Leave (separate section, requires admin approval) ──
+  function renderSickLeave() {
     const sick = data.sick_leave
-    const pto = data.pto
-    const hasSick = sick && parseFloat(sick.hours) > 0
-    const hasPto = pto && parseFloat(pto.hours) > 0
-    if (!hasSick && !hasPto) return null
+    if (!sick || !(parseFloat(sick.hours) > 0)) return null
+    const hrs = parseFloat(sick.hours) || 0
     return (
       <div className="review-section">
-        {hasSick && (
-          <div className="review-subsection">
-            <h4 className="review-section-title">Sick Leave</h4>
-            <div className="review-leave-row">
-              <span className="review-leave-label">Date:</span>
-              <span>{sick.date || '—'}</span>
-              <span className="review-leave-label" style={{ marginLeft: '1.5rem' }}>Hours:</span>
-              <span className="review-number">{sick.hours}</span>
-            </div>
-            {sick.reason && <div className="review-leave-note">Reason: {sick.reason}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h4 className="review-section-title" style={{ margin: 0 }}>Sick Leave</h4>
+          {isReceived && (
+            <label className="review-sick-approval" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sickApproved} onChange={e => setSickApproved(e.target.checked)} />
+              <span style={{ color: sickApproved ? 'var(--accent)' : 'var(--danger, #f87171)', fontWeight: 600 }}>
+                {sickApproved ? 'Approved' : 'Not Approved'}
+              </span>
+            </label>
+          )}
+        </div>
+        <div className="review-leave-detail">
+          <div className="review-leave-row" style={{ marginTop: '0.75rem' }}>
+            <span className="review-leave-label">Date:</span>
+            <span>{sick.date || '—'}</span>
           </div>
-        )}
-        {hasPto && (
-          <div className="review-subsection">
-            <h4 className="review-section-title">Paid Time Off</h4>
-            <div className="review-leave-row">
-              <span className="review-leave-label">Date:</span>
-              <span>{pto.date || '—'}</span>
-              <span className="review-leave-label" style={{ marginLeft: '1.5rem' }}>Hours:</span>
-              <span className="review-number">{pto.hours}</span>
-            </div>
-            {pto.reason && <div className="review-leave-note">Reason: {pto.reason}</div>}
+          {sick.reason && <div className="review-leave-note" style={{ marginTop: '0.5rem' }}>Reason: {sick.reason}</div>}
+        </div>
+        <div className="review-subtotal">{hrs} hrs</div>
+      </div>
+    )
+  }
+
+  // ── PTO (separate section, no date) ──
+  function renderPTO() {
+    const pto = data.pto
+    if (!pto || !(parseFloat(pto.hours) > 0)) return null
+    const hrs = parseFloat(pto.hours) || 0
+    return (
+      <div className="review-section">
+        <h4 className="review-section-title">Paid Time Off</h4>
+        <div className="review-leave-detail">
+          <div className="review-leave-row" style={{ marginTop: '0.5rem' }}>
+            <span className="review-leave-label">Hours requested:</span>
+            <span className="review-number">{hrs}</span>
           </div>
-        )}
+        </div>
+        <div className="review-subtotal">{hrs} hrs</div>
       </div>
     )
   }
@@ -355,19 +364,30 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   // ── Grand total calc ──
   function calcGrandTotal() {
     let total = 0
+    // IIC hours
     const iic = data.iic || {}
     Object.values(iic).forEach(entries => {
       (entries || []).forEach(e => { total += parseFloat(e.hours) || 0 })
     })
+    // OP: every session and cancellation = 1 hr
+    const op = data.op || {}
+    const opSessions = op.sessions || []
+    total += opSessions.length
+    // SBYS
     const sbys = data.sbys || []
     sbys.forEach(e => { total += parseFloat(e.hours) || 0 })
+    // ADOS: 3 hrs per assessment
     const ados = data.ados || []
-    total += ados.length * 3 // 3 hrs per assessment
+    total += ados.length * 3
+    // Admin
     const admin = data.admin || []
     admin.forEach(e => { total += parseFloat(e.hours) || 0 })
+    // Supervision
     const sup = data.supervision || {}
     total += (sup.individual || []).length + (sup.group || []).length
-    total += parseFloat(data.sick_leave?.hours) || 0
+    // Sick leave (only if approved)
+    if (sickApproved) total += parseFloat(data.sick_leave?.hours) || 0
+    // PTO
     total += parseFloat(data.pto?.hours) || 0
     return total
   }
@@ -406,7 +426,6 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             </>
           )}
           <button className="btn btn--danger-ghost" onClick={() => setShowReject(true)}>Reject</button>
-          <button className="btn btn--ghost" onClick={() => setShowZero(true)} style={{ color: 'var(--text-muted)' }}>Zero Hours</button>
         </div>
       )}
 
@@ -419,7 +438,8 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           {renderADOS()}
           {renderAdmin()}
           {renderSupervision()}
-          {renderLeave()}
+          {renderSickLeave()}
+          {renderPTO()}
 
           {/* Notes */}
           {data.notes && (
@@ -515,10 +535,10 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
         </div>
       </Modal>
 
-      {/* Zero hours modal */}
-      <Modal open={showZero} onClose={() => { setShowZero(false); setZeroReason('') }} title="Mark Zero Hours">
+      {/* Zero hours prompt (auto-triggered when approving with 0 total) */}
+      <Modal open={showZeroPrompt} onClose={() => { setShowZeroPrompt(false); setZeroReason('') }} title="Zero Hours Detected">
         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-          This marks the provider as having zero billable hours for this period. Please provide a reason.
+          This invoice has zero total hours. To approve it as zero hours, please provide a reason.
         </p>
         <textarea
           className="form-input"
@@ -529,8 +549,8 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           style={{ resize: 'vertical', marginBottom: '1rem' }}
         />
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-          <button className="btn btn--secondary" onClick={() => setShowZero(false)}>Cancel</button>
-          <button className="btn btn--primary" onClick={handleZeroHours} disabled={processing}>Confirm</button>
+          <button className="btn btn--secondary" onClick={() => setShowZeroPrompt(false)}>Cancel</button>
+          <button className="btn btn--primary" onClick={handleZeroApprove} disabled={processing}>Approve as Zero Hours</button>
         </div>
       </Modal>
     </div>
