@@ -258,15 +258,7 @@ export default function PayPeriods() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Pay Periods</h2>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button
-            className={`btn ${deleteMode ? 'btn--secondary' : 'btn--danger-ghost'}`}
-            onClick={() => { setDeleteMode(m => !m); setConfirmDelete(null) }}
-          >
-            {deleteMode ? 'Done' : '- Delete'}
-          </button>
-          <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
-        </div>
+        <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
       </div>
 
       {/* Undo close banner (list view) */}
@@ -285,6 +277,15 @@ export default function PayPeriods() {
         </div>
       ) : (
         <div className="table-wrapper">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+            <button
+              className={`btn btn--small ${deleteMode ? 'btn--danger' : 'btn--ghost'}`}
+              onClick={() => { setDeleteMode(m => !m); setConfirmDelete(null) }}
+              style={{ fontSize: '0.78rem' }}
+            >
+              {deleteMode ? 'Done' : '- Delete'}
+            </button>
+          </div>
           <table className="data-table">
             <thead>
               <tr>
