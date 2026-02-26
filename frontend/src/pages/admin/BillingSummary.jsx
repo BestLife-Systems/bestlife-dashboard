@@ -501,21 +501,19 @@ export default function BillingSummary() {
                 background: SVC_COLORS[key] || 'var(--accent)',
               }}></span>
               <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-bright)' }}>{label}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>$</span>
-                <input
-                  className="form-input"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editRates[key] ?? ''}
-                  onChange={e => setEditRates(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
-                  style={{ width: '100px', textAlign: 'right', fontSize: '0.85rem' }}
-                />
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                  {ADOS_KEYS.has(key) ? '/assess' : '/hr'}
-                </span>
-              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem', width: '10px', textAlign: 'right', flexShrink: 0 }}>$</span>
+              <input
+                className="form-input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={editRates[key] ?? ''}
+                onChange={e => setEditRates(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                style={{ width: '100px', textAlign: 'right', fontSize: '0.85rem', flexShrink: 0 }}
+              />
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', width: '50px', flexShrink: 0 }}>
+                {ADOS_KEYS.has(key) ? '/assess' : '/hr'}
+              </span>
             </div>
           ))}
         </div>
