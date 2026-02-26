@@ -16,14 +16,24 @@ function formatMonth(ym) {
 }
 
 function fmtDollar(v) {
-  return '$' + (v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return '$' + Math.round(v || 0).toLocaleString()
 }
 
 function fmtPct(v) {
   return (v || 0).toFixed(1) + '%'
 }
 
-// Service type colors
+// Grouped pill categories (what shows on main page)
+const PILL_GROUPS = [
+  { key: 'IIC', label: 'IIC', members: ['IIC-LC', 'IIC-MA', 'IIC-BA'], color: '#00bbee', unit: 'h' },
+  { key: 'OP', label: 'OP', members: ['OP'], color: '#4ade80', unit: 'h' },
+  { key: 'SBYS', label: 'SBYS', members: ['SBYS'], color: '#a78bfa', unit: 'h' },
+  { key: 'ADOS', label: 'ADOS', members: ['ADOS In Home', 'ADOS At Office'], color: '#fbbf24', unit: 'assessments' },
+  { key: 'PTO', label: 'PTO', members: ['PTO'], color: '#e879f9', unit: 'h' },
+  { key: 'Sick', label: 'Sick Leave', members: ['Sick Leave'], color: '#f87171', unit: 'h' },
+]
+
+// Service type colors for detail view
 const SVC_COLORS = {
   'IIC-LC': '#00bbee',
   'IIC-MA': '#0ea5e9',
@@ -38,22 +48,7 @@ const SVC_COLORS = {
   'Sick Leave': '#f87171',
 }
 
-// Short labels for pills
-const SVC_SHORT = {
-  'IIC-LC': 'IIC-LC',
-  'IIC-MA': 'IIC-MA',
-  'IIC-BA': 'IIC-BA',
-  OP: 'OP',
-  SBYS: 'SBYS',
-  'ADOS In Home': 'ADOS Home',
-  'ADOS At Office': 'ADOS Office',
-  'APN 30 Min': 'APN 30',
-  'APN Intake': 'APN Intake',
-  PTO: 'PTO',
-  'Sick Leave': 'Sick',
-}
-
-// Revenue rate labels for the modal
+// Revenue rate labels for the modal (ADOS labeled "per assessment")
 const RATE_LABELS = {
   'IIC-LC': 'IIC — LPC/LCSW',
   'IIC-MA': 'IIC — LAC/LSW',
@@ -65,6 +60,8 @@ const RATE_LABELS = {
   'APN 30 Min': 'APN — 30 Min',
   'APN Intake': 'APN — Intake (60 Min)',
 }
+
+const ADOS_KEYS = new Set(['ADOS In Home', 'ADOS At Office'])
 
 // ── Detail View ──
 function PeriodDetail({ periodId, period, onBack }) {
@@ -99,6 +96,42 @@ function PeriodDetail({ periodId, period, onBack }) {
 
   const { sections, grand_total } = data
 
+  // Combine ADOS In Home + ADOS At Office into one section
+  const adosHomeSec = sections.find(s => s.service === 'ADOS In Home')
+  const adosOfficeSec = sections.find(s => s.service === 'ADOS At Office')
+  const hasAdos = adosHomeSec || adosOfficeSec
+
+  // Build final display sections: non-ADOS sections first, then combined ADOS
+  const displaySections = sections.filter(s => !ADOS_KEYS.has(s.service))
+
+  if (hasAdos) {
+    // Combine ADOS rows under one section
+    const combinedRows = []
+    const adosSubsections = []
+    if (adosHomeSec) {
+      adosSubsections.push({ label: 'In Home', rows: adosHomeSec.rows, totals: adosHomeSec })
+    }
+    if (adosOfficeSec) {
+      adosSubsections.push({ label: 'At Office', rows: adosOfficeSec.rows, totals: adosOfficeSec })
+    }
+    const totalHours = (adosHomeSec?.total_hours || 0) + (adosOfficeSec?.total_hours || 0)
+    const totalRevenue = (adosHomeSec?.total_revenue || 0) + (adosOfficeSec?.total_revenue || 0)
+    const totalPay = (adosHomeSec?.total_pay || 0) + (adosOfficeSec?.total_pay || 0)
+    const totalProfit = (adosHomeSec?.total_profit || 0) + (adosOfficeSec?.total_profit || 0)
+    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
+
+    displaySections.push({
+      service: 'ADOS Assessments',
+      _isAdosCombined: true,
+      _subsections: adosSubsections,
+      total_hours: totalHours,
+      total_revenue: totalRevenue,
+      total_pay: totalPay,
+      total_profit: totalProfit,
+      total_margin: totalMargin,
+    })
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -108,8 +141,8 @@ function PeriodDetail({ periodId, period, onBack }) {
         </div>
       </div>
 
-      {sections.map(section => {
-        const color = SVC_COLORS[section.service] || 'var(--accent)'
+      {displaySections.map(section => {
+        const color = SVC_COLORS[section.service] || '#fbbf24'
         return (
           <div key={section.service} className="card" style={{ marginBottom: '1rem' }}>
             {/* Section header with accent border */}
@@ -121,43 +154,104 @@ function PeriodDetail({ periodId, period, onBack }) {
               <span style={{ fontWeight: 600, color, fontSize: '0.85rem' }}>{section.total_hours} hrs</span>
             </div>
 
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th style={{ textAlign: 'right' }}># Hrs Billed</th>
-                    <th style={{ textAlign: 'right' }}>$ Submitted</th>
-                    <th style={{ textAlign: 'right' }}>Paid to Therapist</th>
-                    <th style={{ textAlign: 'right' }}>Profit</th>
-                    <th style={{ textAlign: 'right' }}>Margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {section.rows.map((row, i) => (
-                    <tr key={i} className="data-table-row">
-                      <td style={{ fontSize: '0.85rem' }}>{row.name}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.hours}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.revenue)}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.pay)}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(row.profit)}</td>
-                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(row.margin)}</td>
+            {/* Combined ADOS: show subsections */}
+            {section._isAdosCombined ? (
+              <>
+                {section._subsections.map(sub => (
+                  <div key={sub.label} style={{ marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.375rem' }}>
+                      {sub.label}
+                    </div>
+                    <div className="table-wrapper">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th style={{ textAlign: 'right' }}># Hrs Billed</th>
+                            <th style={{ textAlign: 'right' }}>$ Submitted</th>
+                            <th style={{ textAlign: 'right' }}>Paid to Therapist</th>
+                            <th style={{ textAlign: 'right' }}>Profit</th>
+                            <th style={{ textAlign: 'right' }}>Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sub.rows.map((row, i) => (
+                            <tr key={i} className="data-table-row">
+                              <td style={{ fontSize: '0.85rem' }}>{row.name}</td>
+                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.hours}</td>
+                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.revenue)}</td>
+                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.pay)}</td>
+                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(row.profit)}</td>
+                              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(row.margin)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
+                            <td style={{ color: 'var(--text-bright)', fontSize: '0.9rem', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{sub.label} Total</td>
+                            <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{sub.totals.total_hours}</td>
+                            <td style={{ textAlign: 'right', color, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_revenue)}</td>
+                            <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{fmtDollar(sub.totals.total_pay)}</td>
+                            <td style={{ textAlign: 'right', color: sub.totals.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(sub.totals.total_profit)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(sub.totals.total_margin)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+                {/* Combined ADOS total */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.625rem 0.75rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', borderTop: `3px solid ${color}`, fontWeight: 700, fontSize: '0.95rem', marginTop: '0.25rem' }}>
+                  <span style={{ color: 'var(--text-bright)' }}>ADOS Combined Total</span>
+                  <div style={{ display: 'flex', gap: '2rem' }}>
+                    <span>{section.total_hours} hrs</span>
+                    <span style={{ color }}>{fmtDollar(section.total_revenue)}</span>
+                    <span>{fmtDollar(section.total_pay)} paid</span>
+                    <span style={{ color: section.total_profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(section.total_profit)} profit</span>
+                    <span>{fmtPct(section.total_margin)}</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Normal (non-ADOS) sections */
+              <div className="table-wrapper">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th style={{ textAlign: 'right' }}># Hrs Billed</th>
+                      <th style={{ textAlign: 'right' }}>$ Submitted</th>
+                      <th style={{ textAlign: 'right' }}>Paid to Therapist</th>
+                      <th style={{ textAlign: 'right' }}>Profit</th>
+                      <th style={{ textAlign: 'right' }}>Margin</th>
                     </tr>
-                  ))}
-                </tbody>
-                {/* Bold total row with background to stand out */}
-                <tfoot>
-                  <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
-                    <td style={{ color: 'var(--text-bright)', fontSize: '0.9rem', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{section.service} Total</td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{section.total_hours}</td>
-                    <td style={{ textAlign: 'right', color, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_revenue)}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{fmtDollar(section.total_pay)}</td>
-                    <td style={{ textAlign: 'right', color: section.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_profit)}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(section.total_margin)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {section.rows.map((row, i) => (
+                      <tr key={i} className="data-table-row">
+                        <td style={{ fontSize: '0.85rem' }}>{row.name}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.hours}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.revenue)}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(row.pay)}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: row.profit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{fmtDollar(row.profit)}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(row.margin)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {/* Bold total row with background to stand out */}
+                  <tfoot>
+                    <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
+                      <td style={{ color: 'var(--text-bright)', fontSize: '0.9rem', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{section.service} Total</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{section.total_hours}</td>
+                      <td style={{ textAlign: 'right', color, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_revenue)}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}` }}>{fmtDollar(section.total_pay)}</td>
+                      <td style={{ textAlign: 'right', color: section.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_profit)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, padding: '0.625rem 0.75rem', borderTop: `2px solid ${color}`, fontSize: '0.95rem' }}>{fmtPct(section.total_margin)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
         )
       })}
@@ -185,28 +279,62 @@ function PeriodDetail({ periodId, period, onBack }) {
   )
 }
 
-// ── Service pills for period cards ──
+// ── Service pills for period cards (grouped) ──
 function ServicePills({ services }) {
   if (!services || services.length === 0) return <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No data</span>
+
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-      {services.map(s => {
-        const color = SVC_COLORS[s.service] || 'var(--accent)'
-        const label = SVC_SHORT[s.service] || s.service
-        // Show assessments count for ADOS, hours for others
-        const display = s.assessments != null ? `${s.assessments}` : `${s.hours}h`
-        const suffix = s.revenue > 0 ? ` · ${fmtDollar(s.revenue)}` : ''
+      {PILL_GROUPS.map(g => {
+        // Sum hours + revenue across members
+        const memberData = g.members.map(m => services.find(s => s.service === m)).filter(Boolean)
+        if (memberData.length === 0) return null
+
+        const totalHours = memberData.reduce((sum, s) => sum + (s.hours || 0), 0)
+        const totalRevenue = memberData.reduce((sum, s) => sum + (s.revenue || 0), 0)
+        const totalAssessments = memberData.reduce((sum, s) => sum + (s.assessments || 0), 0)
+
+        // ADOS shows assessment count, others show hours
+        const display = g.unit === 'assessments' ? `${totalAssessments}` : `${totalHours}h`
+        const revStr = totalRevenue > 0 ? ` · ${fmtDollar(totalRevenue)}` : ''
+
         return (
-          <span key={s.service} style={{
+          <span key={g.key} style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
             padding: '0.15rem 0.5rem', borderRadius: '12px', fontSize: '0.7rem',
             fontWeight: 500, fontVariantNumeric: 'tabular-nums',
-            background: `${color}15`, color, border: `1px solid ${color}30`,
+            background: `${g.color}15`, color: g.color, border: `1px solid ${g.color}30`,
           }}>
-            {label}: {display}{suffix}
+            {g.label}: {display}{revStr}
           </span>
         )
       })}
+    </div>
+  )
+}
+
+// ── Totals row for top section of card ──
+function TotalsRow({ data, isMonthly }) {
+  const metrics = [
+    { label: 'Total Hours', value: data.total_hours, fmt: v => v },
+    { label: 'Total Revenue', value: data.total_revenue, fmt: fmtDollar, color: 'var(--accent)' },
+    { label: 'Paid to Therapists', value: data.total_pay, fmt: fmtDollar },
+    { label: 'Profit', value: data.total_profit, fmt: fmtDollar, color: (data.total_profit || 0) >= 0 ? 'var(--success)' : 'var(--danger)' },
+    { label: 'Gross Margin', value: data.margin_pct, fmt: fmtPct },
+  ]
+
+  const bgStyle = isMonthly
+    ? { background: 'var(--accent-glow)', border: '1px solid rgba(0,187,238,0.15)' }
+    : { background: 'var(--bg-elevated)' }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', marginBottom: '0.625rem' }}>
+      {metrics.map(m => (
+        <div key={m.label} style={{ padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-sm)', ...bgStyle }}>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{m.label}</div>
+          <div style={{ fontSize: isMonthly ? '1.2rem' : '1rem', fontWeight: 700, color: m.color || 'var(--text-bright)', fontVariantNumeric: 'tabular-nums' }}>{m.fmt(m.value)}</div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -241,8 +369,11 @@ export default function BillingSummary() {
     setSavingRates(true)
     try {
       await apiPatch('/analytics/billing-rates', editRates)
+      // Reload to confirm saved values
+      const result = await apiGet('/analytics/billing-summary')
+      setData(result)
+      setEditRates(result.bill_rates || {})
       setShowRatesModal(false)
-      loadData()
     } catch (err) {
       alert('Failed to save rates: ' + err.message)
     } finally {
@@ -276,15 +407,6 @@ export default function BillingSummary() {
   }
   const monthKeys = Object.keys(periodsByMonth).sort().reverse()
 
-  // Helper to find a service entry
-  const getSvc = (services, name) => (services || []).find(s => s.service === name)
-  const getSvcHours = (services, name) => getSvc(services, name)?.hours || 0
-  const getSvcRevenue = (services, name) => getSvc(services, name)?.revenue || 0
-  const getSvcAssessments = (services, name) => getSvc(services, name)?.assessments || 0
-  const getIicTotal = (services) => getSvcHours(services, 'IIC-LC') + getSvcHours(services, 'IIC-MA') + getSvcHours(services, 'IIC-BA')
-  const getIicRevenue = (services) => getSvcRevenue(services, 'IIC-LC') + getSvcRevenue(services, 'IIC-MA') + getSvcRevenue(services, 'IIC-BA')
-  const getAdosCount = (services) => getSvcAssessments(services, 'ADOS In Home') + getSvcAssessments(services, 'ADOS At Office')
-
   return (
     <div>
       <div className="page-header">
@@ -314,84 +436,46 @@ export default function BillingSummary() {
 
                 {/* Pay period cards */}
                 {monthPeriods.map(p => (
-                  <div key={p.id} className="card" style={{
-                    padding: '1rem 1.25rem', marginBottom: '0.5rem', cursor: 'pointer',
-                  }} onClick={() => setSelectedPeriod(p)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.625rem' }}>
-                      <div>
+                  <div key={p.id} className="card" style={{ padding: 0, marginBottom: '0.5rem', cursor: 'pointer' }} onClick={() => setSelectedPeriod(p)}>
+                    {/* TOP: date + totals */}
+                    <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                         <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text-bright)' }}>
                           {formatDate(p.start_date)} – {formatDate(p.end_date)}
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>Gross Margin</div>
-                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: p.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', fontVariantNumeric: 'tabular-nums' }}>
-                            {fmtPct(p.margin_pct)}
-                          </div>
-                        </div>
                         <button className="btn btn--ghost btn--small" onClick={e => { e.stopPropagation(); setSelectedPeriod(p) }}>View</button>
                       </div>
+                      <TotalsRow data={p} />
                     </div>
 
-                    {/* Key metrics grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '0.625rem' }}>
-                      <div style={{ background: 'var(--bg-elevated)', padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-sm)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Hours</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-bright)', fontVariantNumeric: 'tabular-nums' }}>{p.total_hours}</div>
-                      </div>
-                      <div style={{ background: 'var(--bg-elevated)', padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-sm)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Revenue</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(p.total_revenue)}</div>
-                      </div>
-                      <div style={{ background: 'var(--bg-elevated)', padding: '0.5rem 0.625rem', borderRadius: 'var(--radius-sm)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Gross Margin</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: p.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(p.total_profit)}</div>
-                      </div>
+                    {/* BOTTOM: service pills */}
+                    <div style={{ padding: '0.75rem 1.25rem' }}>
+                      <ServicePills services={p.services} />
                     </div>
-
-                    {/* Service breakdown pills */}
-                    <ServicePills services={p.services} />
                   </div>
                 ))}
 
                 {/* ── Monthly Total (stands out) ── */}
                 {monthSummary && (
                   <div style={{
-                    padding: '1rem 1.25rem', marginTop: '0.375rem',
+                    padding: 0, marginTop: '0.375rem',
                     background: 'var(--bg-card)',
                     border: '2px solid var(--accent)',
                     borderRadius: 'var(--radius)',
                     borderLeft: '6px solid var(--accent)',
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.625rem' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>
+                    {/* TOP: title + totals */}
+                    <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--accent)' }}>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', fontFamily: 'var(--font-display)', marginBottom: '0.5rem' }}>
                         {formatMonth(mk)} — Monthly Total
-                      </span>
+                      </div>
+                      <TotalsRow data={monthSummary} isMonthly />
                     </div>
 
-                    {/* Big metric row */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                      <div style={{ background: 'var(--accent-glow)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(0,187,238,0.15)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Hours</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-bright)', fontVariantNumeric: 'tabular-nums' }}>{monthSummary.total_hours}</div>
-                      </div>
-                      <div style={{ background: 'var(--accent-glow)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(0,187,238,0.15)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Revenue</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(monthSummary.total_revenue)}</div>
-                      </div>
-                      <div style={{ background: 'var(--accent-glow)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(0,187,238,0.15)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Profit</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: monthSummary.total_profit >= 0 ? 'var(--success)' : 'var(--danger)', fontVariantNumeric: 'tabular-nums' }}>{fmtDollar(monthSummary.total_profit)}</div>
-                      </div>
-                      <div style={{ background: 'var(--accent-glow)', padding: '0.625rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(0,187,238,0.15)' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Margin</div>
-                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-bright)', fontVariantNumeric: 'tabular-nums' }}>{fmtPct(monthSummary.margin_pct)}</div>
-                      </div>
+                    {/* BOTTOM: service pills */}
+                    <div style={{ padding: '0.75rem 1.25rem' }}>
+                      <ServicePills services={monthSummary.services} />
                     </div>
-
-                    {/* Service breakdown pills */}
-                    <ServicePills services={monthSummary.services} />
                   </div>
                 )}
               </div>
@@ -400,10 +484,10 @@ export default function BillingSummary() {
         </>
       )}
 
-      {/* Revenue Rates Modal — only revenue-generating types */}
+      {/* Revenue Rates Modal */}
       <Modal open={showRatesModal} onClose={() => setShowRatesModal(false)} title="Projected Revenue Rates">
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Set the projected revenue per hour for each service type. Used to calculate "$ Amount Submitted."
+          Set the projected revenue rate for each service type. ADOS rates are per assessment.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {Object.entries(RATE_LABELS).map(([key, label]) => (
@@ -420,11 +504,13 @@ export default function BillingSummary() {
                   type="number"
                   step="0.01"
                   min="0"
-                  value={editRates[key] || ''}
+                  value={editRates[key] ?? ''}
                   onChange={e => setEditRates(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
                   style={{ width: '100px', textAlign: 'right', fontSize: '0.85rem' }}
                 />
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>/hr</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                  {ADOS_KEYS.has(key) ? '/assess' : '/hr'}
+                </span>
               </div>
             </div>
           ))}

@@ -3,6 +3,40 @@ import { apiGet, apiPost, apiPatch } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import Modal from '../../components/Modal'
 
+// Define display groups for rate types in the Pay Rates modal
+const RATE_GROUPS = [
+  { label: 'IIC', patterns: ['IIC-LC', 'IIC-MA', 'IIC-BA'] },
+  { label: 'Outpatient', patterns: ['OP-LC', 'OP-MA'] },
+  { label: 'SBYS', patterns: ['SBYS'] },
+  { label: 'ADOS', patterns: ['ADOS Assessment'] },
+  { label: 'APN', patterns: ['APN Session', 'APN Intake'] },
+  { label: 'Other', patterns: ['Administration', 'PTO', 'Sick Leave', 'Community Event', 'OP Cancellation'] },
+]
+
+function groupRateTypes(rateTypes) {
+  const grouped = []
+  const used = new Set()
+
+  for (const group of RATE_GROUPS) {
+    const items = rateTypes.filter(rt => {
+      if (used.has(rt.id)) return false
+      return group.patterns.some(p => rt.name.startsWith(p) || rt.name.includes(p))
+    })
+    if (items.length > 0) {
+      items.forEach(i => used.add(i.id))
+      grouped.push({ label: group.label, items })
+    }
+  }
+
+  // Catch any remaining
+  const remaining = rateTypes.filter(rt => !used.has(rt.id))
+  if (remaining.length > 0) {
+    grouped.push({ label: 'Other', items: remaining })
+  }
+
+  return grouped
+}
+
 export default function UserPayRates() {
   const [users, setUsers] = useState([])
   const [rateTypes, setRateTypes] = useState([])
@@ -67,6 +101,8 @@ export default function UserPayRates() {
     return <div className="page-loading"><div className="loading-spinner" /><p>{verb}…</p></div>
   }
 
+  const grouped = groupRateTypes(rateTypes)
+
   return (
     <div>
       <div className="page-header">
@@ -113,19 +149,35 @@ export default function UserPayRates() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
               Set the pay rate per unit for each rate type. Leave blank if not applicable.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {rateTypes.map(rt => (
-                <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
-                  <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>{rt.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span></label>
-                  <div style={{ width: '120px' }}>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="form-input"
-                      placeholder="$ rate"
-                      value={editRates[rt.id] || ''}
-                      onChange={e => setEditRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
-                    />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {grouped.map(group => (
+                <div key={group.label}>
+                  <div style={{
+                    fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
+                    letterSpacing: '0.05em', color: 'var(--text-muted)',
+                    marginBottom: '0.375rem', paddingBottom: '0.25rem',
+                    borderBottom: '1px solid var(--border)',
+                  }}>
+                    {group.label}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    {group.items.map(rt => (
+                      <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
+                        <label style={{ fontSize: '0.875rem', color: 'var(--text)', flex: 1 }}>
+                          {rt.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({rt.unit})</span>
+                        </label>
+                        <div style={{ width: '120px' }}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="form-input"
+                            placeholder="$ rate"
+                            value={editRates[rt.id] || ''}
+                            onChange={e => setEditRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

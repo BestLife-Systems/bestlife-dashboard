@@ -2202,6 +2202,21 @@ IIC_CODE_MAP = {
     "BA-H2014TJ": "IIC-BA",
 }
 
+# Map service type keys → rate_types.name in the DB (for bill rate lookup/save)
+SERVICE_TO_RATE_NAME = {
+    "IIC-LC": "IIC-LC",
+    "IIC-MA": "IIC-MA",
+    "IIC-BA": "IIC-BA",
+    "OP": "OP-LC Session",
+    "SBYS": "SBYS",
+    "ADOS In Home": "ADOS Assessment - In Home",
+    "ADOS At Office": "ADOS Assessment - At Office",
+    "APN 30 Min": "APN Session (30)",
+    "APN Intake": "APN Intake (60)",
+}
+# Reverse map
+RATE_NAME_TO_SERVICE = {v: k for k, v in SERVICE_TO_RATE_NAME.items()}
+
 def _extract_service_hours(invoice_data: dict) -> dict:
     """Extract hours per service type from structured invoice_data."""
     hours = {st: 0.0 for st in SERVICE_TYPES}
@@ -2282,17 +2297,14 @@ async def billing_summary(admin=Depends(require_admin)):
         name = rt.get("name", "")
         bill_rate_map[name] = float(br.get("default_bill_rate", 0))
 
-    # Also build a generic service→bill_rate map from bill_rate_defaults
-    # Map service type names to possible rate type names
+    # Build service→bill_rate map using explicit name mapping
     service_bill_rates = {}
     for st in REVENUE_TYPES:
-        # Try exact match first, then common patterns
-        rate = bill_rate_map.get(st, 0)
+        rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+        rate = bill_rate_map.get(rate_name, 0)
         if not rate:
-            for rn, rv in bill_rate_map.items():
-                if st.lower() in rn.lower():
-                    rate = rv
-                    break
+            # Fallback: try exact match on service key itself
+            rate = bill_rate_map.get(st, 0)
         service_bill_rates[st] = rate
 
     period_summaries = []
@@ -2326,7 +2338,14 @@ async def billing_summary(admin=Depends(require_admin)):
             if hrs == 0:
                 continue
             bill_rate = service_bill_rates.get(st, 0)
-            revenue = hrs * bill_rate if st in REVENUE_TYPES else 0
+            # ADOS revenue = bill_rate × number of assessments (not hours)
+            if st.startswith("ADOS") and st in REVENUE_TYPES:
+                num_assessments = ados_counts.get(st, 0)
+                revenue = num_assessments * bill_rate
+            elif st in REVENUE_TYPES:
+                revenue = hrs * bill_rate
+            else:
+                revenue = 0
             grand_hours += hrs
             grand_revenue += revenue
             entry = {
@@ -2368,11 +2387,13 @@ async def billing_summary(admin=Depends(require_admin)):
         if month_key not in monthly:
             monthly[month_key] = {
                 "month": month_key,
-                "services": {st: 0.0 for st in SERVICE_TYPES},
+                "services": {st: {"hours": 0.0, "revenue": 0.0, "assessments": 0} for st in SERVICE_TYPES},
                 "total_hours": 0, "total_revenue": 0, "total_pay": 0,
             }
         for svc in ps["services"]:
-            monthly[month_key]["services"][svc["service"]] += svc["hours"]
+            monthly[month_key]["services"][svc["service"]]["hours"] += svc["hours"]
+            monthly[month_key]["services"][svc["service"]]["revenue"] += svc.get("revenue", 0)
+            monthly[month_key]["services"][svc["service"]]["assessments"] += svc.get("assessments", 0)
         monthly[month_key]["total_hours"] += ps["total_hours"]
         monthly[month_key]["total_revenue"] += ps["total_revenue"]
         monthly[month_key]["total_pay"] += ps["total_pay"]
@@ -2381,12 +2402,14 @@ async def billing_summary(admin=Depends(require_admin)):
     for mk, mv in sorted(monthly.items(), reverse=True):
         svc_list = []
         for st in SERVICE_TYPES:
-            hrs = mv["services"][st]
+            sd = mv["services"][st]
+            hrs = sd["hours"]
             if hrs == 0:
                 continue
-            bill_rate = service_bill_rates.get(st, 0)
-            revenue = round(hrs * bill_rate, 2) if st in REVENUE_TYPES else 0
-            svc_list.append({"service": st, "hours": round(hrs, 2), "revenue": revenue, "bill_rate": bill_rate})
+            entry = {"service": st, "hours": round(hrs, 2), "revenue": round(sd["revenue"], 2)}
+            if st.startswith("ADOS"):
+                entry["assessments"] = sd["assessments"]
+            svc_list.append(entry)
         profit = mv["total_revenue"] - mv["total_pay"]
         monthly_list.append({
             "month": mk,
@@ -2437,12 +2460,10 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
 
     service_bill_rates = {}
     for st in REVENUE_TYPES:
-        rate = bill_rate_map.get(st, 0)
+        rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+        rate = bill_rate_map.get(rate_name, 0)
         if not rate:
-            for rn, rv in bill_rate_map.items():
-                if st.lower() in rn.lower():
-                    rate = rv
-                    break
+            rate = bill_rate_map.get(st, 0)
         service_bill_rates[st] = rate
 
     # Get pay rates for all users
@@ -2460,7 +2481,6 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         user_pay_map[uid][rname] = float(pr["pay_rate"])
 
     # Build per-service-type per-therapist detail
-    # { service_type: [ { name, hours, revenue, pay, profit, margin } ] }
     service_detail = {st: [] for st in SERVICE_TYPES}
     service_totals_map = {st: {"hours": 0, "revenue": 0, "pay": 0} for st in SERVICE_TYPES}
 
@@ -2469,7 +2489,7 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
         uid = r["user_id"]
         inv = r.get("invoice_data") or {}
-        hours_map, _ = _extract_service_hours(inv)
+        hours_map, counts_map = _extract_service_hours(inv)
         user_rates = user_pay_map.get(uid, {})
 
         for st in SERVICE_TYPES:
@@ -2477,18 +2497,28 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
             if hrs == 0:
                 continue
             bill_rate = service_bill_rates.get(st, 0)
-            revenue = hrs * bill_rate if st in REVENUE_TYPES else 0
-            # Find the user's pay rate for this service type
-            pay_rate = 0
-            for rn, rv in user_rates.items():
-                if st.lower() in rn.lower() or rn.lower() in st.lower():
-                    pay_rate = rv
-                    break
+            # ADOS revenue = bill_rate × assessments (not hours)
+            if st.startswith("ADOS") and st in REVENUE_TYPES:
+                num_a = counts_map.get(st, 0)
+                revenue = num_a * bill_rate
+            elif st in REVENUE_TYPES:
+                revenue = hrs * bill_rate
+            else:
+                revenue = 0
+            # Find the user's pay rate using rate name mapping
+            rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+            pay_rate = user_rates.get(rate_name, 0)
             if not pay_rate:
-                # Fallback: use generic hourly rate
+                # Try partial match
+                for rn, rv in user_rates.items():
+                    if st.lower() in rn.lower() or rn.lower() in st.lower():
+                        pay_rate = rv
+                        break
+            if not pay_rate:
+                # Fallback: generic hourly
                 pay_rate = user_rates.get("hourly", user_rates.get("Hourly", 0))
                 if not pay_rate and user_rates:
-                    pay_rate = list(user_rates.values())[0]  # use first available
+                    pay_rate = list(user_rates.values())[0]
             pay = hrs * pay_rate
             profit = revenue - pay
             margin = (profit / revenue * 100) if revenue > 0 else 0
@@ -2544,27 +2574,25 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
 @app.patch("/api/analytics/billing-rates")
 async def update_billing_rates(req: dict = Body(...), admin=Depends(require_admin)):
     """Admin: update projected revenue rates per service type."""
-    # req format: { "IIC": 123.45, "OP": 115, ... }
-    rate_types = await sb_request("GET", "rate_types", params={"select": "id, name"})
-    rt_map = {rt["name"]: rt["id"] for rt in (rate_types or [])}
+    # req format: { "IIC-LC": 123.45, "OP": 115, ... }
+    rate_types_list = await sb_request("GET", "rate_types", params={"select": "id, name"})
+    rt_map = {rt["name"]: rt["id"] for rt in (rate_types_list or [])}
 
-    for service_name, rate_value in req.items():
-        # Find or create rate type
-        rt_id = rt_map.get(service_name)
+    for service_key, rate_value in req.items():
+        # Map service key to DB rate_type name
+        db_name = SERVICE_TO_RATE_NAME.get(service_key, service_key)
+        rt_id = rt_map.get(db_name)
         if not rt_id:
-            # Try to find by partial match
-            for rn, rid in rt_map.items():
-                if service_name.lower() in rn.lower():
-                    rt_id = rid
-                    break
+            # Also try the service key directly
+            rt_id = rt_map.get(service_key)
         if not rt_id:
-            # Create a rate type for this service
+            # Create the rate type
             result = await sb_request("POST", "rate_types", data={
-                "name": service_name, "unit": "hourly",
+                "name": db_name, "unit": "session" if "ADOS" in service_key else "hourly",
             })
             if result:
                 rt_id = result[0]["id"] if isinstance(result, list) else result["id"]
-                rt_map[service_name] = rt_id
+                rt_map[db_name] = rt_id
 
         if rt_id:
             existing = await sb_request("GET", "bill_rate_defaults", params={
@@ -2581,6 +2609,68 @@ async def update_billing_rates(req: dict = Body(...), admin=Depends(require_admi
                 })
 
     return {"status": "updated"}
+
+
+@app.post("/api/admin/migrate-rate-types")
+async def migrate_rate_types(admin=Depends(require_admin)):
+    """One-time migration: update rate_types for v5 schema changes.
+    Deactivates old types, adds IIC-LC/MA/BA, splits OP, renames ADOS."""
+
+    # Step 1: Deactivate types to remove
+    deactivate_names = [
+        "IIC", "APN 30 Min", "ADOS Assessment (In Home)", "ADOS Assessment (In Office)",
+        "Other (Hourly)", "Other (Day)", "APN Other (Custom)",
+    ]
+    for name in deactivate_names:
+        await sb_request("PATCH", f"rate_types?name=eq.{name}", data={"is_active": False})
+
+    # Step 2: Add new IIC split types
+    new_types = [
+        {"name": "IIC-LC", "unit": "hourly", "sort_order": 1},
+        {"name": "IIC-MA", "unit": "hourly", "sort_order": 2},
+        {"name": "IIC-BA", "unit": "hourly", "sort_order": 3},
+    ]
+    for nt in new_types:
+        existing = await sb_request("GET", "rate_types", params={"name": f"eq.{nt['name']}"})
+        if existing:
+            await sb_request("PATCH", f"rate_types?name=eq.{nt['name']}", data={"sort_order": nt["sort_order"], "is_active": True})
+        else:
+            await sb_request("POST", "rate_types", data=nt)
+
+    # Step 3: Rename OP Session → OP-LC Session, add OP-MA Session
+    existing_op = await sb_request("GET", "rate_types", params={"name": "eq.OP Session"})
+    if existing_op:
+        await sb_request("PATCH", f"rate_types?name=eq.OP Session", data={"name": "OP-LC Session", "sort_order": 4})
+
+    existing_op_ma = await sb_request("GET", "rate_types", params={"name": "eq.OP-MA Session"})
+    if not existing_op_ma:
+        await sb_request("POST", "rate_types", data={
+            "name": "OP-MA Session", "unit": "hourly", "default_duration_minutes": 60, "sort_order": 5,
+        })
+    else:
+        await sb_request("PATCH", f"rate_types?name=eq.OP-MA Session", data={"sort_order": 5, "is_active": True})
+
+    # Step 4: Add new ADOS types (session-based)
+    ados_types = [
+        {"name": "ADOS Assessment - In Home", "unit": "session", "sort_order": 8},
+        {"name": "ADOS Assessment - At Office", "unit": "session", "sort_order": 9},
+    ]
+    for at in ados_types:
+        existing = await sb_request("GET", "rate_types", params={"name": f"eq.{at['name']}"})
+        if existing:
+            await sb_request("PATCH", f"rate_types?name=eq.{at['name']}", data={"sort_order": at["sort_order"], "is_active": True})
+        else:
+            await sb_request("POST", "rate_types", data=at)
+
+    # Step 5: Reorder remaining types
+    reorder = {
+        "SBYS": 6, "Administration": 7, "APN Session (30)": 10, "APN Intake (60)": 11,
+        "PTO": 12, "Sick Leave": 13, "Community Event (Day)": 14, "OP Cancellation": 15,
+    }
+    for name, order in reorder.items():
+        await sb_request("PATCH", f"rate_types?name=eq.{name}", data={"sort_order": order})
+
+    return {"status": "migration_complete", "message": "Rate types updated successfully"}
 
 
 @app.get("/api/analytics/performance")
