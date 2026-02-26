@@ -27,7 +27,7 @@ import UserPayRates from './pages/admin/UserPayRates'
 import ClinicalLeaderAssignment from './pages/admin/ClinicalLeaderAssignment'
 
 // New admin pages — Analytics sub-pages
-import HoursMargin from './pages/admin/HoursMargin'
+import BillingSummary from './pages/admin/BillingSummary'
 import PerformanceTracking from './pages/admin/PerformanceTracking'
 import SupervisionCompliance from './pages/admin/SupervisionCompliance'
 
@@ -67,7 +67,7 @@ const ADMIN_TABS = [
   { section: 'Admin' },
   {
     label: 'Analytics', icon: <IconBarChart />, children: [
-      { path: '/admin/analytics/hours-margin', label: 'Hours & Margin' },
+      { path: '/admin/analytics/billing-summary', label: 'Billing Summary' },
       { path: '/admin/analytics/performance', label: 'Performance Tracking' },
       { path: '/admin/analytics/supervision', label: 'Supervision Compliance' },
     ],
@@ -181,9 +181,9 @@ export default function App() {
           } />
 
           {/* ── Admin Routes — Analytics ── */}
-          <Route path="/admin/analytics/hours-margin" element={
+          <Route path="/admin/analytics/billing-summary" element={
             <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><HoursMargin /></Layout>
+              <Layout tabs={ADMIN_TABS}><BillingSummary /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/performance" element={
@@ -197,7 +197,8 @@ export default function App() {
             </ProtectedRoute>
           } />
           {/* Legacy analytics redirect */}
-          <Route path="/admin/analytics" element={<Navigate to="/admin/analytics/hours-margin" replace />} />
+          <Route path="/admin/analytics" element={<Navigate to="/admin/analytics/billing-summary" replace />} />
+          <Route path="/admin/analytics/hours-margin" element={<Navigate to="/admin/analytics/billing-summary" replace />} />
 
           {/* ── Admin Routes — Payroll ── */}
           <Route path="/admin/payroll/pay-periods" element={

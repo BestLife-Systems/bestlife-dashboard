@@ -114,8 +114,12 @@ export default function AdminSettings() {
   const [taskTmplOpen, setTaskTmplOpen] = useState(false)
   const [meetingTmplOpen, setMeetingTmplOpen] = useState(false)
 
+  // AI status
+  const [aiConfigured, setAiConfigured] = useState(null)
+
   useEffect(() => {
     apiGet('/settings/last-upload').then(setLastUpload).catch(() => {})
+    apiGet('/ai/status').then(r => setAiConfigured(r.configured)).catch(() => setAiConfigured(false))
     loadTaskTemplates()
     loadMeetingTemplates()
   }, [])
@@ -449,7 +453,13 @@ export default function AdminSettings() {
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Anthropic Claude Sonnet · Powers Ask Betty & KB Assist</div>
                 </div>
               </div>
-              <span className="badge badge--muted">Configured in Railway</span>
+              {aiConfigured === true ? (
+                <span className="badge badge--success">Connected</span>
+              ) : aiConfigured === false ? (
+                <span className="badge badge--danger">Not Configured</span>
+              ) : (
+                <span className="badge badge--muted">Checking...</span>
+              )}
             </div>
           </div>
 

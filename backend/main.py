@@ -12,7 +12,7 @@ from typing import Optional, List
 
 import httpx
 import openpyxl
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -37,6 +37,7 @@ async def startup_event():
     logger.info(f"Supabase URL: {SUPABASE_URL}")
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
     logger.info(f"Anon key configured: {'Yes' if SUPABASE_ANON_KEY else 'No'}")
+    logger.info(f"Anthropic key configured: {'Yes' if os.environ.get('ANTHROPIC_API_KEY') else 'No'}")
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -2186,6 +2187,378 @@ async def analytics_hours_margin(view: str = "pay_period", user=Depends(verify_t
     return {"rows": rows}
 
 
+# ── Billing Summary (new) ──────────────────────────────────────────
+
+SERVICE_TYPES = ["IIC", "OP", "SBYS", "ADOS", "APN", "Admin", "Supervision", "PTO", "Sick Leave"]
+
+def _extract_service_hours(invoice_data: dict) -> dict:
+    """Extract hours per service type from structured invoice_data."""
+    hours = {st: 0.0 for st in SERVICE_TYPES}
+    if not invoice_data:
+        return hours
+
+    # IIC
+    iic = invoice_data.get("iic") or {}
+    for code, entries in iic.items():
+        if isinstance(entries, list):
+            for e in entries:
+                hours["IIC"] += float(e.get("hours") or 0)
+
+    # OP (each session = 1 hour, cancellations also = 1 hour)
+    op = invoice_data.get("op") or {}
+    for s in (op.get("sessions") or []):
+        hours["OP"] += 1.0
+
+    # SBYS
+    for e in (invoice_data.get("sbys") or []):
+        hours["SBYS"] += float(e.get("hours") or 0)
+
+    # ADOS (each assessment = 3 hours)
+    hours["ADOS"] += len(invoice_data.get("ados") or []) * 3.0
+
+    # APN (if present)
+    for e in (invoice_data.get("apn") or []):
+        hours["APN"] += float(e.get("hours") or e.get("duration_minutes", 0) / 60)
+
+    # Admin
+    for e in (invoice_data.get("admin") or []):
+        hours["Admin"] += float(e.get("hours") or 0)
+
+    # Supervision
+    sup = invoice_data.get("supervision") or {}
+    hours["Supervision"] += len(sup.get("individual") or [])
+    hours["Supervision"] += len(sup.get("group") or [])
+
+    # PTO
+    pto = invoice_data.get("pto") or {}
+    hours["PTO"] += float(pto.get("hours") or 0)
+
+    # Sick Leave
+    sick = invoice_data.get("sick_leave") or {}
+    hours["Sick Leave"] += float(sick.get("hours") or 0)
+
+    return hours
+
+
+@app.get("/api/analytics/billing-summary")
+async def billing_summary(admin=Depends(require_admin)):
+    """
+    Billing Summary: returns closed pay periods with per-service-type breakdowns.
+    Aggregates from approved recipients' invoice_data.
+    """
+    # Get all closed pay periods (most recent first)
+    periods = await sb_request("GET", "pay_periods", params={
+        "select": "id, label, start_date, end_date, status",
+        "status": "eq.closed",
+        "order": "start_date.desc",
+    })
+    if not periods:
+        periods = []
+
+    # Get bill rate config for projected revenue
+    bill_rates = await sb_request("GET", "bill_rate_defaults", params={
+        "select": "*, rate_types(name)",
+    })
+    bill_rate_map = {}
+    for br in (bill_rates or []):
+        rt = br.get("rate_types") or {}
+        name = rt.get("name", "")
+        bill_rate_map[name] = float(br.get("default_bill_rate", 0))
+
+    # Also build a generic service→bill_rate map from bill_rate_defaults
+    # Map service type names to possible rate type names
+    service_bill_rates = {}
+    for st in SERVICE_TYPES:
+        # Try exact match first, then common patterns
+        rate = bill_rate_map.get(st, 0)
+        if not rate:
+            for rn, rv in bill_rate_map.items():
+                if st.lower() in rn.lower():
+                    rate = rv
+                    break
+        service_bill_rates[st] = rate
+
+    period_summaries = []
+
+    for period in periods:
+        pid = period["id"]
+        # Get approved recipients for this period
+        recipients = await sb_request("GET", "pay_period_recipients", params={
+            "pay_period_id": f"eq.{pid}",
+            "status": "eq.approved",
+            "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
+        })
+
+        # Aggregate by service type
+        service_totals = {st: 0.0 for st in SERVICE_TYPES}
+        for r in (recipients or []):
+            hours = _extract_service_hours(r.get("invoice_data") or {})
+            for st, h in hours.items():
+                service_totals[st] += h
+
+        # Calculate revenue, pay, profit per service type
+        service_breakdown = []
+        grand_hours = 0.0
+        grand_revenue = 0.0
+        grand_pay = 0.0
+        for st in SERVICE_TYPES:
+            hrs = service_totals[st]
+            if hrs == 0:
+                continue
+            bill_rate = service_bill_rates.get(st, 0)
+            revenue = hrs * bill_rate
+            # Pay: we'd need to sum per-user pay rates, but for summary use rollup
+            grand_hours += hrs
+            grand_revenue += revenue
+            service_breakdown.append({
+                "service": st,
+                "hours": round(hrs, 2),
+                "revenue": round(revenue, 2),
+                "bill_rate": bill_rate,
+            })
+
+        # Get pay totals from rollup if available
+        rollup = await sb_request("GET", "rollup_pay_period", params={
+            "pay_period_id": f"eq.{pid}",
+            "select": "est_pay_total",
+        })
+        total_pay = sum(float(r.get("est_pay_total", 0)) for r in (rollup or []))
+        grand_pay = total_pay
+
+        period_summaries.append({
+            "id": pid,
+            "label": period.get("label", ""),
+            "start_date": period["start_date"],
+            "end_date": period["end_date"],
+            "services": service_breakdown,
+            "total_hours": round(grand_hours, 2),
+            "total_revenue": round(grand_revenue, 2),
+            "total_pay": round(grand_pay, 2),
+            "total_profit": round(grand_revenue - grand_pay, 2),
+            "margin_pct": round((grand_revenue - grand_pay) / grand_revenue * 100, 1) if grand_revenue > 0 else 0,
+        })
+
+    # Build monthly summaries (group periods by month)
+    monthly = {}
+    for ps in period_summaries:
+        month_key = ps["start_date"][:7]  # YYYY-MM
+        if month_key not in monthly:
+            monthly[month_key] = {
+                "month": month_key,
+                "services": {st: 0.0 for st in SERVICE_TYPES},
+                "total_hours": 0, "total_revenue": 0, "total_pay": 0,
+            }
+        for svc in ps["services"]:
+            monthly[month_key]["services"][svc["service"]] += svc["hours"]
+        monthly[month_key]["total_hours"] += ps["total_hours"]
+        monthly[month_key]["total_revenue"] += ps["total_revenue"]
+        monthly[month_key]["total_pay"] += ps["total_pay"]
+
+    monthly_list = []
+    for mk, mv in sorted(monthly.items(), reverse=True):
+        svc_list = []
+        for st in SERVICE_TYPES:
+            hrs = mv["services"][st]
+            if hrs == 0:
+                continue
+            bill_rate = service_bill_rates.get(st, 0)
+            svc_list.append({"service": st, "hours": round(hrs, 2), "revenue": round(hrs * bill_rate, 2), "bill_rate": bill_rate})
+        profit = mv["total_revenue"] - mv["total_pay"]
+        monthly_list.append({
+            "month": mk,
+            "services": svc_list,
+            "total_hours": round(mv["total_hours"], 2),
+            "total_revenue": round(mv["total_revenue"], 2),
+            "total_pay": round(mv["total_pay"], 2),
+            "total_profit": round(profit, 2),
+            "margin_pct": round(profit / mv["total_revenue"] * 100, 1) if mv["total_revenue"] > 0 else 0,
+        })
+
+    return {
+        "periods": period_summaries,
+        "monthly": monthly_list,
+        "bill_rates": service_bill_rates,
+    }
+
+
+@app.get("/api/analytics/billing-summary/{period_id}")
+async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
+    """
+    Detail view for a single pay period: per-therapist breakdown by service type,
+    mirroring the billing master sheet layout.
+    """
+    # Get the period
+    periods = await sb_request("GET", "pay_periods", params={
+        "id": f"eq.{period_id}", "select": "id, label, start_date, end_date",
+    })
+    if not periods:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    period = periods[0]
+
+    # Get approved recipients
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "pay_period_id": f"eq.{period_id}",
+        "status": "eq.approved",
+        "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
+    })
+
+    # Get bill rates
+    bill_rates = await sb_request("GET", "bill_rate_defaults", params={
+        "select": "*, rate_types(name)",
+    })
+    bill_rate_map = {}
+    for br in (bill_rates or []):
+        rt = br.get("rate_types") or {}
+        bill_rate_map[rt.get("name", "")] = float(br.get("default_bill_rate", 0))
+
+    service_bill_rates = {}
+    for st in SERVICE_TYPES:
+        rate = bill_rate_map.get(st, 0)
+        if not rate:
+            for rn, rv in bill_rate_map.items():
+                if st.lower() in rn.lower():
+                    rate = rv
+                    break
+        service_bill_rates[st] = rate
+
+    # Get pay rates for all users
+    all_pay_rates = await sb_request("GET", "user_pay_rates", params={
+        "select": "user_id, pay_rate, rate_types(name)",
+    })
+    # user_id → { rate_name: pay_rate }
+    user_pay_map = {}
+    for pr in (all_pay_rates or []):
+        uid = pr["user_id"]
+        rt = pr.get("rate_types") or {}
+        rname = rt.get("name", "")
+        if uid not in user_pay_map:
+            user_pay_map[uid] = {}
+        user_pay_map[uid][rname] = float(pr["pay_rate"])
+
+    # Build per-service-type per-therapist detail
+    # { service_type: [ { name, hours, revenue, pay, profit, margin } ] }
+    service_detail = {st: [] for st in SERVICE_TYPES}
+    service_totals_map = {st: {"hours": 0, "revenue": 0, "pay": 0} for st in SERVICE_TYPES}
+
+    for r in (recipients or []):
+        u = r.get("users") or {}
+        name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
+        uid = r["user_id"]
+        inv = r.get("invoice_data") or {}
+        hours_map = _extract_service_hours(inv)
+        user_rates = user_pay_map.get(uid, {})
+
+        for st in SERVICE_TYPES:
+            hrs = hours_map[st]
+            if hrs == 0:
+                continue
+            bill_rate = service_bill_rates.get(st, 0)
+            revenue = hrs * bill_rate
+            # Find the user's pay rate for this service type
+            pay_rate = 0
+            for rn, rv in user_rates.items():
+                if st.lower() in rn.lower() or rn.lower() in st.lower():
+                    pay_rate = rv
+                    break
+            if not pay_rate:
+                # Fallback: use generic hourly rate
+                pay_rate = user_rates.get("hourly", user_rates.get("Hourly", 0))
+                if not pay_rate and user_rates:
+                    pay_rate = list(user_rates.values())[0]  # use first available
+            pay = hrs * pay_rate
+            profit = revenue - pay
+            margin = (profit / revenue * 100) if revenue > 0 else 0
+
+            service_detail[st].append({
+                "name": name,
+                "hours": round(hrs, 2),
+                "revenue": round(revenue, 2),
+                "pay": round(pay, 2),
+                "profit": round(profit, 2),
+                "margin": round(margin, 1),
+            })
+            service_totals_map[st]["hours"] += hrs
+            service_totals_map[st]["revenue"] += revenue
+            service_totals_map[st]["pay"] += pay
+
+    # Build response
+    sections = []
+    for st in SERVICE_TYPES:
+        if not service_detail[st]:
+            continue
+        t = service_totals_map[st]
+        profit = t["revenue"] - t["pay"]
+        sections.append({
+            "service": st,
+            "rows": service_detail[st],
+            "total_hours": round(t["hours"], 2),
+            "total_revenue": round(t["revenue"], 2),
+            "total_pay": round(t["pay"], 2),
+            "total_profit": round(profit, 2),
+            "total_margin": round(profit / t["revenue"] * 100, 1) if t["revenue"] > 0 else 0,
+        })
+
+    # Grand totals
+    gh = sum(s["total_hours"] for s in sections)
+    gr = sum(s["total_revenue"] for s in sections)
+    gp = sum(s["total_pay"] for s in sections)
+
+    return {
+        "period": period,
+        "sections": sections,
+        "grand_total": {
+            "hours": round(gh, 2),
+            "revenue": round(gr, 2),
+            "pay": round(gp, 2),
+            "profit": round(gr - gp, 2),
+            "margin": round((gr - gp) / gr * 100, 1) if gr > 0 else 0,
+        },
+        "bill_rates": service_bill_rates,
+    }
+
+
+@app.patch("/api/analytics/billing-rates")
+async def update_billing_rates(req: dict = Body(...), admin=Depends(require_admin)):
+    """Admin: update projected revenue rates per service type."""
+    # req format: { "IIC": 123.45, "OP": 115, ... }
+    rate_types = await sb_request("GET", "rate_types", params={"select": "id, name"})
+    rt_map = {rt["name"]: rt["id"] for rt in (rate_types or [])}
+
+    for service_name, rate_value in req.items():
+        # Find or create rate type
+        rt_id = rt_map.get(service_name)
+        if not rt_id:
+            # Try to find by partial match
+            for rn, rid in rt_map.items():
+                if service_name.lower() in rn.lower():
+                    rt_id = rid
+                    break
+        if not rt_id:
+            # Create a rate type for this service
+            result = await sb_request("POST", "rate_types", data={
+                "name": service_name, "unit": "hourly",
+            })
+            if result:
+                rt_id = result[0]["id"] if isinstance(result, list) else result["id"]
+                rt_map[service_name] = rt_id
+
+        if rt_id:
+            existing = await sb_request("GET", "bill_rate_defaults", params={
+                "rate_type_id": f"eq.{rt_id}",
+            })
+            if existing:
+                await sb_request("PATCH", f"bill_rate_defaults?rate_type_id=eq.{rt_id}", data={
+                    "default_bill_rate": float(rate_value),
+                })
+            else:
+                await sb_request("POST", "bill_rate_defaults", data={
+                    "rate_type_id": rt_id,
+                    "default_bill_rate": float(rate_value),
+                })
+
+    return {"status": "updated"}
+
+
 @app.get("/api/analytics/performance")
 async def analytics_performance(user=Depends(verify_token)):
     """Analytics: Performance tracking with threshold flags."""
@@ -2267,6 +2640,16 @@ async def analytics_supervision(user=Depends(verify_token)):
 
 
 # ── AI Features (Claude API) ─────────────────────────────────────
+
+@app.get("/api/ai/status")
+async def ai_status(admin=Depends(require_admin)):
+    """Check if AI is configured (admin only)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or ANTHROPIC_API_KEY
+    return {
+        "configured": bool(api_key),
+        "key_prefix": api_key[:8] + "..." if api_key else None,
+    }
+
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
