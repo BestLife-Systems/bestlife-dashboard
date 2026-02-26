@@ -2629,6 +2629,7 @@ async def migrate_rate_types(admin=Depends(require_admin)):
     # Step 1: Deactivate types to remove
     deactivate_names = [
         "IIC", "APN 30 Min", "ADOS Assessment (In Home)", "ADOS Assessment (In Office)",
+        "ADOS In Home", "ADOS At Office",
         "Other (Hourly)", "Other (Day)", "APN Other (Custom)",
     ]
     for name in deactivate_names:

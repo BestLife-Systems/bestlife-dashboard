@@ -8,6 +8,13 @@ const DISPLAY_NAMES = {
   'Community Event (Day)': 'Community Event',
 }
 
+// Rate types to hide (deprecated / redundant)
+const HIDDEN_RATE_TYPES = new Set([
+  'ADOS In Home', 'ADOS At Office',
+  'ADOS Assessment (In Home)', 'ADOS Assessment (In Office)',
+  'IIC', 'APN 30 Min', 'Other (Hourly)', 'Other (Day)', 'APN Other (Custom)',
+])
+
 // Define display groups for rate types in the Pay Rates modal
 const RATE_GROUPS = [
   { label: 'IIC', patterns: ['IIC-LC', 'IIC-MA', 'IIC-BA'] },
@@ -19,11 +26,14 @@ const RATE_GROUPS = [
 ]
 
 function groupRateTypes(rateTypes) {
+  // Filter out hidden/deprecated types first
+  const visible = rateTypes.filter(rt => !HIDDEN_RATE_TYPES.has(rt.name))
+
   const grouped = []
   const used = new Set()
 
   for (const group of RATE_GROUPS) {
-    const items = rateTypes.filter(rt => {
+    const items = visible.filter(rt => {
       if (used.has(rt.id)) return false
       return group.patterns.some(p => rt.name.startsWith(p) || rt.name.includes(p))
     })
@@ -33,8 +43,8 @@ function groupRateTypes(rateTypes) {
     }
   }
 
-  // Any remaining go into General (no separate "Other" section)
-  const remaining = rateTypes.filter(rt => !used.has(rt.id))
+  // Any remaining go into General
+  const remaining = visible.filter(rt => !used.has(rt.id))
   if (remaining.length > 0) {
     const general = grouped.find(g => g.label === 'General')
     if (general) {
