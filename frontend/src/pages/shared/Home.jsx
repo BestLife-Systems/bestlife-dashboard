@@ -252,7 +252,7 @@ export default function Home() {
       const thirtyDays = new Date(today); thirtyDays.setDate(thirtyDays.getDate() + 30)
       setBirthdayAnnouncements(
         all.filter(m => m.title.includes('Birthday')).filter(m => { const d = new Date(m.meeting_date + 'T00:00:00'); return d >= today && d <= thirtyDays })
-          .map(b => ({ id: 'bday-' + b.id, title: b.title, body: null, category: 'celebration', effective_date: b.meeting_date, _isBirthday: true }))
+          .map(b => ({ id: 'bday-' + b.id, _meetingId: b.id, title: b.title, body: null, category: 'celebration', effective_date: b.meeting_date, meeting_date: b.meeting_date, meeting_time: b.meeting_time, _isBirthday: true }))
       )
     } catch (err) { console.error('Failed to load meetings:', err); setMeetings([]); setBirthdayAnnouncements([]) } finally { setLoadingMeetings(false) }
   }
@@ -490,24 +490,35 @@ export default function Home() {
             return (
               <div>
                 {allAnn.map(ann => {
-                  const canModify = !ann._isBirthday
-                  const isEditing = annEditMode && canModify
-                  const isRemoving = annRemoveMode && canModify
+                  const handleEdit = () => {
+                    if (ann._isBirthday) {
+                      openEditMeeting({ id: ann._meetingId, title: ann.title, meeting_date: ann.meeting_date, meeting_time: ann.meeting_time })
+                    } else {
+                      openEditAnn(ann)
+                    }
+                  }
+                  const handleRemove = () => {
+                    if (ann._isBirthday) {
+                      removeMeeting({ id: ann._meetingId })
+                    } else {
+                      removeAnn(ann)
+                    }
+                  }
                   return (
                     <div
                       key={ann.id}
                       className="home-announcement"
-                      onClick={isEditing ? () => openEditAnn(ann) : undefined}
-                      style={isEditing ? { cursor: 'pointer', background: 'var(--accent-glow)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : isRemoving ? { background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : undefined}
+                      onClick={annEditMode ? handleEdit : undefined}
+                      style={annEditMode ? { cursor: 'pointer', background: 'var(--accent-glow)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : annRemoveMode ? { background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : undefined}
                     >
                       <span className="home-announcement-badge" style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}>{ann.category}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
                         {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
                       </div>
-                      {isEditing && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 500, marginLeft: 'auto' }}>tap to edit</span>}
-                      {isRemoving && <button onClick={(e) => { e.stopPropagation(); removeAnn(ann) }} style={{ flexShrink: 0, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '0.25rem 0.75rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, marginLeft: 'auto' }}>Remove</button>}
-                      {!isEditing && !isRemoving && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
+                      {annEditMode && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 500, marginLeft: 'auto' }}>tap to edit</span>}
+                      {annRemoveMode && <button onClick={(e) => { e.stopPropagation(); handleRemove() }} style={{ flexShrink: 0, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '0.25rem 0.75rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, marginLeft: 'auto' }}>Remove</button>}
+                      {!annEditMode && !annRemoveMode && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
                     </div>
                   )
                 })}
