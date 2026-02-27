@@ -10,15 +10,42 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Hard-clear all Supabase auth data from localStorage
+  function nukeSession() {
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
+      })
+    } catch {}
+    supabase.auth.signOut().catch(() => {})
+    setUser(null)
+    setProfile(null)
+    setLoading(false)
+  }
+
+  // Check if a JWT is expired (with 60s buffer)
+  function isTokenExpired(token) {
+    if (!token) return true
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return payload.exp * 1000 < Date.now() - 60000
+    } catch { return true }
+  }
+
   useEffect(() => {
     // Get initial session — handle stale/expired sessions gracefully
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         console.warn('Session recovery failed, clearing stale session:', error.message)
-        supabase.auth.signOut().catch(() => {})
-        setUser(null)
-        setProfile(null)
-        setLoading(false)
+        nukeSession()
+        return
+      }
+      // Check if the access token is actually expired
+      if (session?.access_token && isTokenExpired(session.access_token)) {
+        console.warn('Access token expired, clearing stale session')
+        nukeSession()
         return
       }
       setUser(session?.user ?? null)
@@ -29,10 +56,7 @@ export function AuthProvider({ children }) {
       }
     }).catch((err) => {
       console.warn('getSession threw, clearing state:', err)
-      supabase.auth.signOut().catch(() => {})
-      setUser(null)
-      setProfile(null)
-      setLoading(false)
+      nukeSession()
     })
 
     // Listen for auth changes
@@ -40,10 +64,8 @@ export function AuthProvider({ children }) {
       async (event, session) => {
         if (event === 'TOKEN_REFRESHED' && !session) {
           // Token refresh failed — stale session
-          console.warn('Token refresh failed, signing out')
-          setUser(null)
-          setProfile(null)
-          setLoading(false)
+          console.warn('Token refresh failed, nuking session')
+          nukeSession()
           return
         }
         setUser(session?.user ?? null)
@@ -67,7 +89,15 @@ export function AuthProvider({ children }) {
         .eq('auth_id', userId)
         .single()
 
-      if (error) throw error
+      if (error) {
+        // If it's an auth error (401/403), the session is stale — nuke it
+        if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.code === '401') {
+          console.warn('Profile fetch auth error, clearing session:', error.message)
+          nukeSession()
+          return
+        }
+        throw error
+      }
       setProfile(data)
     } catch (err) {
       console.error('Error fetching profile:', err)
