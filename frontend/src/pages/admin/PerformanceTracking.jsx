@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { apiGet } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { useAuth } from '../../hooks/useAuth'
@@ -14,6 +15,7 @@ const EMP_LABELS = { full_time: 'FT', part_time: 'PT', '1099': '1099' }
 
 export default function PerformanceTracking() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const isAdmin = profile?.role === 'admin'
 
   const [data, setData] = useState(null)
@@ -105,6 +107,7 @@ export default function PerformanceTracking() {
               thresholds={thresholds}
               isAdmin={isAdmin}
               isSingleUser={!isAdmin && profile?.role !== 'clinical_leader'}
+              navigate={navigate}
             />
           ))}
         </div>
@@ -114,7 +117,7 @@ export default function PerformanceTracking() {
 }
 
 
-function TeamSection({ group, thresholds, isAdmin, isSingleUser }) {
+function TeamSection({ group, thresholds, isAdmin, isSingleUser, navigate }) {
   // For single-user view (therapist/apn), just show the rows without team header
   if (isSingleUser) {
     return (
@@ -124,7 +127,7 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser }) {
             <PerfTableHead />
             <tbody>
               {group.therapists.map(row => (
-                <StaffRow key={row.user_id} row={row} thresholds={thresholds} />
+                <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
               ))}
             </tbody>
           </table>
@@ -140,14 +143,13 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser }) {
           {group.leader_name}
           {group.leader_name === 'Unassigned' && <span className="badge badge--muted" style={{ marginLeft: '0.5rem' }}>No Leader</span>}
         </span>
-        <span className="perf-team-stat">{group.pct_meeting_threshold}% on track</span>
       </div>
       <div className="table-wrapper">
         <table className="data-table perf-table">
           <PerfTableHead />
           <tbody>
             {group.therapists.map(row => (
-              <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={row.is_leader} />
+              <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={row.is_leader} navigate={navigate} />
             ))}
           </tbody>
         </table>
@@ -177,7 +179,7 @@ function PerfTableHead() {
 }
 
 
-function StaffRow({ row, thresholds, isLeader }) {
+function StaffRow({ row, thresholds, isLeader, navigate }) {
   const threshold = thresholds[row.employment_status] || thresholds.full_time || 80
   const avgPerPd = row.avg_per_period || 0
   const onTrack = row.status === 'on_track'
@@ -186,7 +188,13 @@ function StaffRow({ row, thresholds, isLeader }) {
     <tr className={`data-table-row perf-staff-row ${isLeader ? 'perf-staff-row--leader' : ''}`}>
       <td className="perf-staff-name">
         {isLeader && <span className="perf-leader-badge">CL</span>}
-        {row.name}
+        <button
+          className="perf-name-link"
+          onClick={() => navigate(`/admin/analytics/performance/${row.user_id}`)}
+          title="View month-over-month detail"
+        >
+          {row.name}
+        </button>
       </td>
       <td>
         <span className="badge badge--muted">{EMP_LABELS[row.employment_status] || 'FT'}</span>

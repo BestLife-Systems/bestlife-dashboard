@@ -341,23 +341,25 @@ export default function Home() {
         <div>
           <h2 className="page-title">{greeting}, {firstName}</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>Here's what's on your plate today.</p>
-          {impactHours && (
-            <div className="impact-counter">
-              <span className="impact-number">{Math.round(impactHours.total).toLocaleString()}</span>
-              <span className="impact-label">Total Hours of Impact</span>
-              {isAdmin && !editingBaseline && (
-                <button className="impact-edit-btn" onClick={() => { setBaselineInput(String(impactHours.baseline || 0)); setEditingBaseline(true) }} title="Set baseline hours">Set Baseline</button>
-              )}
-              {editingBaseline && (
-                <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-                  <input type="number" value={baselineInput} onChange={e => setBaselineInput(e.target.value)} className="form-input" style={{ width: '6rem', fontSize: '0.8rem', padding: '0.2rem 0.4rem' }} placeholder="Baseline hrs" />
-                  <button className="btn btn--xs btn--primary" onClick={saveBaseline}>Save</button>
-                  <button className="btn btn--xs btn--ghost" onClick={() => setEditingBaseline(false)}>Cancel</button>
-                </span>
-              )}
-            </div>
-          )}
         </div>
+
+        {impactHours && (
+          <div className="impact-counter">
+            <span className="impact-number">{Math.round(impactHours.total).toLocaleString()}</span>
+            <span className="impact-label">Total Hours of Impact</span>
+            {isAdmin && !editingBaseline && (
+              <button className="impact-edit-btn" onClick={() => { setBaselineInput(String(impactHours.baseline || 0)); setEditingBaseline(true) }} title="Set baseline hours">Set Baseline</button>
+            )}
+            {editingBaseline && (
+              <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
+                <input type="number" value={baselineInput} onChange={e => setBaselineInput(e.target.value)} className="form-input" style={{ width: '6rem', fontSize: '0.8rem', padding: '0.2rem 0.4rem' }} placeholder="Baseline hrs" />
+                <button className="btn btn--xs btn--primary" onClick={saveBaseline}>Save</button>
+                <button className="btn btn--xs btn--ghost" onClick={() => setEditingBaseline(false)}>Cancel</button>
+              </span>
+            )}
+          </div>
+        )}
+
         {weather && (() => {
           const w = weatherInfo(weather.code)
           return (

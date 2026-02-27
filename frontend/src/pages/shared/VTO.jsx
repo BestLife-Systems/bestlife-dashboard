@@ -252,22 +252,6 @@ export default function VTO() {
             )}
           </div>
 
-          {/* Issues */}
-          <div className="vto-card">
-            <div className="vto-card-title">Issues List</div>
-            {editing ? (
-              <EditableList
-                items={d.traction.issues}
-                onChange={items => setEditData(prev => ({ ...prev, traction: { ...prev.traction, issues: items } }))}
-              />
-            ) : (
-              d.traction.issues.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No issues logged.</div>
-              ) : (
-                <ol className="vto-list">{d.traction.issues.map((v, i) => <li key={i}>{v}</li>)}</ol>
-              )
-            )}
-          </div>
         </div>
       </div>
     </div>

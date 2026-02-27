@@ -358,7 +358,7 @@ function ServicePayBreakdown({ services }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.25rem' }}>
       <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', alignSelf: 'center', marginRight: '0.25rem' }}>
-        Pay by Type:
+        Paid to Staff:
       </span>
       {rows.map(r => (
         <span key={r.label} style={{

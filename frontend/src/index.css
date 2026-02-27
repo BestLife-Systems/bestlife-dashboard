@@ -1915,11 +1915,17 @@ a { color: var(--accent); text-decoration: none; }
 .perf-staff-name { font-weight: 500; color: var(--text-bright); display: flex; align-items: center; gap: 0.4rem; }
 .perf-staff-row--leader { background: rgba(0, 187, 238, 0.04); }
 .perf-leader-badge { font-size: 0.6rem; font-weight: 700; background: var(--accent-glow); color: var(--accent); padding: 0.1rem 0.35rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+.perf-name-link { background: none; border: none; padding: 0; font: inherit; color: var(--text-bright); cursor: pointer; text-decoration: none; }
+.perf-name-link:hover { color: var(--accent); text-decoration: underline; }
 
 /* Avg/Pd colored output */
 .perf-avg { font-weight: 600; }
 .perf-avg--on-track { color: var(--success); }
 .perf-avg--off-track { color: var(--danger); }
+
+/* Performance detail page */
+.perf-detail-toggle { display: flex; gap: 0; }
+.page-header-sub { display: flex; align-items: center; margin-top: 0.25rem; }
 
 /* Period label in header */
 .page-header-sub { font-size: 0.9rem; color: var(--text-muted); font-weight: 400; }
@@ -1955,8 +1961,14 @@ a { color: var(--accent); text-decoration: none; }
 .vto-field label { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.2rem; }
 
 /* ── Impact Hours Counter ── */
-.impact-counter { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
-.impact-number { font-family: var(--font-display); font-size: 1.75rem; font-weight: 600; color: #00bbee; line-height: 1; }
-.impact-label { font-size: 0.8rem; color: var(--text-muted); }
-.impact-edit-btn { font-size: 0.7rem; color: var(--text-muted); background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 0.15rem 0.4rem; cursor: pointer; font-family: var(--font-body); }
+.impact-counter {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(0,187,238,0.12), rgba(0,187,238,0.04));
+  border: 1px solid rgba(0,187,238,0.25); border-radius: var(--radius);
+  padding: 0.625rem 1.5rem; flex-shrink: 0; min-width: 160px;
+  gap: 0.15rem;
+}
+.impact-number { font-family: var(--font-display); font-size: 1.6rem; font-weight: 600; color: #00bbee; line-height: 1; }
+.impact-label { font-size: 0.7rem; color: var(--accent); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; }
+.impact-edit-btn { font-size: 0.65rem; color: var(--text-muted); background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 0.1rem 0.35rem; cursor: pointer; font-family: var(--font-body); margin-top: 0.15rem; }
 .impact-edit-btn:hover { border-color: var(--accent); color: var(--accent); }

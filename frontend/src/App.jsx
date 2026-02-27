@@ -31,6 +31,8 @@ import BillingSummary from './pages/admin/BillingSummary'
 import PerformanceTracking from './pages/admin/PerformanceTracking'
 import SupervisionCompliance from './pages/admin/SupervisionCompliance'
 import Scorecard from './pages/admin/Scorecard'
+import PerformanceDetail from './pages/admin/PerformanceDetail'
+import Capacity from './pages/admin/Capacity'
 
 // Therapist pages
 import TherapistStats from './pages/therapist/TherapistStats'
@@ -73,6 +75,7 @@ const ADMIN_TABS = [
       { path: '/admin/analytics/billing-summary', label: 'Billing Summary' },
       { path: '/admin/analytics/performance', label: 'Performance Tracking' },
       { path: '/admin/analytics/supervision', label: 'Supervision Compliance' },
+      { path: '/admin/analytics/capacity', label: 'Capacity' },
       { path: '/admin/analytics/scorecard', label: 'Scorecard' },
     ],
   },
@@ -207,9 +210,19 @@ export default function App() {
               <SharedLayout><PerformanceTracking /></SharedLayout>
             </ProtectedRoute>
           } />
+          <Route path="/admin/analytics/performance/:userId" element={
+            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn']}>
+              <SharedLayout><PerformanceDetail /></SharedLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/admin/analytics/supervision" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><SupervisionCompliance /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/analytics/capacity" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><Capacity /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/scorecard" element={

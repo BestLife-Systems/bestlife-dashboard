@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import calendar
+from collections import OrderedDict
 from datetime import datetime, timedelta, date
 from typing import Optional, List
 
@@ -1212,6 +1213,11 @@ def send_sms(to_number: str, body: str):
 @app.get("/api/payroll/rate-catalog")
 async def get_rate_catalog(user=Depends(verify_token)):
     """Get all rate types and bill rate defaults."""
+    # Deactivate legacy duplicate ADOS types (parentheses versions replaced by dash versions)
+    legacy_ados = ["ADOS Assessment (In Home)", "ADOS Assessment (In Office)", "ADOS In Home", "ADOS At Office"]
+    for name in legacy_ados:
+        await sb_request("PATCH", f"rate_types?name=eq.{name}&is_active=eq.true", data={"is_active": False})
+
     rate_types = await sb_request("GET", "rate_types", params={
         "select": "*",
         "is_active": "eq.true",
@@ -2758,15 +2764,26 @@ PERF_THRESHOLDS = {
 }
 
 # Rate type names → display column mapping for performance grid
+# Must cover ALL possible names (pre-migration, post-migration, and invoice-submitted names)
 RATE_TO_PERF_COL = {
-    "IIC-LC": "iic", "IIC-MA": "iic", "IIC-BA": "iic",
-    "OP-LC Session": "op", "OP-MA Session": "op", "OP Cancellation": "op",
+    # IIC (all variants)
+    "IIC": "iic", "IIC-LC": "iic", "IIC-MA": "iic", "IIC-BA": "iic",
+    "IIC LPC/LCSW": "iic", "IIC LAC/LSW": "iic", "Behavioral Assistant": "iic",
+    # OP (all variants)
+    "OP Session": "op", "OP-LC Session": "op", "OP-MA Session": "op", "OP Cancellation": "op",
+    # SBYS
     "SBYS": "sbys",
+    # ADOS (all variants)
+    "ADOS": "ados",
+    "ADOS Assessment (In Home)": "ados", "ADOS Assessment (In Office)": "ados",
     "ADOS Assessment - In Home": "ados", "ADOS Assessment - At Office": "ados",
+    "ADOS In Home": "ados", "ADOS At Office": "ados",
+    # Time off
     "PTO": "pto", "Sick Leave": "sick",
-    "Administration": "admin",
-    "APN Session (30)": "iic", "APN Intake (60)": "iic",  # APN counts toward total
-    "Community Event (Day)": "admin",
+    # Admin
+    "Administration": "admin", "Community Event (Day)": "admin",
+    # APN
+    "APN Session (30)": "iic", "APN Intake (60)": "iic",
 }
 
 
@@ -2897,11 +2914,11 @@ async def analytics_performance(
 
     user_map = {u["id"]: u for u in visible_users}
 
-    # ── 4. Find pay periods in date range ──
+    # ── 4. Find pay periods that overlap the date range ──
     range_periods = await sb_request("GET", "pay_periods", params={
         "select": "id,start_date,end_date",
-        "start_date": f"gte.{start_date}",
-        "end_date": f"lte.{end_date}",
+        "start_date": f"lte.{end_date}",
+        "end_date": f"gte.{start_date}",
         "status": "eq.closed",
     }) or []
     period_ids = [p["id"] for p in range_periods]
@@ -2924,11 +2941,8 @@ async def analytics_performance(
                 rname = rt.get("name", "")
                 qty = float(e.get("quantity", 0))
                 col = RATE_TO_PERF_COL.get(rname, None)
-                # ADOS entries are per-assessment; each assessment = 3 hours of work
-                if col == "ados":
-                    hrs = qty * 3
-                else:
-                    hrs = qty
+                # time_entries already store qty in hours (ADOS entries stored as 3.0 per assessment)
+                hrs = qty
                 if col and col in user_service_hours[uid]:
                     user_service_hours[uid][col] += hrs
                 user_service_hours[uid]["total"] += hrs
@@ -3104,6 +3118,113 @@ async def analytics_performance(
         "available_periods": available_periods,
         "thresholds": {k: v["monthly"] for k, v in PERF_THRESHOLDS.items()},
         "groups": groups,
+    }
+
+
+@app.get("/api/analytics/performance/{user_id}")
+async def analytics_performance_detail(user_id: str, user=Depends(verify_token)):
+    """Performance detail for a single user: month-by-month breakdown."""
+    profile = user
+    caller_role = profile.get("role", "therapist")
+    caller_id = profile.get("id")
+
+    # Visibility check
+    if caller_role not in ("admin",):
+        if caller_role == "clinical_leader":
+            # Can see self + supervisees
+            target = await sb_request("GET", "users", params={"id": f"eq.{user_id}", "select": "id,clinical_supervisor_id"})
+            if target and target[0].get("clinical_supervisor_id") != caller_id and target[0]["id"] != caller_id:
+                raise HTTPException(status_code=403, detail="Not authorized")
+        elif caller_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Get user info
+    target_user = await sb_request("GET", "users", params={
+        "id": f"eq.{user_id}",
+        "select": "id,first_name,last_name,role,employment_status",
+    })
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    tu = target_user[0]
+    emp_status = tu.get("employment_status", "full_time")
+    threshold = PERF_THRESHOLDS.get(emp_status, PERF_THRESHOLDS["full_time"])["monthly"]
+
+    # Get all closed pay periods, ordered by start_date
+    all_periods = await sb_request("GET", "pay_periods", params={
+        "select": "id,start_date,end_date,label,status",
+        "status": "eq.closed",
+        "order": "start_date.asc",
+    }) or []
+
+    # Group pay periods by month
+    months_data = OrderedDict()
+    for pp in all_periods:
+        mk = pp["start_date"][:7]  # YYYY-MM
+        if mk not in months_data:
+            months_data[mk] = {"period_ids": [], "month_key": mk}
+        months_data[mk]["period_ids"].append(pp["id"])
+
+    # For each month, get time_entries for this user
+    monthly_rows = []
+    months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+    for mk, minfo in months_data.items():
+        hrs = {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
+        for pid in minfo["period_ids"]:
+            entries = await sb_request("GET", "time_entries", params={
+                "pay_period_id": f"eq.{pid}",
+                "user_id": f"eq.{user_id}",
+                "select": "quantity,rate_types(name)",
+            }) or []
+            for e in entries:
+                rt = e.get("rate_types") or {}
+                rname = rt.get("name", "")
+                qty = float(e.get("quantity", 0))
+                col = RATE_TO_PERF_COL.get(rname, None)
+                if col and col in hrs:
+                    hrs[col] += qty
+                hrs["total"] += qty
+
+        y2, m2 = int(mk[:4]), int(mk[5:7])
+        on_track = hrs["total"] >= threshold
+        monthly_rows.append({
+            "month": mk,
+            "label": f"{months_names[m2-1]} {y2}",
+            "iic": round(hrs["iic"], 1),
+            "op": round(hrs["op"], 1),
+            "sbys": round(hrs["sbys"], 1),
+            "ados": round(hrs["ados"], 1),
+            "sick": round(hrs["sick"], 1),
+            "pto": round(hrs["pto"], 1),
+            "admin_hours": round(hrs["admin"], 1),
+            "total_hours": round(hrs["total"], 1),
+            "on_track": on_track,
+        })
+
+    # Build quarterly summaries
+    quarters = OrderedDict()
+    for row in monthly_rows:
+        y2, m2 = int(row["month"][:4]), int(row["month"][5:7])
+        qk = f"{y2}-Q{(m2-1)//3+1}"
+        if qk not in quarters:
+            quarters[qk] = {"quarter": qk, "months": [], "total_hours": 0}
+        quarters[qk]["months"].append(row)
+        quarters[qk]["total_hours"] += row["total_hours"]
+    for qk, qdata in quarters.items():
+        qdata["total_hours"] = round(qdata["total_hours"], 1)
+        qdata["avg_per_month"] = round(qdata["total_hours"] / max(len(qdata["months"]), 1), 1)
+        qdata["on_track"] = qdata["avg_per_month"] >= threshold
+
+    return {
+        "user": {
+            "id": tu["id"],
+            "name": f"{tu.get('first_name', '')} {tu.get('last_name', '')}".strip(),
+            "role": tu.get("role", ""),
+            "employment_status": emp_status,
+        },
+        "threshold": threshold,
+        "months": list(reversed(monthly_rows)),  # Most recent first
+        "quarters": list(reversed(list(quarters.values()))),
     }
 
 
