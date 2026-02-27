@@ -71,7 +71,7 @@ async def startup_event():
     # Run lightweight schema migrations via Supabase SQL Editor API
     if SUPABASE_SERVICE_KEY:
         migrations = [
-            ("users_role_check", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check; ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn'));"),
+            ("users_role_check", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check; ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn', 'intern'));"),
         ]
         for name, sql in migrations:
             try:

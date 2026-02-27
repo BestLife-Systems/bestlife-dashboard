@@ -149,6 +149,8 @@ export function AuthProvider({ children }) {
     isClinicalLeader: profile?.role === 'clinical_leader',
     isTherapist: profile?.role === 'therapist',
     isApn: profile?.role === 'apn',
+    isBa: profile?.role === 'ba',
+    isIntern: profile?.role === 'intern',
     isFrontDesk: profile?.role === 'front_desk',
   }
 

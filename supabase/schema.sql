@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'therapist'
-    CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn')),
+    CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn', 'intern')),
   is_active BOOLEAN DEFAULT true,
   clinical_supervisor_id UUID REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT now(),
