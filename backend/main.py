@@ -2467,6 +2467,60 @@ async def billing_summary(admin=Depends(require_admin)):
             "margin_pct": round((grand_revenue - grand_pay) / grand_revenue * 100, 1) if grand_revenue > 0 else 0,
         })
 
+    # Merge period summaries that share the same date range
+    merged_map = {}
+    for ps in period_summaries:
+        key = (ps["start_date"], ps["end_date"])
+        if key not in merged_map:
+            merged_map[key] = {
+                "id": ps["id"],
+                "label": ps["label"],
+                "start_date": ps["start_date"],
+                "end_date": ps["end_date"],
+                "services_map": {},
+                "total_hours": 0.0,
+                "total_revenue": 0.0,
+                "total_pay": 0.0,
+            }
+        m = merged_map[key]
+        m["total_hours"] += ps["total_hours"]
+        m["total_revenue"] += ps["total_revenue"]
+        m["total_pay"] += ps["total_pay"]
+        for svc in ps["services"]:
+            sname = svc["service"]
+            if sname not in m["services_map"]:
+                m["services_map"][sname] = {"service": sname, "hours": 0.0, "revenue": 0.0, "pay": 0.0, "bill_rate": svc.get("bill_rate", 0), "assessments": 0}
+            m["services_map"][sname]["hours"] += svc["hours"]
+            m["services_map"][sname]["revenue"] += svc.get("revenue", 0)
+            m["services_map"][sname]["pay"] += svc.get("pay", 0)
+            m["services_map"][sname]["assessments"] += svc.get("assessments", 0)
+
+    period_summaries = []
+    for key in sorted(merged_map.keys(), reverse=True):
+        m = merged_map[key]
+        svc_list = []
+        for st in SERVICE_TYPES:
+            sd = m["services_map"].get(st)
+            if not sd or sd["hours"] == 0:
+                continue
+            entry = {"service": st, "hours": round(sd["hours"], 2), "revenue": round(sd["revenue"], 2), "pay": round(sd["pay"], 2), "bill_rate": sd["bill_rate"]}
+            if st.startswith("ADOS"):
+                entry["assessments"] = sd["assessments"]
+            svc_list.append(entry)
+        profit = m["total_revenue"] - m["total_pay"]
+        period_summaries.append({
+            "id": m["id"],
+            "label": m["label"],
+            "start_date": m["start_date"],
+            "end_date": m["end_date"],
+            "services": svc_list,
+            "total_hours": round(m["total_hours"], 2),
+            "total_revenue": round(m["total_revenue"], 2),
+            "total_pay": round(m["total_pay"], 2),
+            "total_profit": round(profit, 2),
+            "margin_pct": round(profit / m["total_revenue"] * 100, 1) if m["total_revenue"] > 0 else 0,
+        })
+
     # Build monthly summaries (group periods by month)
     monthly = {}
     for ps in period_summaries:
