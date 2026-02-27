@@ -158,11 +158,8 @@ export default function Layout({ children, tabs }) {
                 </NavLink>
               )
             })}
-          </div>
 
-          {/* Lighting Mode toggle at bottom of sidebar */}
-          <div className="sidebar-footer">
-            <div className="sidebar-divider" />
+            {/* Lighting Mode toggle — directly under Settings */}
             <button className="sidebar-link sidebar-theme-toggle" onClick={toggleTheme}>
               <span className="sidebar-icon">
                 {theme === 'dark' ? (

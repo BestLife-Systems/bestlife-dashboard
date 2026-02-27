@@ -3439,12 +3439,12 @@ async def get_impact_hours(user=Depends(verify_token)):
         except Exception:
             pass
 
-    # Sum all approved time_entries quantity
-    # Use rollup_monthly for efficiency
-    rollups = await sb_request("GET", "rollup_monthly", params={
-        "select": "total_hours",
+    # Sum directly from time_entries (not rollup_monthly) so that
+    # deleted pay periods are automatically subtracted from the total
+    all_entries = await sb_request("GET", "time_entries", params={
+        "select": "quantity",
     }) or []
-    total_from_entries = sum(float(r.get("total_hours", 0)) for r in rollups)
+    total_from_entries = sum(float(e.get("quantity", 0)) for e in all_entries)
 
     return {"baseline": baseline, "from_entries": round(total_from_entries, 1), "total": round(baseline + total_from_entries, 1)}
 

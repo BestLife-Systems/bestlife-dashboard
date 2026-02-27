@@ -355,7 +355,7 @@ export default function Home() {
             )}
             {editingBaseline && (
               <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
-                <input type="number" value={baselineInput} onChange={e => setBaselineInput(e.target.value)} className="form-input" style={{ width: '6rem', fontSize: '0.8rem', padding: '0.2rem 0.4rem' }} placeholder="Baseline hrs" />
+                <input type="number" value={baselineInput} onChange={e => setBaselineInput(e.target.value)} className="form-input" style={{ width: '9rem', fontSize: '0.85rem', padding: '0.3rem 0.5rem' }} placeholder="Baseline hrs" />
                 <button className="btn btn--xs btn--primary" onClick={saveBaseline}>Save</button>
                 <button className="btn btn--xs btn--ghost" onClick={() => setEditingBaseline(false)}>Cancel</button>
               </span>
