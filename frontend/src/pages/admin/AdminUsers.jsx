@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { apiPost, apiPatch, apiGet } from '../../lib/api'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
+import UserPayRates from './UserPayRates'
+import ClinicalLeaderAssignment from './ClinicalLeaderAssignment'
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -33,7 +36,15 @@ function toE164(val) {
   return null
 }
 
+const TABS = [
+  { id: 'users', label: 'All Users' },
+  { id: 'pay-rates', label: 'Pay Rates' },
+  { id: 'clinical', label: 'Clinical Leader Assignment' },
+]
+
 export default function AdminUsers() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') || 'users'
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -172,14 +183,47 @@ export default function AdminUsers() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Users</h2>
-        <button className="btn btn--primary" onClick={() => setShowAdd(true)}>
-          + Add User
-        </button>
+        {activeTab === 'users' && (
+          <button className="btn btn--primary" onClick={() => setShowAdd(true)}>
+            + Add User
+          </button>
+        )}
       </div>
 
-      {loading ? (
+      {/* Tab Bar */}
+      <div className="page-tabs" style={{ display: 'flex', gap: '0.25rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setSearchParams(tab.id === 'users' ? {} : { tab: tab.id })}
+            style={{
+              padding: '0.5rem 1rem',
+              fontSize: '0.875rem',
+              fontWeight: activeTab === tab.id ? 600 : 400,
+              color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
+              background: 'none',
+              border: 'none',
+              borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: '-1px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Pay Rates */}
+      {activeTab === 'pay-rates' && <UserPayRates />}
+
+      {/* Tab: Clinical Leader Assignment */}
+      {activeTab === 'clinical' && <ClinicalLeaderAssignment />}
+
+      {/* Tab: All Users */}
+      {activeTab === 'users' && loading ? (
         <div className="page-loading"><div className="loading-spinner" /></div>
-      ) : (
+      ) : activeTab === 'users' && (
         <>
           {/* Desktop Table */}
           <div className="table-wrapper hide-mobile">

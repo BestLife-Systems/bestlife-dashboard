@@ -75,7 +75,7 @@ const ADMIN_TABS = [
       { path: '/admin/analytics/billing-summary', label: 'Billing Summary' },
       { path: '/admin/analytics/performance', label: 'Performance Tracking' },
       { path: '/admin/analytics/supervision', label: 'Supervision Compliance' },
-      { path: '/admin/analytics/capacity', label: 'Capacity' },
+      { path: '/admin/analytics/capacity', label: 'Therapist Capacity' },
       { path: '/admin/analytics/scorecard', label: 'Scorecard' },
     ],
   },
@@ -87,13 +87,7 @@ const ADMIN_TABS = [
       { path: '/admin/payroll/rate-catalog', label: 'Rate Catalog' },
     ],
   },
-  {
-    label: 'Users', icon: <IconUsers />, children: [
-      { path: '/admin/users', label: 'All Users' },
-      { path: '/admin/users/pay-rates', label: 'Pay Rates' },
-      { path: '/admin/users/clinical-assignments', label: 'Clinical Leader Assignment' },
-    ],
-  },
+  { path: '/admin/users', label: 'Users', icon: <IconUsers /> },
   { section: 'System' },
   { path: '/admin/settings', label: 'Settings', icon: <IconSettings /> },
 ]
@@ -264,16 +258,8 @@ export default function App() {
               <Layout tabs={ADMIN_TABS}><AdminUsers /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/users/pay-rates" element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><UserPayRates /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/users/clinical-assignments" element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><ClinicalLeaderAssignment /></Layout>
-            </ProtectedRoute>
-          } />
+          <Route path="/admin/users/pay-rates" element={<Navigate to="/admin/users?tab=pay-rates" replace />} />
+          <Route path="/admin/users/clinical-assignments" element={<Navigate to="/admin/users?tab=clinical" replace />} />
 
           {/* ── Admin Routes — Other ── */}
           <Route path="/admin/task-templates" element={

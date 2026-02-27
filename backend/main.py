@@ -2321,13 +2321,12 @@ def _extract_service_hours(invoice_data: dict) -> dict:
 @app.get("/api/analytics/billing-summary")
 async def billing_summary(admin=Depends(require_admin)):
     """
-    Billing Summary: returns closed pay periods with per-service-type breakdowns.
-    Aggregates from approved recipients' invoice_data.
+    Billing Summary: returns all pay periods (open and closed) with per-service-type breakdowns.
+    Closed periods aggregate approved recipients only; open periods include all submitted invoices.
     """
-    # Get all closed pay periods (most recent first)
+    # Get all pay periods (open and closed), most recent first
     periods = await sb_request("GET", "pay_periods", params={
         "select": "id, label, start_date, end_date, status",
-        "status": "eq.closed",
         "order": "start_date.desc",
     })
     if not periods:
@@ -2370,12 +2369,15 @@ async def billing_summary(admin=Depends(require_admin)):
 
     for period in periods:
         pid = period["id"]
-        # Get approved recipients for this period
-        recipients = await sb_request("GET", "pay_period_recipients", params={
+        period_status = period.get("status", "open")
+        # For closed periods: only approved recipients; for open periods: all submitted invoices
+        recipient_params = {
             "pay_period_id": f"eq.{pid}",
-            "status": "eq.approved",
-            "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
-        })
+            "select": "id, user_id, invoice_data, status, users!user_id(first_name, last_name)",
+        }
+        if period_status == "closed":
+            recipient_params["status"] = "eq.approved"
+        recipients = await sb_request("GET", "pay_period_recipients", params=recipient_params)
 
         # Aggregate by service type AND compute per-service pay
         service_totals = {st: 0.0 for st in SERVICE_TYPES}

@@ -211,19 +211,22 @@ export default function Home() {
   }
 
   const handleCompleteTask = useCallback(async (task) => {
+    // Mark done in the backend immediately so it persists even if user navigates away
+    try { await updateInstanceStatus(task.id, 'done') } catch {}
     setTasks(prev => prev.filter(t => t.id !== task.id))
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
     setUndoTask({ task })
-    undoTimerRef.current = setTimeout(async () => {
-      try { await updateInstanceStatus(task.id, 'done') } catch {}
+    undoTimerRef.current = setTimeout(() => {
       setUndoTask(null)
       undoTimerRef.current = null
     }, 5000)
   }, [])
 
-  const handleUndoTask = useCallback(() => {
+  const handleUndoTask = useCallback(async () => {
     if (!undoTask) return
     if (undoTimerRef.current) { clearTimeout(undoTimerRef.current); undoTimerRef.current = null }
+    // Revert to pending in the backend
+    try { await updateInstanceStatus(undoTask.task.id, 'pending') } catch {}
     setTasks(prev => [...prev, undoTask.task].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || '')))
     setUndoTask(null)
   }, [undoTask])
