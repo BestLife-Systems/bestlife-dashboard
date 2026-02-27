@@ -68,6 +68,32 @@ async def startup_event():
     else:
         logger.warning("Anthropic key: NOT configured (Betty AI will be unavailable)")
 
+    # Run lightweight schema migrations via Supabase SQL Editor API
+    if SUPABASE_SERVICE_KEY:
+        migrations = [
+            ("users_role_check", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check; ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn'));"),
+        ]
+        for name, sql in migrations:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    # Try via PostgREST rpc (requires a helper function in DB)
+                    resp = await client.post(
+                        f"{SUPABASE_URL}/rest/v1/rpc/run_sql",
+                        json={"sql": sql},
+                        headers={
+                            "apikey": SUPABASE_SERVICE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                            "Content-Type": "application/json",
+                            "Prefer": "return=minimal",
+                        },
+                    )
+                    if resp.status_code in (200, 204):
+                        logger.info(f"Migration '{name}' applied successfully")
+                    else:
+                        logger.info(f"Migration '{name}' skipped (run_sql not available: {resp.status_code}). Run manually in Supabase SQL editor: {sql}")
+            except Exception as e:
+                logger.info(f"Migration '{name}' skipped: {e}")
+
 
 # ────────────────────────────────────────────────────────────────────
 # Supabase helpers

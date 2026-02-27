@@ -9,6 +9,7 @@ const ROLES = [
   { value: 'clinical_leader', label: 'Clinical Leader' },
   { value: 'therapist', label: 'Therapist' },
   { value: 'apn', label: 'APN' },
+  { value: 'ba', label: 'Behavioral Assistant' },
   { value: 'front_desk', label: 'Front Desk' },
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
