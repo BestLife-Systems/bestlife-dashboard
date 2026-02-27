@@ -3413,7 +3413,7 @@ async def update_vto(req: dict = Body(...), admin=Depends(require_admin)):
     import json as _json
     value_str = _json.dumps(req)
     existing = await sb_request("GET", "app_settings", params={
-        "key": "eq.vto_data", "select": "id",
+        "key": "eq.vto_data", "select": "key",
     })
     if existing:
         await sb_request("PATCH", "app_settings?key=eq.vto_data", data={"value": value_str})
@@ -3454,7 +3454,7 @@ async def update_impact_hours_baseline(req: dict = Body(...), admin=Depends(requ
     """Admin: Set the baseline impact hours."""
     baseline = float(req.get("baseline", 0))
     existing = await sb_request("GET", "app_settings", params={
-        "key": "eq.impact_hours_baseline", "select": "id",
+        "key": "eq.impact_hours_baseline", "select": "key",
     })
     if existing:
         await sb_request("PATCH", "app_settings?key=eq.impact_hours_baseline", data={"value": str(baseline)})
