@@ -633,11 +633,11 @@ a { color: var(--accent); text-decoration: none; }
 
 /* Tasks */
 .home-task-list { display: flex; flex-direction: column; gap: 0; }
-.home-task-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.home-task-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
 .home-task-item:last-child { border-bottom: none; }
 .home-task-item:hover { background: var(--bg-elevated); margin: 0 -0.25rem; padding: 0.5rem; border-radius: var(--radius-sm); }
-.home-task-title { font-size: 0.875rem; font-weight: 450; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.home-task-due { font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; }
+.home-task-due { font-size: 0.75rem; white-space: nowrap; flex-shrink: 0; min-width: 100px; }
+.home-task-title { font-size: 0.875rem; font-weight: 450; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .home-task-check { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; flex-shrink: 0; border-radius: var(--radius-sm); transition: color 0.15s, background 0.15s; display: flex; align-items: center; }
 .home-task-check:hover { color: var(--accent); background: var(--accent-glow); }
 

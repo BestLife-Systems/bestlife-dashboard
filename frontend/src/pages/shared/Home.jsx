@@ -430,10 +430,10 @@ export default function Home() {
               <div className="home-task-list">
                 {tasks.map(task => (
                   <div key={task.id} className="home-task-item">
-                    <span className="home-task-title">{task.title}</span>
                     <span className="home-task-due" style={{ color: isOverdue(task.due_date, task.status) ? 'var(--danger)' : isToday(task.due_date) ? 'var(--accent)' : 'var(--text-muted)' }}>
                       {isOverdue(task.due_date, task.status) && '\u26A0 '}{isToday(task.due_date) ? 'Today' : formatDate(task.due_date)}
                     </span>
+                    <span className="home-task-title">{task.title}</span>
                     <button className="home-task-check" onClick={(e) => { e.stopPropagation(); handleCompleteTask(task) }} title="Mark as done">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /></svg>
                     </button>
@@ -496,12 +496,21 @@ export default function Home() {
                       <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
                       {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
                     </div>
-                    {!(annEditMode || annRemoveMode) && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
+                    {!annEditMode && !annRemoveMode && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
                     {annEditMode && !ann._isBirthday && (
-                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto' }}><PencilIcon /></button>
+                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, minWidth: 28, width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto', padding: 0 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
                     )}
                     {annRemoveMode && !ann._isBirthday && (
-                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto' }}><XIcon /></button>
+                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, minWidth: 28, width: 28, height: 28, borderRadius: '50%', border: '2px solid var(--danger)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto', padding: 0 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
                     )}
                   </div>
                 ))}
