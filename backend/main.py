@@ -250,10 +250,67 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
     if req.clinical_supervisor_id:
         user_data["clinical_supervisor_id"] = req.clinical_supervisor_id
 
-    new_user = await sb_request("POST", "users", data=user_data)
-    user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
+    try:
+        new_user = await sb_request("POST", "users", data=user_data)
+        user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
+    except Exception as e:
+        # Users table insert failed — clean up the orphaned auth user
+        logger.error(f"Users table insert failed for {req.email}, cleaning up auth user {auth_id}: {e}")
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.delete(
+                    f"{SUPABASE_URL}/auth/v1/admin/users/{auth_id}",
+                    headers={
+                        "apikey": SUPABASE_SERVICE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    },
+                )
+        except Exception as cleanup_err:
+            logger.error(f"Failed to clean up auth user: {cleanup_err}")
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": "created", "email": req.email, "user_id": user_id}
+
+
+@app.delete("/api/admin/cleanup-auth-user")
+async def cleanup_auth_user(email: str, admin=Depends(require_admin)):
+    """Delete an orphaned auth user (exists in auth but not in users table)."""
+    # Find the auth user by email
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # List users and find by email
+        resp = await client.get(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            },
+            params={"page": 1, "per_page": 1000},
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=500, detail="Failed to list auth users")
+
+        auth_users = resp.json().get("users", [])
+        target = None
+        for u in auth_users:
+            if u.get("email", "").lower() == email.lower():
+                target = u
+                break
+
+        if not target:
+            raise HTTPException(status_code=404, detail=f"No auth user found with email {email}")
+
+        # Delete the auth user
+        del_resp = await client.delete(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{target['id']}",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            },
+        )
+        if del_resp.status_code >= 400:
+            raise HTTPException(status_code=500, detail=f"Failed to delete auth user: {del_resp.text}")
+
+    return {"status": "deleted", "email": email, "auth_id": target["id"]}
 
 
 # ── TherapyNotes Upload & Processing ────────────────────────────
