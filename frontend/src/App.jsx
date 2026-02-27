@@ -22,10 +22,6 @@ import ApprovalQueue from './pages/admin/ApprovalQueue'
 import ExportBatches from './pages/admin/ExportBatches'
 import RateCatalog from './pages/admin/RateCatalog'
 
-// New admin pages — Users sub-pages
-import UserPayRates from './pages/admin/UserPayRates'
-import ClinicalLeaderAssignment from './pages/admin/ClinicalLeaderAssignment'
-
 // New admin pages — Analytics sub-pages
 import BillingSummary from './pages/admin/BillingSummary'
 import PerformanceTracking from './pages/admin/PerformanceTracking'
@@ -258,8 +254,8 @@ export default function App() {
               <Layout tabs={ADMIN_TABS}><AdminUsers /></Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/users/pay-rates" element={<Navigate to="/admin/users?tab=pay-rates" replace />} />
-          <Route path="/admin/users/clinical-assignments" element={<Navigate to="/admin/users?tab=clinical" replace />} />
+          <Route path="/admin/users/pay-rates" element={<Navigate to="/admin/users" replace />} />
+          <Route path="/admin/users/clinical-assignments" element={<Navigate to="/admin/users" replace />} />
 
           {/* ── Admin Routes — Other ── */}
           <Route path="/admin/task-templates" element={

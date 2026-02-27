@@ -432,6 +432,7 @@ export default function BillingSummary() {
 
   const periods = data?.periods || []
   const monthly = data?.monthly || []
+  const openPeriods = data?.open_periods || []
 
   // Group periods by month
   const periodsByMonth = {}
@@ -450,6 +451,27 @@ export default function BillingSummary() {
           Revenue Rates
         </button>
       </div>
+
+      {openPeriods.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+          background: 'var(--warning-bg, #451a03)', border: '1px solid var(--warning-border, #92400e)',
+          borderRadius: '0.5rem', padding: '0.875rem 1rem', marginBottom: '1.25rem',
+          color: 'var(--warning-text, #fbbf24)', fontSize: '0.875rem', lineHeight: 1.5,
+        }}>
+          <span style={{ fontSize: '1rem', flexShrink: 0 }}>⚠️</span>
+          <div>
+            <strong>
+              {openPeriods.length === 1
+                ? `Pay period "${openPeriods[0].label || formatDate(openPeriods[0].start_date)}" is still open`
+                : `${openPeriods.length} pay periods are still open`}
+            </strong>
+            {' — close and approve them in '}
+            <strong>Payroll → Pay Periods</strong>
+            {' for their data to appear here.'}
+          </div>
+        </div>
+      )}
 
       {periods.length === 0 ? (
         <div className="empty-state">

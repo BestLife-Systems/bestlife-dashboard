@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { apiPost, apiPatch, apiGet } from '../../lib/api'
+import { apiPost, apiGet } from '../../lib/api'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
-import UserPayRates from './UserPayRates'
-import ClinicalLeaderAssignment from './ClinicalLeaderAssignment'
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -22,6 +19,52 @@ const EMPLOYMENT_STATUSES = [
   { value: '1099', label: '1099 Contractor' },
 ]
 
+// ── Pay rate helpers ──────────────────────────────────────────────
+
+const HIDDEN_RATE_TYPES = new Set([
+  'ADOS In Home', 'ADOS At Office',
+  'ADOS Assessment (In Home)', 'ADOS Assessment (In Office)',
+  'IIC', 'APN 30 Min', 'Other (Hourly)', 'Other (Day)', 'APN Other (Custom)',
+])
+
+const RATE_DISPLAY_NAMES = {
+  'Community Event (Day)': 'Community Event',
+}
+
+const RATE_GROUPS = [
+  { label: 'IIC', patterns: ['IIC-LC', 'IIC-MA', 'IIC-BA'] },
+  { label: 'Outpatient', patterns: ['OP-LC', 'OP-MA'] },
+  { label: 'SBYS', patterns: ['SBYS'] },
+  { label: 'ADOS', patterns: ['ADOS Assessment'] },
+  { label: 'APN', patterns: ['APN Session', 'APN Intake'] },
+  { label: 'General', patterns: ['Administration', 'PTO', 'Sick Leave', 'Community Event', 'OP Cancellation'] },
+]
+
+function groupRateTypes(rateTypes) {
+  const visible = rateTypes.filter(rt => !HIDDEN_RATE_TYPES.has(rt.name))
+  const grouped = []
+  const used = new Set()
+  for (const group of RATE_GROUPS) {
+    const items = visible.filter(rt => {
+      if (used.has(rt.id)) return false
+      return group.patterns.some(p => rt.name.startsWith(p) || rt.name.includes(p))
+    })
+    if (items.length > 0) {
+      items.forEach(i => used.add(i.id))
+      grouped.push({ label: group.label, items })
+    }
+  }
+  const remaining = visible.filter(rt => !used.has(rt.id))
+  if (remaining.length > 0) {
+    const general = grouped.find(g => g.label === 'General')
+    if (general) remaining.forEach(r => { general.items.push(r); used.add(r.id) })
+    else grouped.push({ label: 'General', items: remaining })
+  }
+  return grouped
+}
+
+// ── Phone helpers ─────────────────────────────────────────────────
+
 function formatPhone(val) {
   const digits = val.replace(/\D/g, '')
   if (digits.length <= 3) return digits
@@ -36,42 +79,53 @@ function toE164(val) {
   return null
 }
 
-const TABS = [
-  { id: 'users', label: 'All Users' },
-  { id: 'pay-rates', label: 'Pay Rates' },
-  { id: 'clinical', label: 'Clinical Leader Assignment' },
-]
+// ── Section divider for modal ─────────────────────────────────────
+
+function ModalSection({ label }) {
+  return (
+    <div style={{
+      fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase',
+      letterSpacing: '0.05em', color: 'var(--text-muted)',
+      margin: '1.25rem 0 0.5rem',
+      paddingBottom: '0.25rem',
+      borderBottom: '1px solid var(--border)',
+    }}>
+      {label}
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────
 
 export default function AdminUsers() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = searchParams.get('tab') || 'users'
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editUser, setEditUser] = useState(null)
+  const [editUserRates, setEditUserRates] = useState({})
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', employment_status: 'full_time', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  // Pay rates step
+
+  // Pay rates step (shown after adding a new user)
   const [payRateStep, setPayRateStep] = useState(false)
   const [newUserId, setNewUserId] = useState(null)
   const [newUserName, setNewUserName] = useState('')
-  const [rateTypes, setRateTypes] = useState([])
   const [editRates, setEditRates] = useState({})
   const [savingRates, setSavingRates] = useState(false)
 
+  // Shared rate catalog + all user pay rates
+  const [rateTypes, setRateTypes] = useState([])
+  const [allPayRates, setAllPayRates] = useState([])
+
   const clinicalLeaders = users.filter(u => u.role === 'clinical_leader' && u.is_active)
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => { loadUsers(); loadRateData() }, [])
 
   async function loadUsers() {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('last_name')
-
+      const { data, error } = await supabase.from('users').select('*').order('last_name')
       if (error) throw error
       setUsers(data || [])
     } catch (err) {
@@ -79,6 +133,31 @@ export default function AdminUsers() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function loadRateData() {
+    try {
+      const [ratesData, payRatesData] = await Promise.all([
+        apiGet('/payroll/rate-catalog'),
+        apiGet('/payroll/user-pay-rates'),
+      ])
+      setRateTypes(ratesData.rate_types || [])
+      setAllPayRates(payRatesData || [])
+    } catch (err) {
+      console.error('Error loading rate data:', err)
+    }
+  }
+
+  // Open edit modal and pre-load this user's pay rates
+  function openEditUser(user) {
+    const userRates = allPayRates.filter(r => r.user_id === user.id)
+    const rateMap = {}
+    rateTypes.forEach(rt => {
+      const existing = userRates.find(r => r.rate_type_id === rt.id)
+      rateMap[rt.id] = existing ? String(existing.pay_rate) : ''
+    })
+    setEditUserRates(rateMap)
+    setEditUser({ ...user })
   }
 
   async function handleAddUser(e) {
@@ -103,25 +182,15 @@ export default function AdminUsers() {
         supervision_required: form.supervision_required,
         clinical_supervisor_id: form.clinical_supervisor_id || null,
       })
-      // Set employment_status directly (backend invite may not support it yet)
       if (result.user_id && form.employment_status !== 'full_time') {
         await supabase.from('users').update({ employment_status: form.employment_status }).eq('id', result.user_id)
       }
-      // Transition to pay rates step
       setNewUserId(result.user_id)
       setNewUserName(`${form.first_name} ${form.last_name}`)
       setShowAdd(false)
       setForm({ first_name: '', last_name: '', email: '', role: 'therapist', employment_status: 'full_time', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
-      // Load rate types for pay rates step
-      try {
-        const ratesData = await apiGet('/payroll/rate-catalog')
-        setRateTypes(ratesData.rate_types || [])
-        setEditRates({})
-        setPayRateStep(true)
-      } catch {
-        // If rate catalog fails, just skip to done
-        loadUsers()
-      }
+      setEditRates({})
+      setPayRateStep(true)
     } catch (err) {
       setError(typeof err?.message === 'string' ? err.message : String(err))
     } finally {
@@ -140,24 +209,30 @@ export default function AdminUsers() {
         setSaving(false)
         return
       }
-      const { error: err } = await supabase
-        .from('users')
-        .update({
-          first_name: editUser.first_name,
-          last_name: editUser.last_name,
-          email: editUser.email,
-          role: editUser.role,
-          employment_status: editUser.employment_status || 'full_time',
-          phone_number: phoneE164 || null,
-          sms_enabled: editUser.sms_enabled ?? true,
-          supervision_required: editUser.supervision_required ?? false,
-          clinical_supervisor_id: editUser.clinical_supervisor_id || null,
-        })
-        .eq('id', editUser.id)
-
+      const { error: err } = await supabase.from('users').update({
+        first_name: editUser.first_name,
+        last_name: editUser.last_name,
+        email: editUser.email,
+        role: editUser.role,
+        employment_status: editUser.employment_status || 'full_time',
+        phone_number: phoneE164 || null,
+        sms_enabled: editUser.sms_enabled ?? true,
+        supervision_required: editUser.supervision_required ?? false,
+        clinical_supervisor_id: editUser.clinical_supervisor_id || null,
+      }).eq('id', editUser.id)
       if (err) throw err
+
+      // Save pay rates
+      const rateEntries = Object.entries(editUserRates)
+        .filter(([, val]) => val !== '' && val !== null && val !== undefined)
+        .map(([rateTypeId, payRate]) => ({ rate_type_id: rateTypeId, pay_rate: parseFloat(payRate) }))
+      if (rateEntries.length > 0) {
+        await apiPost(`/payroll/user-pay-rates/${editUser.id}`, { rates: rateEntries })
+      }
+
       setEditUser(null)
       loadUsers()
+      loadRateData()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -167,11 +242,7 @@ export default function AdminUsers() {
 
   async function handleToggleActive(user) {
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_active: !user.is_active })
-        .eq('id', user.id)
-
+      const { error } = await supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id)
       if (error) throw error
       loadUsers()
     } catch (err) {
@@ -179,51 +250,20 @@ export default function AdminUsers() {
     }
   }
 
+  const groupedRateTypes = groupRateTypes(rateTypes)
+
   return (
     <div>
       <div className="page-header">
         <h2 className="page-title">Users</h2>
-        {activeTab === 'users' && (
-          <button className="btn btn--primary" onClick={() => setShowAdd(true)}>
-            + Add User
-          </button>
-        )}
+        <button className="btn btn--primary" onClick={() => setShowAdd(true)}>
+          + Add User
+        </button>
       </div>
 
-      {/* Tab Bar */}
-      <div className="page-tabs" style={{ display: 'flex', gap: '0.25rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0' }}>
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setSearchParams(tab.id === 'users' ? {} : { tab: tab.id })}
-            style={{
-              padding: '0.5rem 1rem',
-              fontSize: '0.875rem',
-              fontWeight: activeTab === tab.id ? 600 : 400,
-              color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-muted)',
-              background: 'none',
-              border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: '-1px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab: Pay Rates */}
-      {activeTab === 'pay-rates' && <UserPayRates />}
-
-      {/* Tab: Clinical Leader Assignment */}
-      {activeTab === 'clinical' && <ClinicalLeaderAssignment />}
-
-      {/* Tab: All Users */}
-      {activeTab === 'users' && loading ? (
+      {loading ? (
         <div className="page-loading"><div className="loading-spinner" /></div>
-      ) : activeTab === 'users' && (
+      ) : (
         <>
           {/* Desktop Table */}
           <div className="table-wrapper hide-mobile">
@@ -248,7 +288,7 @@ export default function AdminUsers() {
                     <td><StatusBadge status={u.is_active ? 'active' : 'inactive'} /></td>
                     <td>
                       <div className="table-actions">
-                        <button className="btn btn--small btn--ghost" onClick={() => setEditUser({ ...u })}>Edit</button>
+                        <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
                         <button
                           className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`}
                           onClick={() => handleToggleActive(u)}
@@ -276,7 +316,7 @@ export default function AdminUsers() {
                   <span className="card-value">{ROLES.find(r => r.value === u.role)?.label || u.role}</span>
                 </div>
                 <div className="card-actions">
-                  <button className="btn btn--small btn--ghost" onClick={() => setEditUser({ ...u })}>Edit</button>
+                  <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
                   <button className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`} onClick={() => handleToggleActive(u)}>
                     {u.is_active ? 'Deactivate' : 'Activate'}
                   </button>
@@ -287,7 +327,7 @@ export default function AdminUsers() {
         </>
       )}
 
-      {/* Add User Modal */}
+      {/* ── Add User Modal ── */}
       <Modal open={showAdd} onClose={() => { setShowAdd(false); setError('') }} title="Add User">
         <form onSubmit={handleAddUser}>
           {error && <div className="form-error">{error}</div>}
@@ -333,29 +373,18 @@ export default function AdminUsers() {
           </div>
           <div className="form-row" style={{ marginTop: '0.75rem', gap: '1.5rem' }}>
             <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={form.sms_enabled}
-                onChange={e => setForm({ ...form, sms_enabled: e.target.checked })}
-              />
+              <input type="checkbox" checked={form.sms_enabled} onChange={e => setForm({ ...form, sms_enabled: e.target.checked })} />
               SMS Enabled
             </label>
             <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={form.supervision_required}
-                onChange={e => setForm({ ...form, supervision_required: e.target.checked })}
-              />
+              <input type="checkbox" checked={form.supervision_required} onChange={e => setForm({ ...form, supervision_required: e.target.checked })} />
               Supervision Required
             </label>
           </div>
           {form.supervision_required && (
             <div className="form-field" style={{ marginTop: '0.75rem' }}>
               <label>Clinical Supervisor</label>
-              <select
-                value={form.clinical_supervisor_id}
-                onChange={e => setForm({ ...form, clinical_supervisor_id: e.target.value })}
-              >
+              <select value={form.clinical_supervisor_id} onChange={e => setForm({ ...form, clinical_supervisor_id: e.target.value })}>
                 <option value="">— None —</option>
                 {clinicalLeaders.map(cl => (
                   <option key={cl.id} value={cl.id}>{cl.first_name} {cl.last_name}</option>
@@ -372,10 +401,10 @@ export default function AdminUsers() {
         </form>
       </Modal>
 
-      {/* Pay Rates Step Modal */}
+      {/* ── Pay Rates Step (after adding new user) ── */}
       <Modal open={payRateStep} onClose={() => { setPayRateStep(false); setNewUserId(null); loadUsers() }} title={`Pay Rates — ${newUserName}`} wide>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-          Set the pay rate per unit for each rate type. Leave blank if not applicable. You can always update these later in Users &rarr; Pay Rates.
+          Set the pay rate per unit for each rate type. Leave blank if not applicable. You can update these any time by editing the user.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {rateTypes
@@ -423,6 +452,7 @@ export default function AdminUsers() {
               setPayRateStep(false)
               setNewUserId(null)
               loadUsers()
+              loadRateData()
             } catch (err) {
               alert('Error saving rates: ' + err.message)
             } finally {
@@ -434,11 +464,13 @@ export default function AdminUsers() {
         </div>
       </Modal>
 
-      {/* Edit User Modal */}
-      <Modal open={!!editUser} onClose={() => { setEditUser(null); setError('') }} title="Edit User">
+      {/* ── Edit User Modal ── */}
+      <Modal open={!!editUser} onClose={() => { setEditUser(null); setError('') }} title="Edit User" wide>
         {editUser && (
           <form onSubmit={handleEditUser}>
             {error && <div className="form-error">{error}</div>}
+
+            {/* ── Basic Info ── */}
             <div className="form-row">
               <div className="form-field">
                 <label>First Name</label>
@@ -481,29 +513,18 @@ export default function AdminUsers() {
             </div>
             <div className="form-row" style={{ marginTop: '0.75rem', gap: '1.5rem' }}>
               <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={editUser.sms_enabled ?? true}
-                  onChange={e => setEditUser({ ...editUser, sms_enabled: e.target.checked })}
-                />
+                <input type="checkbox" checked={editUser.sms_enabled ?? true} onChange={e => setEditUser({ ...editUser, sms_enabled: e.target.checked })} />
                 SMS Enabled
               </label>
               <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={editUser.supervision_required ?? false}
-                  onChange={e => setEditUser({ ...editUser, supervision_required: e.target.checked })}
-                />
+                <input type="checkbox" checked={editUser.supervision_required ?? false} onChange={e => setEditUser({ ...editUser, supervision_required: e.target.checked })} />
                 Supervision Required
               </label>
             </div>
             {editUser.supervision_required && (
               <div className="form-field" style={{ marginTop: '0.75rem' }}>
                 <label>Clinical Supervisor</label>
-                <select
-                  value={editUser.clinical_supervisor_id || ''}
-                  onChange={e => setEditUser({ ...editUser, clinical_supervisor_id: e.target.value || null })}
-                >
+                <select value={editUser.clinical_supervisor_id || ''} onChange={e => setEditUser({ ...editUser, clinical_supervisor_id: e.target.value || null })}>
                   <option value="">— None —</option>
                   {clinicalLeaders.map(cl => (
                     <option key={cl.id} value={cl.id}>{cl.first_name} {cl.last_name}</option>
@@ -511,6 +532,44 @@ export default function AdminUsers() {
                 </select>
               </div>
             )}
+
+            {/* ── Pay Rates ── */}
+            {groupedRateTypes.length > 0 && (
+              <>
+                <ModalSection label="Pay Rates" />
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                  Pay rate per unit for each service type. Leave blank if not applicable.
+                </p>
+                {groupedRateTypes.map(group => (
+                  <div key={group.label} style={{ marginBottom: '0.75rem' }}>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
+                      {group.label}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      {group.items.map(rt => (
+                        <div key={rt.id} className="form-row" style={{ alignItems: 'center' }}>
+                          <label style={{ fontSize: '0.85rem', color: 'var(--text)', flex: 1 }}>
+                            {RATE_DISPLAY_NAMES[rt.name] || rt.name}
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>({rt.unit})</span>
+                          </label>
+                          <div style={{ width: '110px' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-input"
+                              placeholder="$ rate"
+                              value={editUserRates[rt.id] || ''}
+                              onChange={e => setEditUserRates(prev => ({ ...prev, [rt.id]: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
             <div className="modal-actions">
               <button type="button" className="btn btn--ghost" onClick={() => setEditUser(null)}>Cancel</button>
               <button type="submit" className="btn btn--primary" disabled={saving}>
