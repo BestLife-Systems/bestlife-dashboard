@@ -1890,3 +1890,39 @@ a { color: var(--accent); text-decoration: none; }
   height: 16px;
   accent-color: var(--accent);
 }
+
+/* ── Performance Tracking ── */
+.perf-controls { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.perf-timeframe-btns { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
+.perf-period-select { max-width: 220px; font-size: 0.85rem; }
+.perf-thresholds-legend { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 0.25rem; align-items: center; margin-left: auto; }
+.perf-legend-sep { opacity: 0.4; }
+
+.perf-table th.num, .perf-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.perf-total-bold { font-weight: 600; color: var(--text-bright); }
+
+/* Leader group row */
+.perf-leader-row { cursor: pointer; background: var(--bg-elevated); border-left: 3px solid var(--accent); transition: background 0.1s; }
+.perf-leader-row:hover { background: var(--bg-card-hover); }
+.perf-leader-row td { font-weight: 600; font-size: 0.875rem; }
+.perf-collapse-icon { display: inline-block; width: 1rem; margin-right: 0.25rem; font-size: 0.7rem; color: var(--text-muted); }
+.perf-leader-pct { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); }
+
+/* Therapist rows */
+.perf-therapist-row td { font-size: 0.85rem; }
+.perf-therapist-name { padding-left: 1.5rem !important; font-weight: 500; color: var(--text-bright); }
+
+/* Status + trend */
+.perf-trend { display: inline-flex; gap: 0.2rem; margin-left: 0.5rem; font-size: 0.7rem; font-weight: 600; }
+.perf-trend-met { color: var(--success); }
+.perf-trend-miss { color: var(--danger); }
+
+/* Capacity editing */
+.perf-cap-btn { background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 0.15rem 0.5rem; font-size: 0.8rem; color: var(--text-muted); cursor: pointer; font-family: var(--font-body); transition: all 0.15s; }
+.perf-cap-btn:hover { border-color: var(--accent); color: var(--accent); }
+.perf-cap-edit { display: inline-flex; align-items: center; gap: 0.25rem; }
+.perf-cap-input { width: 3rem; padding: 0.15rem 0.3rem; font-size: 0.8rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text); text-align: center; }
+.perf-cap-sep { color: var(--text-muted); font-size: 0.75rem; }
+
+/* Period label in header */
+.page-header-sub { font-size: 0.9rem; color: var(--text-muted); font-weight: 400; }

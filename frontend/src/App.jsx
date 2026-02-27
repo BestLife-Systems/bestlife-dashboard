@@ -94,16 +94,19 @@ const ADMIN_TABS = [
 const THERAPIST_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const CLINICAL_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const APN_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const FRONT_DESK_TABS = [
@@ -187,8 +190,8 @@ export default function App() {
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/performance" element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <Layout tabs={ADMIN_TABS}><PerformanceTracking /></Layout>
+            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn']}>
+              <SharedLayout><PerformanceTracking /></SharedLayout>
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/supervision" element={

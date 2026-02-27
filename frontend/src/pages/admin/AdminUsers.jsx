@@ -13,6 +13,12 @@ const ROLES = [
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
 
+const EMPLOYMENT_STATUSES = [
+  { value: 'full_time', label: 'Full-Time' },
+  { value: 'part_time', label: 'Part-Time' },
+  { value: '1099', label: '1099 Contractor' },
+]
+
 function formatPhone(val) {
   const digits = val.replace(/\D/g, '')
   if (digits.length <= 3) return digits
@@ -32,7 +38,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editUser, setEditUser] = useState(null)
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', employment_status: 'full_time', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   // Pay rates step
@@ -80,16 +86,21 @@ export default function AdminUsers() {
         first_name: form.first_name,
         last_name: form.last_name,
         role: form.role,
+        employment_status: form.employment_status,
         phone_number: phoneE164 || null,
         sms_enabled: form.sms_enabled,
         supervision_required: form.supervision_required,
         clinical_supervisor_id: form.clinical_supervisor_id || null,
       })
+      // Set employment_status directly (backend invite may not support it yet)
+      if (result.user_id && form.employment_status !== 'full_time') {
+        await supabase.from('users').update({ employment_status: form.employment_status }).eq('id', result.user_id)
+      }
       // Transition to pay rates step
       setNewUserId(result.user_id)
       setNewUserName(`${form.first_name} ${form.last_name}`)
       setShowAdd(false)
-      setForm({ first_name: '', last_name: '', email: '', role: 'therapist', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
+      setForm({ first_name: '', last_name: '', email: '', role: 'therapist', employment_status: 'full_time', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
       // Load rate types for pay rates step
       try {
         const ratesData = await apiGet('/payroll/rate-catalog')
@@ -125,6 +136,7 @@ export default function AdminUsers() {
           last_name: editUser.last_name,
           email: editUser.email,
           role: editUser.role,
+          employment_status: editUser.employment_status || 'full_time',
           phone_number: phoneE164 || null,
           sms_enabled: editUser.sms_enabled ?? true,
           supervision_required: editUser.supervision_required ?? false,
@@ -249,11 +261,19 @@ export default function AdminUsers() {
             <label>Email</label>
             <input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
           </div>
-          <div className="form-field">
-            <label>Role</label>
-            <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
+          <div className="form-row">
+            <div className="form-field">
+              <label>Role</label>
+              <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <div className="form-field">
+              <label>Employment Status</label>
+              <select value={form.employment_status} onChange={e => setForm({ ...form, employment_status: e.target.value })}>
+                {EMPLOYMENT_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
           </div>
           <div className="form-field" style={{ marginTop: '0.75rem' }}>
             <label>Phone Number</label>
@@ -389,11 +409,19 @@ export default function AdminUsers() {
               <label>Email</label>
               <input type="email" value={editUser.email} onChange={e => setEditUser({ ...editUser, email: e.target.value })} />
             </div>
-            <div className="form-field" style={{ marginTop: '0.75rem' }}>
-              <label>Role</label>
-              <select value={editUser.role} onChange={e => setEditUser({ ...editUser, role: e.target.value })}>
-                {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
+            <div className="form-row" style={{ marginTop: '0.75rem' }}>
+              <div className="form-field">
+                <label>Role</label>
+                <select value={editUser.role} onChange={e => setEditUser({ ...editUser, role: e.target.value })}>
+                  {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
+              <div className="form-field">
+                <label>Employment Status</label>
+                <select value={editUser.employment_status || 'full_time'} onChange={e => setEditUser({ ...editUser, employment_status: e.target.value })}>
+                  {EMPLOYMENT_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
             </div>
             <div className="form-field" style={{ marginTop: '0.75rem' }}>
               <label>Phone Number</label>

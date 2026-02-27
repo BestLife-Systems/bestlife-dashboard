@@ -141,6 +141,7 @@ class InviteUserRequest(BaseModel):
     first_name: str
     last_name: str
     role: str
+    employment_status: Optional[str] = "full_time"
     phone_number: Optional[str] = None
     sms_enabled: bool = True
     supervision_required: bool = False
@@ -201,6 +202,7 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
         "first_name": req.first_name,
         "last_name": req.last_name,
         "role": req.role,
+        "employment_status": req.employment_status or "full_time",
         "is_active": True,
     }
     if req.phone_number:
@@ -2748,41 +2750,370 @@ async def migrate_rate_types(admin=Depends(require_admin)):
     return {"status": "migration_complete", "message": "Rate types updated successfully"}
 
 
+# ── Performance Tracking Thresholds ──
+PERF_THRESHOLDS = {
+    "full_time": {"monthly": 40, "per_period": 20},
+    "part_time": {"monthly": 20, "per_period": 10},
+    "1099": {"monthly": 10, "per_period": 5},
+}
+
+# Rate type names → display column mapping for performance grid
+RATE_TO_PERF_COL = {
+    "IIC-LC": "iic", "IIC-MA": "iic", "IIC-BA": "iic",
+    "OP-LC Session": "op", "OP-MA Session": "op", "OP Cancellation": "op",
+    "SBYS": "sbys",
+    "ADOS Assessment - In Home": "ados", "ADOS Assessment - At Office": "ados",
+    "PTO": "pto", "Sick Leave": "sick",
+    "Administration": "admin",
+    "APN Session (30)": "iic", "APN Intake (60)": "iic",  # APN counts toward total
+    "Community Event (Day)": "admin",
+}
+
+
+def _quarter_for_month(month_str: str):
+    """Given 'YYYY-MM', return ('YYYY-Q1', ['YYYY-01','YYYY-02','YYYY-03'])."""
+    y, m = int(month_str[:4]), int(month_str[5:7])
+    q = (m - 1) // 3 + 1
+    start_m = (q - 1) * 3 + 1
+    months = [f"{y}-{start_m + i:02d}" for i in range(3)]
+    return f"{y}-Q{q}", months
+
+
 @app.get("/api/analytics/performance")
-async def analytics_performance(user=Depends(verify_token)):
-    """Analytics: Performance tracking with threshold flags."""
-    rollups = await sb_request("GET", "rollup_monthly", params={
-        "select": "*, users(first_name, last_name, role)",
-        "order": "user_id.asc",
-    })
+async def analytics_performance(
+    timeframe: str = "monthly",
+    period: str = "",
+    user=Depends(verify_token),
+):
+    """Performance tracking: per-service hours, thresholds, status badges, grouped by leader."""
+    profile = user
+    caller_role = profile.get("role", "therapist")
+    caller_id = profile.get("id")
 
-    # Aggregate by user
-    user_hours = {}
-    for r in (rollups or []):
-        uid = r["user_id"]
-        u = r.get("users") or {}
-        if uid not in user_hours:
-            user_hours[uid] = {
-                "user_name": f"{u.get('first_name', '')} {u.get('last_name', '')}".strip(),
-                "role": u.get("role", ""),
-                "total_hours": 0,
-                "months": 0,
-            }
-        user_hours[uid]["total_hours"] += float(r.get("total_hours", 0))
-        user_hours[uid]["months"] += 1
+    today = date.today()
 
-    result = []
-    for uid, data in user_hours.items():
-        weeks = max(data["months"] * 4.33, 1)
-        avg_weekly = data["total_hours"] / weeks
-        result.append({
-            "user_name": data["user_name"],
-            "role": data["role"],
-            "avg_weekly_hours": round(avg_weekly, 1),
-            "client_count": None,
+    # ── 1. Determine date range + period info ──
+    if timeframe == "pay_period" and period:
+        # Specific pay period by ID
+        pp = await sb_request("GET", "pay_periods", params={"id": f"eq.{period}", "select": "id,start_date,end_date,label"})
+        if not pp:
+            raise HTTPException(status_code=404, detail="Pay period not found")
+        start_date = pp[0]["start_date"]
+        end_date = pp[0]["end_date"]
+        period_label = pp[0].get("label", f"{start_date} – {end_date}")
+    elif timeframe == "quarterly":
+        # period = "YYYY-QN"
+        if period and "-Q" in period:
+            y = int(period[:4])
+            q = int(period[-1])
+        else:
+            y, q = today.year, (today.month - 1) // 3 + 1
+        sm = (q - 1) * 3 + 1
+        start_date = f"{y}-{sm:02d}-01"
+        em = sm + 2
+        last_day = calendar.monthrange(y, em)[1]
+        end_date = f"{y}-{em:02d}-{last_day}"
+        period_label = f"Q{q} {y}"
+        period = f"{y}-Q{q}"
+    elif timeframe == "yearly":
+        y = int(period) if period and period.isdigit() else today.year
+        start_date = f"{y}-01-01"
+        end_date = f"{y}-12-31"
+        period_label = str(y)
+        period = str(y)
+    else:
+        # monthly (default)
+        timeframe = "monthly"
+        if period and len(period) == 7:
+            y, m = int(period[:4]), int(period[5:7])
+        else:
+            y, m = today.year, today.month
+            period = f"{y}-{m:02d}"
+        start_date = f"{y}-{m:02d}-01"
+        last_day = calendar.monthrange(y, m)[1]
+        end_date = f"{y}-{m:02d}-{last_day}"
+        months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
+        period_label = f"{months_names[m-1]} {y}"
+
+    # ── 2. Build available periods for dropdown ──
+    all_periods = await sb_request("GET", "pay_periods", params={
+        "select": "id,label,start_date,end_date,status",
+        "status": "eq.closed",
+        "order": "start_date.desc",
+    }) or []
+
+    available_periods = []
+    if timeframe == "pay_period":
+        for p in all_periods:
+            available_periods.append({"value": p["id"], "label": p.get("label", p["start_date"])})
+        if not period and available_periods:
+            period = available_periods[0]["value"]
+            pp = await sb_request("GET", "pay_periods", params={"id": f"eq.{period}", "select": "id,start_date,end_date,label"})
+            if pp:
+                start_date = pp[0]["start_date"]
+                end_date = pp[0]["end_date"]
+                period_label = pp[0].get("label", start_date)
+    elif timeframe == "monthly":
+        seen = set()
+        for p in all_periods:
+            mk = p["start_date"][:7]
+            if mk not in seen:
+                seen.add(mk)
+                y2, m2 = int(mk[:4]), int(mk[5:7])
+                months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
+                available_periods.append({"value": mk, "label": f"{months_names[m2-1]} {y2}"})
+    elif timeframe == "quarterly":
+        seen = set()
+        for p in all_periods:
+            y2, m2 = int(p["start_date"][:4]), int(p["start_date"][5:7])
+            qk = f"{y2}-Q{(m2-1)//3+1}"
+            if qk not in seen:
+                seen.add(qk)
+                available_periods.append({"value": qk, "label": qk.replace("-", " ")})
+    elif timeframe == "yearly":
+        seen = set()
+        for p in all_periods:
+            yk = p["start_date"][:4]
+            if yk not in seen:
+                seen.add(yk)
+                available_periods.append({"value": yk, "label": yk})
+
+    # ── 3. Fetch users (trackable roles only) ──
+    trackable_roles = ["therapist", "clinical_leader", "apn"]
+    all_users = await sb_request("GET", "users", params={
+        "is_active": "eq.true",
+        "select": "id,first_name,last_name,role,employment_status,clinical_supervisor_id",
+    }) or []
+    # Filter to trackable roles
+    all_users = [u for u in all_users if u.get("role") in trackable_roles]
+
+    # Role-based visibility
+    if caller_role == "admin":
+        visible_users = all_users
+    elif caller_role == "clinical_leader":
+        visible_users = [u for u in all_users if u["id"] == caller_id or u.get("clinical_supervisor_id") == caller_id]
+    else:
+        visible_users = [u for u in all_users if u["id"] == caller_id]
+
+    user_map = {u["id"]: u for u in visible_users}
+
+    # ── 4. Find pay periods in date range ──
+    range_periods = await sb_request("GET", "pay_periods", params={
+        "select": "id,start_date,end_date",
+        "start_date": f"gte.{start_date}",
+        "end_date": f"lte.{end_date}",
+        "status": "eq.closed",
+    }) or []
+    period_ids = [p["id"] for p in range_periods]
+    num_periods = max(len(period_ids), 1)
+
+    # ── 5. Fetch time_entries for those periods, joined to rate_types ──
+    user_service_hours = {uid: {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
+
+    if period_ids:
+        for pid in period_ids:
+            entries = await sb_request("GET", "time_entries", params={
+                "pay_period_id": f"eq.{pid}",
+                "select": "user_id,quantity,client_initials,rate_types(name)",
+            }) or []
+            for e in entries:
+                uid = e["user_id"]
+                if uid not in user_service_hours:
+                    continue
+                rt = e.get("rate_types") or {}
+                rname = rt.get("name", "")
+                qty = float(e.get("quantity", 0))
+                col = RATE_TO_PERF_COL.get(rname, None)
+                if col and col in user_service_hours[uid]:
+                    user_service_hours[uid][col] += qty
+                user_service_hours[uid]["total"] += qty
+
+    # ── 6. Fetch therapist_capacity ──
+    caps = await sb_request("GET", "therapist_capacity", params={"select": "user_id,iic_capacity,op_capacity"}) or []
+    cap_map = {c["user_id"]: c for c in caps}
+
+    # ── 7. Compute status badges (quarterly accountability) ──
+    # For monthly view: determine which quarter this month belongs to
+    # Then check each month in the quarter for compliance
+    if timeframe == "monthly":
+        current_month = period  # "YYYY-MM"
+    elif timeframe == "pay_period" and period_ids:
+        current_month = start_date[:7]
+    else:
+        current_month = f"{today.year}-{today.month:02d}"
+
+    _, quarter_months = _quarter_for_month(current_month)
+
+    # Get total hours per user per month in this quarter (from rollup_monthly)
+    quarter_compliance = {uid: {} for uid in user_map}  # uid → {month: total_hours}
+    for qm in quarter_months:
+        rollups = await sb_request("GET", "rollup_monthly", params={
+            "month_year": f"eq.{qm}",
+            "select": "user_id,total_hours",
+        }) or []
+        for r in rollups:
+            uid = r["user_id"]
+            if uid in quarter_compliance:
+                quarter_compliance[uid][qm] = float(r.get("total_hours", 0))
+
+    def compute_status(uid, emp_status):
+        threshold = PERF_THRESHOLDS.get(emp_status, PERF_THRESHOLDS["full_time"])["monthly"]
+        trend = []
+        months_below = 0
+        for qm in quarter_months:
+            hrs = quarter_compliance.get(uid, {}).get(qm, 0)
+            met = hrs >= threshold
+            trend.append(met)
+            if not met and qm <= current_month:
+                months_below += 1
+        # Current month compliance
+        current_hrs = quarter_compliance.get(uid, {}).get(current_month, 0)
+        current_met = current_hrs >= threshold
+        if current_met:
+            status = "on_track"
+        elif months_below >= 2:
+            status = "action_required"
+        else:
+            status = "warning"
+        return status, trend
+
+    # ── 8. Group by clinical_supervisor_id ──
+    groups_map = {}  # leader_id → list of therapist dicts
+    for uid, u in user_map.items():
+        leader_id = u.get("clinical_supervisor_id")
+        emp = u.get("employment_status", "full_time")
+        hrs = user_service_hours.get(uid, {})
+        cap = cap_map.get(uid, {})
+        status, trend = compute_status(uid, emp)
+
+        iic_cap = int(cap.get("iic_capacity", 0) or 0)
+        op_cap = int(cap.get("op_capacity", 0) or 0)
+        total_cap = iic_cap + op_cap
+        util_pct = None  # Placeholder — caseload not implemented yet
+
+        therapist_row = {
+            "user_id": uid,
+            "name": f"{u.get('first_name', '')} {u.get('last_name', '')}".strip(),
+            "role": u.get("role", ""),
+            "employment_status": emp,
+            "status": status,
+            "quarter_trend": trend,
+            "iic": round(hrs.get("iic", 0), 1),
+            "op": round(hrs.get("op", 0), 1),
+            "sbys": round(hrs.get("sbys", 0), 1),
+            "ados": round(hrs.get("ados", 0), 1),
+            "sick": round(hrs.get("sick", 0), 1),
+            "pto": round(hrs.get("pto", 0), 1),
+            "admin_hours": round(hrs.get("admin", 0), 1),
+            "total_hours": round(hrs.get("total", 0), 1),
+            "avg_per_period": round(hrs.get("total", 0) / num_periods, 1),
+            "caseload_iic": None,  # Placeholder
+            "caseload_op": None,   # Placeholder
+            "iic_capacity": iic_cap,
+            "op_capacity": op_cap,
+            "utilization_pct": util_pct,
+        }
+
+        if leader_id not in groups_map:
+            groups_map[leader_id] = []
+        groups_map[leader_id].append(therapist_row)
+
+    # Build response groups
+    # Fetch leader names
+    leader_ids = [lid for lid in groups_map if lid]
+    leader_names = {}
+    leader_emp = {}
+    if leader_ids:
+        leaders = await sb_request("GET", "users", params={
+            "id": f"in.({','.join(leader_ids)})",
+            "select": "id,first_name,last_name,employment_status",
+        }) or []
+        for l in leaders:
+            leader_names[l["id"]] = f"{l.get('first_name', '')} {l.get('last_name', '')}".strip()
+            leader_emp[l["id"]] = l.get("employment_status", "full_time")
+
+    groups = []
+    for lid, therapists in groups_map.items():
+        if lid is None:
+            continue
+        # Sum team totals
+        team = {
+            "iic": sum(t["iic"] for t in therapists),
+            "op": sum(t["op"] for t in therapists),
+            "sbys": sum(t["sbys"] for t in therapists),
+            "ados": sum(t["ados"] for t in therapists),
+            "sick": sum(t["sick"] for t in therapists),
+            "pto": sum(t["pto"] for t in therapists),
+            "total_hours": sum(t["total_hours"] for t in therapists),
+            "avg_per_period": round(sum(t["total_hours"] for t in therapists) / num_periods, 1),
+        }
+        # % meeting threshold
+        meeting = sum(1 for t in therapists if t["status"] == "on_track")
+        pct = round(meeting / max(len(therapists), 1) * 100, 0)
+
+        groups.append({
+            "leader_id": lid,
+            "leader_name": leader_names.get(lid, "Unknown"),
+            "leader_employment_status": leader_emp.get(lid, "full_time"),
+            "team_totals": team,
+            "pct_meeting_threshold": pct,
+            "therapists": sorted(therapists, key=lambda t: t["name"]),
         })
 
-    return result
+    # Add unassigned group at the end
+    unassigned = groups_map.get(None, [])
+    if unassigned:
+        team = {
+            "iic": sum(t["iic"] for t in unassigned),
+            "op": sum(t["op"] for t in unassigned),
+            "sbys": sum(t["sbys"] for t in unassigned),
+            "ados": sum(t["ados"] for t in unassigned),
+            "sick": sum(t["sick"] for t in unassigned),
+            "pto": sum(t["pto"] for t in unassigned),
+            "total_hours": sum(t["total_hours"] for t in unassigned),
+            "avg_per_period": round(sum(t["total_hours"] for t in unassigned) / num_periods, 1),
+        }
+        meeting = sum(1 for t in unassigned if t["status"] == "on_track")
+        pct = round(meeting / max(len(unassigned), 1) * 100, 0)
+        groups.append({
+            "leader_id": None,
+            "leader_name": "Unassigned",
+            "leader_employment_status": None,
+            "team_totals": team,
+            "pct_meeting_threshold": pct,
+            "therapists": sorted(unassigned, key=lambda t: t["name"]),
+        })
+
+    # Sort groups: named leaders first (alphabetical), then unassigned
+    groups.sort(key=lambda g: (g["leader_id"] is None, g["leader_name"]))
+
+    return {
+        "timeframe": timeframe,
+        "period": period,
+        "period_label": period_label,
+        "available_periods": available_periods,
+        "thresholds": {k: v["monthly"] for k, v in PERF_THRESHOLDS.items()},
+        "groups": groups,
+    }
+
+
+@app.patch("/api/analytics/therapist-capacity/{user_id}")
+async def update_therapist_capacity(user_id: str, req: dict = Body(...), admin=Depends(require_admin)):
+    """Admin: set or update capacity targets for a therapist."""
+    existing = await sb_request("GET", "therapist_capacity", params={
+        "user_id": f"eq.{user_id}", "select": "id",
+    })
+    data = {
+        "user_id": user_id,
+        "iic_capacity": int(req.get("iic_capacity", 0) or 0),
+        "op_capacity": int(req.get("op_capacity", 0) or 0),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    if existing:
+        await sb_request("PATCH", f"therapist_capacity?user_id=eq.{user_id}", data=data)
+    else:
+        await sb_request("POST", "therapist_capacity", data=data)
+    return {"status": "updated"}
 
 
 @app.get("/api/analytics/supervision-compliance")
