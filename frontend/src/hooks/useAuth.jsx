@@ -11,19 +11,41 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Get initial session — handle stale/expired sessions gracefully
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.warn('Session recovery failed, clearing stale session:', error.message)
+        supabase.auth.signOut().catch(() => {})
+        setUser(null)
+        setProfile(null)
+        setLoading(false)
+        return
+      }
       setUser(session?.user ?? null)
       if (session?.user) {
         fetchProfile(session.user.id)
       } else {
         setLoading(false)
       }
+    }).catch((err) => {
+      console.warn('getSession threw, clearing state:', err)
+      supabase.auth.signOut().catch(() => {})
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          // Token refresh failed — stale session
+          console.warn('Token refresh failed, signing out')
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
         setUser(session?.user ?? null)
         if (session?.user) {
           await fetchProfile(session.user.id)

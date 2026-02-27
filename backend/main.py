@@ -729,6 +729,7 @@ async def get_task_instances(user=Depends(verify_token)):
     """
     Get task instances for the current user.
     Admins see all; others see only their own (by user_id or role).
+    Deduplicates by title+due_date, keeping the most-recently-updated instance.
     """
     params = {
         "select": "*, task_templates(title, schedule_type)",
@@ -740,7 +741,30 @@ async def get_task_instances(user=Depends(verify_token)):
         params["or"] = f"(assigned_to_user_id.eq.{user['id']},assigned_to_role.eq.{user['role']})"
 
     instances = await sb_request("GET", "task_instances", params=params)
-    return instances or []
+    if not instances:
+        return []
+
+    # Deduplicate: for each title+due_date combo, if ANY instance is 'done', exclude all
+    done_keys = set()
+    for inst in instances:
+        if inst.get("status") in ("done", "skipped"):
+            key = f"{inst.get('title')}|{inst.get('due_date')}"
+            done_keys.add(key)
+
+    deduped = {}
+    for inst in instances:
+        key = f"{inst.get('title')}|{inst.get('due_date')}"
+        if key in done_keys:
+            # Keep the done/skipped one (for history), skip backlog dupes
+            if inst.get("status") in ("done", "skipped"):
+                if key not in deduped or deduped[key].get("status") not in ("done", "skipped"):
+                    deduped[key] = inst
+            continue
+        # For non-done tasks, keep the first (oldest) one
+        if key not in deduped:
+            deduped[key] = inst
+
+    return list(deduped.values())
 
 
 @app.patch("/api/tasks/instances/{instance_id}")
@@ -3517,6 +3541,61 @@ async def analytics_supervision(user=Depends(verify_token)):
 
 # ── AI Features (Claude API) ─────────────────────────────────────
 
+BETTY_SYSTEM_PROMPT = """You are Betty, the AI assistant built into the BestLife Hub — the internal operations \
+platform for BestLife Behavioral Health, an ABA therapy practice in Cape May Court House, NJ. \
+You are an expert on every feature of the Hub. Be concise, friendly, and professional.
+
+## HUB NAVIGATION & FEATURES
+**Home Page**: Dashboard with greeting, Total Hours of Impact counter, weather widget, \
+Wins feed (staff share business/personal wins), My Tasks (next 7 days, checkable), \
+Upcoming Meetings, and Announcements (categorized: general, policy, celebration, outing). \
+Admins can add/edit/remove wins, meetings, and announcements.
+
+**VTO (Vision/Traction Organizer)**: EOS tool with two columns — Vision (Core Values, \
+Core Focus, 10-Year Target, Marketing Strategy, 3-Year Picture) and Traction (1-Year Plan, \
+Rocks with assigned owners). Admins can edit all fields.
+
+**Knowledge Base**: Internal wiki for policies, procedures, clinical guides. AI-assisted \
+article creation available.
+
+**Analytics** (Admin):
+- Billing Summary: Revenue & pay breakdown per pay period, per-service-type detail, margin analysis. Shows 'Paid to Staff' breakdown by service type.
+- Performance Tracking: Per-therapist hours by service type (IIC, OP, SBYS, ADOS, Sick, PTO). Thresholds: Full-time = 80hrs/mo, Part-time = 40hrs/mo, 1099 = 20hrs/mo. Grouped by clinical leader teams. Avg/Pd shown in green (on track) or red (off track). Click a name to see month-over-month and quarter-over-quarter history.
+- Supervision Compliance: Track clinical supervision hours.
+- Therapist Capacity: Caseload utilization tracking (coming soon).
+- Scorecard: EOS scorecard (coming soon).
+
+**Payroll** (Admin):
+- Pay Periods: Create/manage bi-weekly pay periods, open/close them.
+- Approval Queue: Review submitted therapist invoices before finalizing.
+- Export Batches: Export payroll data.
+- Rate Catalog: Manage rate types (IIC-LC, IIC-MA, IIC-BA, OP-LC, OP-MA, SBYS, ADOS Assessment In Home/At Office, Administration, PTO, Sick Leave, etc.).
+
+**Users** (Admin): Manage all staff — roles (admin, clinical_leader, therapist, apn, front_desk), employment status (full_time, part_time, 1099), pay rates, clinical leader assignments.
+
+**Therapist Invoice Flow**: Therapists submit bi-weekly invoices with IIC sessions (coded IICLC/IICMA/BA), OP sessions, SBYS hours, ADOS assessments (each = 3 work hours), admin hours, supervision, sick leave, and PTO. Invoices go to approval queue, admin approves, time entries created, pay period closed.
+
+**Ask Betty** (this feature): Available on every page via the bottom bar. Staff can ask questions about any Hub feature, policies, workflows, or get help.
+
+## CLINICAL CONTEXT
+BestLife provides ABA (Applied Behavior Analysis) therapy. Service types:
+- IIC (Intensive In-Community): In-home therapy sessions (LC = licensed clinician, MA = master's level, BA = bachelor's level)
+- OP (Outpatient): Office-based therapy sessions
+- SBYS (Step by Your Side): Community-based support
+- ADOS: Autism Diagnostic Observation Schedule assessments (each = 3 hours of work)
+- APN: Advanced Practice Nurse sessions
+
+## ROLES
+- Admin: Full access to all features
+- Clinical Leader: Sees own team's performance, supervisees
+- Therapist: Sees own performance, submits invoices
+- APN: Similar to therapist
+- Front Desk: Home, VTO, Knowledge Base only
+
+Always answer based on the Hub's actual features. If something doesn't exist yet, say so. \
+If you're unsure about a specific BestLife policy, recommend they check the Knowledge Base \
+or ask their clinical leader/admin."""
+
 @app.get("/api/ai/status")
 async def ai_status(admin=Depends(require_admin)):
     """Check if AI is configured (admin only)."""
@@ -3536,12 +3615,7 @@ async def ai_chat(req: AIChatRequest, user=Depends(verify_token)):
 
     import anthropic
 
-    system_message = req.system_hint or (
-        "You are Betty, a helpful AI assistant for BestLife Behavioral Health. "
-        "You help staff with questions about their dashboard, tasks, policies, billing, "
-        "clinical workflows, and general practice operations. Be concise, friendly, and professional. "
-        "If you don't know something specific to BestLife, say so honestly."
-    )
+    system_message = req.system_hint or BETTY_SYSTEM_PROMPT
 
     if req.context:
         system_message += f"\n\nAdditional context: {req.context}"

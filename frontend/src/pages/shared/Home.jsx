@@ -430,10 +430,7 @@ export default function Home() {
               <div className="home-task-list">
                 {tasks.map(task => (
                   <div key={task.id} className="home-task-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
-                      <span className={`task-priority task-priority--${task.priority}`}>{task.priority === 'high' ? '!' : task.priority === 'medium' ? '\u2013' : '\u00B7'}</span>
-                      <span className="home-task-title">{task.title}</span>
-                    </div>
+                    <span className="home-task-title">{task.title}</span>
                     <span className="home-task-due" style={{ color: isOverdue(task.due_date, task.status) ? 'var(--danger)' : isToday(task.due_date) ? 'var(--accent)' : 'var(--text-muted)' }}>
                       {isOverdue(task.due_date, task.status) && '\u26A0 '}{isToday(task.due_date) ? 'Today' : formatDate(task.due_date)}
                     </span>
@@ -501,10 +498,10 @@ export default function Home() {
                     </div>
                     {!(annEditMode || annRemoveMode) && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
                     {annEditMode && !ann._isBirthday && (
-                      <button className="home-inline-action-flow home-inline-edit-flow" onClick={() => openEditAnn(ann)} title="Edit"><PencilIcon /></button>
+                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto' }}><PencilIcon /></button>
                     )}
                     {annRemoveMode && !ann._isBirthday && (
-                      <button className="home-inline-action-flow home-inline-remove-flow" onClick={() => removeAnn(ann)} title="Remove"><XIcon /></button>
+                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto' }}><XIcon /></button>
                     )}
                   </div>
                 ))}
