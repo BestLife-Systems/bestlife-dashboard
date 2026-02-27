@@ -286,7 +286,10 @@ export default function Home() {
       await apiPatch('/impact-hours', { baseline: parseFloat(baselineInput) || 0 })
       await loadImpactHours()
       setEditingBaseline(false)
-    } catch (err) { console.error('Failed to save baseline:', err) }
+    } catch (err) {
+      console.error('Failed to save baseline:', err)
+      alert('Failed to save baseline: ' + (err.message || 'Unknown error'))
+    }
   }
 
   // ── Win handlers ──
