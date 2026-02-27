@@ -3690,5 +3690,12 @@ if os.path.exists(frontend_dist):
     async def serve_frontend(full_path: str):
         file_path = os.path.join(frontend_dist, full_path)
         if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
+            # Hashed assets (JS/CSS) can be cached forever; index.html must not be cached
+            if "/assets/" in full_path:
+                return FileResponse(file_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+            return FileResponse(file_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        # SPA fallback — never cache index.html
+        return FileResponse(
+            os.path.join(frontend_dist, "index.html"),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )

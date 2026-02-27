@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { supabase } from '../lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -16,15 +15,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (user && profile) navigate('/', { replace: true })
   }, [user, profile, navigate])
-
-  // On mount: nuke any stale auth data from localStorage so fresh login works
-  useEffect(() => {
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
-        localStorage.removeItem(key)
-      }
-    })
-  }, [])
 
   const handleLogin = async (e) => {
     e.preventDefault()

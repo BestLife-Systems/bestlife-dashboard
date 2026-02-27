@@ -478,8 +478,8 @@ export default function Home() {
         <div className="card home-widget">
           <SectionHeader icon="📢" title="Announcements" showButtons={isAdmin}
             onAdd={openAddAnn}
-            onEdit={() => setAnnEditMode(m => !m)}
-            onRemove={() => setAnnRemoveMode(m => !m)}
+            onEdit={() => { setAnnEditMode(m => !m); setAnnRemoveMode(false) }}
+            onRemove={() => { setAnnRemoveMode(m => !m); setAnnEditMode(false) }}
             editLabel={annEditMode ? 'Done' : 'Edit'}
             removeLabel={annRemoveMode ? 'Done' : '- Remove'}
           />
@@ -489,22 +489,28 @@ export default function Home() {
             if (allAnn.length === 0) return <div style={{ padding: '1.5rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem' }}>No announcements right now.</div>
             return (
               <div>
-                {allAnn.map(ann => (
-                  <div key={ann.id} className="home-announcement">
-                    <span className="home-announcement-badge" style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}>{ann.category}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
-                      {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
+                {allAnn.map(ann => {
+                  const canModify = !ann._isBirthday
+                  const isEditing = annEditMode && canModify
+                  const isRemoving = annRemoveMode && canModify
+                  return (
+                    <div
+                      key={ann.id}
+                      className="home-announcement"
+                      onClick={isEditing ? () => openEditAnn(ann) : undefined}
+                      style={isEditing ? { cursor: 'pointer', background: 'var(--accent-glow)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : isRemoving ? { background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : undefined}
+                    >
+                      <span className="home-announcement-badge" style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}>{ann.category}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
+                        {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
+                      </div>
+                      {isEditing && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 500, marginLeft: 'auto' }}>tap to edit</span>}
+                      {isRemoving && <button onClick={(e) => { e.stopPropagation(); removeAnn(ann) }} style={{ flexShrink: 0, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '0.25rem 0.75rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, marginLeft: 'auto' }}>Remove</button>}
+                      {!isEditing && !isRemoving && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
                     </div>
-                    {annEditMode && !ann._isBirthday ? (
-                      <button onClick={() => openEditAnn(ann)} title="Edit" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto', fontSize: '14px', lineHeight: 1, padding: 0 }}>✏</button>
-                    ) : annRemoveMode && !ann._isBirthday ? (
-                      <button onClick={() => removeAnn(ann)} title="Remove" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto', fontSize: '16px', lineHeight: 1, fontWeight: 'bold', padding: 0 }}>✕</button>
-                    ) : (
-                      <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )
           })()}
