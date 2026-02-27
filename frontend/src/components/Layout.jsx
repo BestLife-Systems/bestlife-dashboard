@@ -81,38 +81,12 @@ export default function Layout({ children, tabs }) {
           <div className="logo" onClick={() => navigate('/home')} style={{ cursor: 'pointer' }}>
             <svg className="logo-icon-svg" width="24" height="24" viewBox="0 0 48 48" fill="none">
               <circle cx="24" cy="24" r="22" fill="var(--accent)" />
-              <circle cx="17" cy="20" r="3" fill="#fff" />
-              <circle cx="31" cy="20" r="3" fill="#fff" />
               <path d="M15 30c2 5 7 7 9 7s7-2 9-7" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none" />
             </svg>
             <span className="logo-text">BestLife Hub</span>
           </div>
         </div>
         <div className="topbar-right">
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-          >
-            {theme === 'dark' ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" />
-                <line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-          </button>
           <div className="user-menu-container">
             <button className="user-menu-trigger" onClick={() => setUserMenuOpen(!userMenuOpen)}>
               <div className="user-avatar">
@@ -184,6 +158,33 @@ export default function Layout({ children, tabs }) {
                 </NavLink>
               )
             })}
+          </div>
+
+          {/* Lighting Mode toggle at bottom of sidebar */}
+          <div className="sidebar-footer">
+            <div className="sidebar-divider" />
+            <button className="sidebar-link sidebar-theme-toggle" onClick={toggleTheme}>
+              <span className="sidebar-icon">
+                {theme === 'dark' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="5" />
+                    <line x1="12" y1="1" x2="12" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="23" />
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                    <line x1="1" y1="12" x2="3" y2="12" />
+                    <line x1="21" y1="12" x2="23" y2="12" />
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                  </svg>
+                )}
+              </span>
+              <span className="sidebar-label">Lighting Mode</span>
+            </button>
           </div>
         </nav>
 

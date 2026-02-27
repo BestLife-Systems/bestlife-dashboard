@@ -5,6 +5,7 @@ import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { fetchMyInstances, updateInstanceStatus } from '../../lib/tasksApi'
 import { fetchMeetingInstances, deleteMeetingInstance } from '../../lib/meetingsApi'
 import { fetchAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../lib/announcementsApi'
+import { apiGet, apiPatch } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
 import Modal from '../../components/Modal'
 
@@ -136,6 +137,9 @@ export default function Home() {
   const [announcements, setAnnouncements] = useState([])
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true)
   const [weather, setWeather] = useState(null)
+  const [impactHours, setImpactHours] = useState(null)
+  const [editingBaseline, setEditingBaseline] = useState(false)
+  const [baselineInput, setBaselineInput] = useState('')
   const [showAllWins, setShowAllWins] = useState(false)
   const [birthdayAnnouncements, setBirthdayAnnouncements] = useState([])
   const [undoTask, setUndoTask] = useState(null)
@@ -171,6 +175,7 @@ export default function Home() {
     loadMeetings()
     loadAnnouncements()
     loadWeather()
+    loadImpactHours()
   }, [])
 
   // ── Data loaders ──
@@ -266,6 +271,21 @@ export default function Home() {
     } catch {}
   }
 
+  async function loadImpactHours() {
+    try {
+      const data = await apiGet('/impact-hours')
+      setImpactHours(data)
+    } catch (err) { console.error('Failed to load impact hours:', err) }
+  }
+
+  async function saveBaseline() {
+    try {
+      await apiPatch('/impact-hours', { baseline: parseFloat(baselineInput) || 0 })
+      await loadImpactHours()
+      setEditingBaseline(false)
+    } catch (err) { console.error('Failed to save baseline:', err) }
+  }
+
   // ── Win handlers ──
   function openAddWin() { setWinForm({ category: 'business', body: '' }); setWinModal({ open: true, editing: null }) }
   function openEditWin(win) { setWinForm({ category: win.category, body: win.body }); setWinModal({ open: true, editing: win }); setWinEditMode(false) }
@@ -321,6 +341,22 @@ export default function Home() {
         <div>
           <h2 className="page-title">{greeting}, {firstName}</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>Here's what's on your plate today.</p>
+          {impactHours && (
+            <div className="impact-counter">
+              <span className="impact-number">{Math.round(impactHours.total).toLocaleString()}</span>
+              <span className="impact-label">Total Hours of Impact</span>
+              {isAdmin && !editingBaseline && (
+                <button className="impact-edit-btn" onClick={() => { setBaselineInput(String(impactHours.baseline || 0)); setEditingBaseline(true) }} title="Set baseline hours">Set Baseline</button>
+              )}
+              {editingBaseline && (
+                <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
+                  <input type="number" value={baselineInput} onChange={e => setBaselineInput(e.target.value)} className="form-input" style={{ width: '6rem', fontSize: '0.8rem', padding: '0.2rem 0.4rem' }} placeholder="Baseline hrs" />
+                  <button className="btn btn--xs btn--primary" onClick={saveBaseline}>Save</button>
+                  <button className="btn btn--xs btn--ghost" onClick={() => setEditingBaseline(false)}>Cancel</button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
         {weather && (() => {
           const w = weatherInfo(weather.code)

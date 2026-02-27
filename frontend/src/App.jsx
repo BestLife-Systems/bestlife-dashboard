@@ -30,6 +30,7 @@ import ClinicalLeaderAssignment from './pages/admin/ClinicalLeaderAssignment'
 import BillingSummary from './pages/admin/BillingSummary'
 import PerformanceTracking from './pages/admin/PerformanceTracking'
 import SupervisionCompliance from './pages/admin/SupervisionCompliance'
+import Scorecard from './pages/admin/Scorecard'
 
 // Therapist pages
 import TherapistStats from './pages/therapist/TherapistStats'
@@ -44,6 +45,7 @@ import ClinicalSupervision from './pages/clinical/ClinicalSupervision'
 import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
 import MyWork from './pages/shared/MyWork'
+import VTO from './pages/shared/VTO'
 
 // Public pages (no auth required)
 import PublicInvoice from './pages/public/PublicInvoice'
@@ -63,6 +65,7 @@ import {
 
 const ADMIN_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
   { section: 'Admin' },
   {
@@ -70,6 +73,7 @@ const ADMIN_TABS = [
       { path: '/admin/analytics/billing-summary', label: 'Billing Summary' },
       { path: '/admin/analytics/performance', label: 'Performance Tracking' },
       { path: '/admin/analytics/supervision', label: 'Supervision Compliance' },
+      { path: '/admin/analytics/scorecard', label: 'Scorecard' },
     ],
   },
   {
@@ -93,24 +97,28 @@ const ADMIN_TABS = [
 
 const THERAPIST_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const CLINICAL_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const APN_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
 const FRONT_DESK_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
+  { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
 ]
 
@@ -177,6 +185,11 @@ export default function App() {
               <SharedLayout><Home /></SharedLayout>
             </ProtectedRoute>
           } />
+          <Route path="/vto" element={
+            <ProtectedRoute>
+              <SharedLayout><VTO /></SharedLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/knowledge-base" element={
             <ProtectedRoute>
               <SharedLayout><KnowledgeBase /></SharedLayout>
@@ -197,6 +210,11 @@ export default function App() {
           <Route path="/admin/analytics/supervision" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <Layout tabs={ADMIN_TABS}><SupervisionCompliance /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/analytics/scorecard" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <Layout tabs={ADMIN_TABS}><Scorecard /></Layout>
             </ProtectedRoute>
           } />
           {/* Legacy analytics redirect */}
