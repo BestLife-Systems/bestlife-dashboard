@@ -1631,6 +1631,11 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
             "unit": rt.get("unit", "hourly"),
         }
 
+    # Fallback: fetch all rate types so time entries can always be written
+    # even when a user has no pay rate configured for a given service type
+    all_rate_types = await sb_request("GET", "rate_types", params={"select": "id,name,unit"})
+    rate_type_fallback = {rt["name"]: rt for rt in (all_rate_types or [])}
+
     # Get bill rate defaults
     bill_defaults = await sb_request("GET", "bill_rate_defaults", params={
         "select": "*, rate_types(name)",
@@ -1656,10 +1661,13 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
         if qty == 0:
             return
         rate_info = pay_rate_map.get(rate_name, {})
-        rate_type_id = rate_info.get("rate_type_id")
+        # Fall back to the rate_types catalog so entries are always written
+        # even when a user has no pay rate configured for this service type
+        fallback = rate_type_fallback.get(rate_name, {})
+        rate_type_id = rate_info.get("rate_type_id") or fallback.get("id")
         pay_rate = rate_info.get("pay_rate", 0)
         bill_rate = bill_rate_map.get(rate_name, 0)
-        unit = rate_info.get("unit", "hourly")
+        unit = rate_info.get("unit") or fallback.get("unit", "hourly")
         est_bill = bill_rate * qty
         est_pay = pay_rate * qty
         if rate_type_id:
