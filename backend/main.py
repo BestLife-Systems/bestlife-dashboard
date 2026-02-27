@@ -169,11 +169,18 @@ async def health():
 
 @app.post("/api/admin/invite-user")
 async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
-    """Create a new user via Supabase Auth invite and add to users table."""
-    # Step 1: Invite via Supabase Auth — this creates the auth user AND sends the email
+    """Create a new user via Supabase Admin API and add to users table.
+
+    Uses /auth/v1/admin/users (no email rate limit) instead of /auth/v1/invite.
+    Users can set their password via the 'Forgot Password' flow on first login.
+    """
+    import secrets
+
+    # Step 1: Create auth user via Admin API (bypasses email rate limits)
+    temp_password = secrets.token_urlsafe(24)
     async with httpx.AsyncClient(timeout=15.0) as client:
-        invite_resp = await client.post(
-            f"{SUPABASE_URL}/auth/v1/invite",
+        create_resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
             headers={
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
@@ -181,19 +188,21 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
             },
             json={
                 "email": req.email,
-                "data": {
+                "password": temp_password,
+                "email_confirm": True,
+                "user_metadata": {
                     "first_name": req.first_name,
                     "last_name": req.last_name,
                 },
             },
         )
 
-        if invite_resp.status_code >= 400:
-            err_body = invite_resp.json() if invite_resp.headers.get("content-type", "").startswith("application/json") else {}
-            error_detail = err_body.get("msg") or err_body.get("error_description") or err_body.get("message") or invite_resp.text
+        if create_resp.status_code >= 400:
+            err_body = create_resp.json() if create_resp.headers.get("content-type", "").startswith("application/json") else {}
+            error_detail = err_body.get("msg") or err_body.get("error_description") or err_body.get("message") or create_resp.text
             raise HTTPException(status_code=400, detail=f"Auth error: {error_detail}")
 
-        auth_user = invite_resp.json()
+        auth_user = create_resp.json()
         auth_id = auth_user.get("id", "")
 
     # Step 2: Insert into users table
@@ -218,7 +227,7 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
     new_user = await sb_request("POST", "users", data=user_data)
     user_id = new_user[0]["id"] if isinstance(new_user, list) else new_user.get("id")
 
-    return {"status": "invited", "email": req.email, "user_id": user_id}
+    return {"status": "created", "email": req.email, "user_id": user_id}
 
 
 # ── TherapyNotes Upload & Processing ────────────────────────────
