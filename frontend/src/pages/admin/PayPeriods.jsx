@@ -32,6 +32,18 @@ export default function PayPeriods() {
   const [deleteMode, setDeleteMode] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null) // period to confirm
 
+  // Generate year state
+  const [showGenYear, setShowGenYear] = useState(false)
+  const [genYear, setGenYear] = useState(new Date().getFullYear())
+  const [generating, setGenerating] = useState(false)
+  const [genResult, setGenResult] = useState(null)
+
+  // Bulk import state
+  const [showBulkImport, setShowBulkImport] = useState(false)
+  const [bulkCsv, setBulkCsv] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
+
   useEffect(() => { loadPeriods() }, [])
 
   // Cleanup timers on unmount
@@ -156,6 +168,62 @@ export default function PayPeriods() {
     return `${base}/invoice/${draftToken}`
   }
 
+  async function handleGenerateYear() {
+    setGenerating(true)
+    setGenResult(null)
+    try {
+      const result = await apiPost('/payroll/pay-periods/generate-year', { year: genYear })
+      setGenResult(result)
+      loadPeriods()
+    } catch (err) {
+      setGenResult({ error: err.message })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  function parseCsv(text) {
+    const lines = text.trim().split('\n').filter(l => l.trim())
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'))
+    return lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim())
+      const obj = {}
+      headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+      return {
+        user_name: obj.name || obj.user_name || obj.employee || '',
+        iic: parseFloat(obj.iic) || 0,
+        op: parseFloat(obj.op) || 0,
+        sbys: parseFloat(obj.sbys) || 0,
+        ados: parseFloat(obj.ados) || 0,
+        admin_hours: parseFloat(obj.admin_hours || obj.admin) || 0,
+        supervision: parseFloat(obj.supervision) || 0,
+        sick: parseFloat(obj.sick) || 0,
+        pto: parseFloat(obj.pto) || 0,
+      }
+    }).filter(r => r.user_name)
+  }
+
+  async function handleBulkImport() {
+    const rows = parseCsv(bulkCsv)
+    if (rows.length === 0) {
+      setImportResult({ error: 'No valid rows found. Check your CSV format.' })
+      return
+    }
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const result = await apiPost(`/payroll/pay-periods/${detailPeriod.id}/bulk-import`, { rows })
+      setImportResult(result)
+      loadRecipients(detailPeriod.id)
+      loadPeriods()
+    } catch (err) {
+      setImportResult({ error: err.message })
+    } finally {
+      setImporting(false)
+    }
+  }
+
   async function copyLink(url, id) {
     try {
       await navigator.clipboard.writeText(url)
@@ -193,6 +261,7 @@ export default function PayPeriods() {
         </div>
 
         <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button className="btn btn--small btn--primary" onClick={() => { setShowBulkImport(true); setBulkCsv(''); setImportResult(null) }}>Bulk Import</button>
           {detailPeriod.status === 'open' && !pendingClose && (
             <button className="btn btn--small btn--secondary" onClick={() => initiateClose(detailPeriod.id)}>Close Period</button>
           )}
@@ -250,6 +319,43 @@ export default function PayPeriods() {
             </table>
           </div>
         )}
+
+        {/* Bulk Import Modal */}
+        <Modal open={showBulkImport} onClose={() => setShowBulkImport(false)} title="Bulk Import Time Entries">
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+            Paste CSV data with columns: <strong>name, iic, op, sbys, ados, admin_hours, supervision, sick, pto</strong>
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: '1rem' }}>
+            Names should match users in the system (e.g. "Jane Smith" or "Smith, Jane"). Columns with 0 or blank are skipped.
+          </p>
+          <textarea
+            className="form-input"
+            rows={10}
+            placeholder={'name,iic,op,sbys,ados,admin_hours,supervision,sick,pto\nJane Smith,12,8,0,2,4,1,0,0\nJohn Doe,10,6,2,0,3,1,0,8'}
+            value={bulkCsv}
+            onChange={e => setBulkCsv(e.target.value)}
+            style={{ fontFamily: 'monospace', fontSize: '0.8rem', width: '100%', resize: 'vertical' }}
+          />
+          {importResult && !importResult.error && (
+            <div style={{ marginTop: '0.75rem', padding: '0.625rem 0.875rem', background: 'rgba(34,197,94,0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(34,197,94,0.2)', fontSize: '0.825rem', color: '#4ade80' }}>
+              ✓ Imported {importResult.imported_entries} entries for {importResult.users_processed} users.
+              {importResult.errors?.length > 0 && (
+                <div style={{ marginTop: '0.5rem', color: '#f87171' }}>
+                  {importResult.errors.map((e, i) => <div key={i}>⚠ {e}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+          {importResult?.error && (
+            <div className="form-error" style={{ marginTop: '0.75rem' }}>{importResult.error}</div>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+            <button className="btn btn--secondary btn--small" onClick={() => setShowBulkImport(false)}>Cancel</button>
+            <button className="btn btn--primary btn--small" onClick={handleBulkImport} disabled={importing || !bulkCsv.trim()}>
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+          </div>
+        </Modal>
       </div>
     )
   }
@@ -258,7 +364,10 @@ export default function PayPeriods() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Pay Periods</h2>
-        <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn btn--secondary" onClick={() => { setShowGenYear(true); setGenResult(null) }}>Generate Year</button>
+          <button className="btn btn--primary" onClick={() => setShowCreate(true)}>+ New Pay Period</button>
+        </div>
       </div>
 
       {/* Undo close banner (list view) */}
@@ -362,6 +471,39 @@ export default function PayPeriods() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Generate Year Modal */}
+      <Modal open={showGenYear} onClose={() => setShowGenYear(false)} title="Generate Year of Pay Periods">
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+          Create all 24 semi-monthly pay periods (1st–15th and 16th–end) for the selected year. Existing periods will be skipped.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+          <label style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-bright)' }}>Year:</label>
+          <input
+            type="number"
+            className="form-input"
+            value={genYear}
+            onChange={e => setGenYear(parseInt(e.target.value) || new Date().getFullYear())}
+            min={2020}
+            max={2100}
+            style={{ width: '100px' }}
+          />
+        </div>
+        {genResult && !genResult.error && (
+          <div style={{ marginBottom: '1rem', padding: '0.625rem 0.875rem', background: 'rgba(34,197,94,0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(34,197,94,0.2)', fontSize: '0.825rem', color: '#4ade80' }}>
+            ✓ Created {genResult.created} pay periods. {genResult.skipped > 0 && `(${genResult.skipped} already existed)`}
+          </div>
+        )}
+        {genResult?.error && (
+          <div className="form-error" style={{ marginBottom: '1rem' }}>{genResult.error}</div>
+        )}
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <button className="btn btn--secondary btn--small" onClick={() => setShowGenYear(false)}>Cancel</button>
+          <button className="btn btn--primary btn--small" onClick={handleGenerateYear} disabled={generating}>
+            {generating ? 'Generating…' : `Generate ${genYear}`}
+          </button>
+        </div>
       </Modal>
 
       <Modal open={showCreate} onClose={() => { setShowCreate(false); setError('') }} title="Create Pay Period">

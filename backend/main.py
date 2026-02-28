@@ -1467,6 +1467,186 @@ class PayPeriodCreateRequest(BaseModel):
     period_type: str  # 'first_half' or 'second_half'
 
 
+class GenerateYearRequest(BaseModel):
+    year: int
+
+
+@app.post("/api/payroll/pay-periods/generate-year")
+async def generate_year_pay_periods(req: GenerateYearRequest, admin=Depends(require_admin)):
+    """Admin: generate all semi-monthly pay periods for a given year."""
+    year = req.year
+    if year < 2020 or year > 2100:
+        raise HTTPException(status_code=400, detail="Year must be between 2020 and 2100")
+
+    # Fetch existing periods for this year to avoid duplicates
+    existing = await sb_request("GET", "pay_periods", params={
+        "start_date": f"gte.{year}-01-01",
+        "end_date": f"lte.{year}-12-31",
+        "select": "start_date,end_date",
+    }) or []
+    existing_ranges = {(p["start_date"], p["end_date"]) for p in existing}
+
+    created = []
+    skipped = 0
+    for month in range(1, 13):
+        _, last_day = calendar.monthrange(year, month)
+        periods = [
+            (date(year, month, 1), date(year, month, 15), "first_half"),
+            (date(year, month, 16), date(year, month, last_day), "second_half"),
+        ]
+        for start, end, ptype in periods:
+            if (start.isoformat(), end.isoformat()) in existing_ranges:
+                skipped += 1
+                continue
+            label = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+            result = await sb_request("POST", "pay_periods", data={
+                "period_type": ptype,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "due_date": end.isoformat(),
+                "status": "draft",
+                "label": label,
+                "created_by": admin["id"],
+            })
+            created.append(result)
+
+    return {"created": len(created), "skipped": skipped, "total": len(created) + skipped}
+
+
+class BulkTimeEntryRow(BaseModel):
+    user_name: str
+    iic: Optional[float] = 0
+    op: Optional[float] = 0
+    sbys: Optional[float] = 0
+    ados: Optional[float] = 0
+    admin_hours: Optional[float] = 0
+    supervision: Optional[float] = 0
+    sick: Optional[float] = 0
+    pto: Optional[float] = 0
+
+
+class BulkImportRequest(BaseModel):
+    rows: List[BulkTimeEntryRow]
+
+
+@app.post("/api/payroll/pay-periods/{period_id}/bulk-import")
+async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin=Depends(require_admin)):
+    """Admin: bulk-import time entries for a pay period from spreadsheet data."""
+    # Verify the period exists
+    periods = await sb_request("GET", "pay_periods", params={"id": f"eq.{period_id}", "select": "*"})
+    if not periods:
+        raise HTTPException(status_code=404, detail="Pay period not found")
+    period = periods[0]
+
+    # Get all active users to match by name
+    all_users = await sb_request("GET", "users", params={
+        "is_active": "eq.true",
+        "select": "id,first_name,last_name,role",
+    }) or []
+    # Build name→user map (case-insensitive, "First Last" format)
+    user_by_name = {}
+    for u in all_users:
+        full = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip().lower()
+        user_by_name[full] = u
+        # Also map "Last, First" format
+        reverse = f"{u.get('last_name', '')}, {u.get('first_name', '')}".strip().lower()
+        user_by_name[reverse] = u
+
+    # Get rate types
+    rate_types = await sb_request("GET", "rate_types", params={
+        "is_active": "eq.true",
+        "select": "id,name",
+    }) or []
+    rt_map = {r["name"].lower(): r["id"] for r in rate_types}
+
+    # Map our simple column names to rate_type names
+    col_to_rt = {
+        "iic": ["iic-lc session", "iic-ma session", "iic-ba session"],
+        "op": ["op-lc session", "op-ma session"],
+        "sbys": ["sbys"],
+        "ados": ["ados assessment in home", "ados assessment at office"],
+        "admin_hours": ["administration"],
+        "supervision": ["supervision"],
+        "sick": ["sick leave"],
+        "pto": ["pto"],
+    }
+
+    # Find the best matching rate type for each column (pick the first that exists)
+    col_rt_id = {}
+    for col, candidates in col_to_rt.items():
+        for c in candidates:
+            if c in rt_map:
+                col_rt_id[col] = rt_map[c]
+                break
+
+    # Get or create recipients for this period
+    existing_recipients = await sb_request("GET", "pay_period_recipients", params={
+        "pay_period_id": f"eq.{period_id}",
+        "select": "id,user_id",
+    }) or []
+    recipient_by_user = {r["user_id"]: r["id"] for r in existing_recipients}
+
+    imported = 0
+    errors = []
+
+    for row in req.rows:
+        name_key = row.user_name.strip().lower()
+        user = user_by_name.get(name_key)
+        if not user:
+            errors.append(f"User not found: {row.user_name}")
+            continue
+
+        uid = user["id"]
+
+        # Create recipient if not exists
+        if uid not in recipient_by_user:
+            import secrets as _secrets
+            recip = await sb_request("POST", "pay_period_recipients", data={
+                "pay_period_id": period_id,
+                "user_id": uid,
+                "status": "received",
+                "draft_token": _secrets.token_urlsafe(32),
+            })
+            recipient_by_user[uid] = recip[0]["id"] if isinstance(recip, list) else recip["id"]
+
+        recip_id = recipient_by_user[uid]
+
+        # Create time entries for each non-zero column
+        row_data = {
+            "iic": row.iic or 0,
+            "op": row.op or 0,
+            "sbys": row.sbys or 0,
+            "ados": row.ados or 0,
+            "admin_hours": row.admin_hours or 0,
+            "supervision": row.supervision or 0,
+            "sick": row.sick or 0,
+            "pto": row.pto or 0,
+        }
+
+        for col, hours in row_data.items():
+            if hours <= 0 or col not in col_rt_id:
+                continue
+            await sb_request("POST", "time_entries", data={
+                "recipient_id": recip_id,
+                "user_id": uid,
+                "pay_period_id": period_id,
+                "rate_type_id": col_rt_id[col],
+                "quantity": hours,
+                "est_bill_amount": 0,
+                "est_pay_amount": 0,
+            })
+            imported += 1
+
+        # Mark recipient as received
+        await sb_request("PATCH", f"pay_period_recipients?id=eq.{recip_id}", data={"status": "received"})
+
+    # If period is still draft, move to open
+    if period["status"] == "draft":
+        await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={"status": "open"})
+
+    return {"imported_entries": imported, "users_processed": len(req.rows) - len(errors), "errors": errors}
+
+
 @app.post("/api/payroll/pay-periods")
 async def create_pay_period(req: PayPeriodCreateRequest, admin=Depends(require_admin)):
     """Admin: create a new pay period."""
