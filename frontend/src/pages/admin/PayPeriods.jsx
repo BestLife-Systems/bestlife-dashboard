@@ -212,17 +212,14 @@ export default function PayPeriods() {
       const hours = parseFloat(cells[1]) || 0
       if (!name || hours === 0) continue
 
-      // Handle Miscellaneous section (rows are service types, not people)
+      // Handle Miscellaneous section: skip ADOS, everything else is APN hours
       if (currentSection === 'misc') {
-        const lowerName = name.toLowerCase()
-        if (lowerName.includes('ados')) continue // skip ADOS (can't attribute to a person)
-        if (lowerName.includes('apn')) {
-          // APN hours go to Tracey
-          const key = 'tracey'
-          if (!people[key]) people[key] = { name: 'Tracey', iic: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
-          people[key].apn = (people[key].apn || 0) + hours
-          continue
-        }
+        if (name.toLowerCase().includes('ados')) continue
+        // Strip parenthetical suffixes like "(60 min)" to get clean name
+        const cleanMiscName = name.replace(/\s*\(.*?\)\s*$/, '').trim()
+        const miscKey = cleanMiscName.toLowerCase()
+        if (!people[miscKey]) people[miscKey] = { name: cleanMiscName, iic: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
+        people[miscKey].apn = (people[miscKey].apn || 0) + hours
         continue
       }
 
