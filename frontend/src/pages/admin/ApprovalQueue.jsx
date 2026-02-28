@@ -32,6 +32,11 @@ const XIcon = () => (
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 )
+const PlusIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+)
 
 // ── Review Page (full-page detail) ──
 function ReviewPage({ recipient, onBack, onUpdate }) {
@@ -56,14 +61,35 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
   const data = liveData
   const isReceived = recipient.status === 'received'
 
+  function ensureAllSections(base) {
+    if (!base.iic) base.iic = {}
+    if (!base.iic['IICLC-H0036TJU1']) base.iic['IICLC-H0036TJU1'] = []
+    if (!base.iic['IICMA-H0036TJU2']) base.iic['IICMA-H0036TJU2'] = []
+    if (!base.iic['BA-H2014TJ']) base.iic['BA-H2014TJ'] = []
+    if (!base.op) base.op = { sessions: [] }
+    if (!base.op.sessions) base.op.sessions = []
+    if (!base.sbys) base.sbys = []
+    if (!base.ados) base.ados = []
+    if (!base.apn) base.apn = []
+    if (!base.admin) base.admin = []
+    if (!base.supervision) base.supervision = {}
+    if (!base.supervision.individual) base.supervision.individual = []
+    if (!base.supervision.group) base.supervision.group = []
+    if (!base.sick_leave) base.sick_leave = { date: '', hours: '', reason: '' }
+    if (!base.pto) base.pto = { hours: '' }
+    return base
+  }
+
   function startEdit() {
-    setEditData(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
+    const base = ensureAllSections(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
+    setEditData(base)
     setEditMode(true)
     setRemoveMode(false)
   }
 
   function startRemove() {
-    setEditData(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
+    const base = ensureAllSections(JSON.parse(JSON.stringify(recipient.invoice_data || {})))
+    setEditData(base)
     setRemoveMode(true)
     setEditMode(false)
   }
@@ -152,10 +178,111 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     })
   }
 
+  // ── APN edit/remove helpers ──
+  function editApnField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, apn: [...(prev.apn || [])] }
+      next.apn[idx] = { ...next.apn[idx], [field]: value }
+      return next
+    })
+  }
+  function removeApnEntry(idx) {
+    setEditData(prev => ({ ...prev, apn: (prev.apn || []).filter((_, i) => i !== idx) }))
+  }
+
+  // ── Supervision edit/remove helpers ──
+  function editSupIndivField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, supervision: { ...prev.supervision } }
+      next.supervision.individual = [...(next.supervision.individual || [])]
+      next.supervision.individual[idx] = { ...next.supervision.individual[idx], [field]: value }
+      return next
+    })
+  }
+  function editSupGroupField(idx, field, value) {
+    setEditData(prev => {
+      const next = { ...prev, supervision: { ...prev.supervision } }
+      next.supervision.group = [...(next.supervision.group || [])]
+      next.supervision.group[idx] = { ...next.supervision.group[idx], [field]: value }
+      return next
+    })
+  }
+  function removeSupIndivEntry(idx) {
+    setEditData(prev => {
+      const next = { ...prev, supervision: { ...prev.supervision } }
+      next.supervision.individual = (next.supervision.individual || []).filter((_, i) => i !== idx)
+      return next
+    })
+  }
+  function removeSupGroupEntry(idx) {
+    setEditData(prev => {
+      const next = { ...prev, supervision: { ...prev.supervision } }
+      next.supervision.group = (next.supervision.group || []).filter((_, i) => i !== idx)
+      return next
+    })
+  }
+
+  // ── Sick leave / PTO edit helpers ──
+  function editSickField(field, value) {
+    setEditData(prev => ({ ...prev, sick_leave: { ...(prev.sick_leave || {}), [field]: value } }))
+  }
+  function editPtoField(field, value) {
+    setEditData(prev => ({ ...prev, pto: { ...(prev.pto || {}), [field]: value } }))
+  }
+
+  // ── Add-row helpers (used in edit mode) ──
+  function addIicEntry(code) {
+    setEditData(prev => {
+      const next = { ...prev, iic: { ...(prev.iic || {}) } }
+      next.iic[code] = [...(next.iic[code] || []), { cyber_initials: '', date: '', hours: '' }]
+      return next
+    })
+  }
+  function addOpEntry(isCancel = false) {
+    setEditData(prev => {
+      const next = { ...prev, op: { ...(prev.op || {}) } }
+      next.op.sessions = [...(next.op.sessions || []), { client_initials: '', date: '', ...(isCancel ? { cancel_fee: true } : {}) }]
+      return next
+    })
+  }
+  function addSbysEntry() {
+    setEditData(prev => ({ ...prev, sbys: [...(prev.sbys || []), { date: '', hours: '' }] }))
+  }
+  function addAdosEntry() {
+    setEditData(prev => ({ ...prev, ados: [...(prev.ados || []), { client_initials: '', location: 'In home', id_number: '', date: '' }] }))
+  }
+  function addApnEntry() {
+    setEditData(prev => ({ ...prev, apn: [...(prev.apn || []), { date: '', hours: '', type: '30min' }] }))
+  }
+  function addAdminEntry() {
+    setEditData(prev => ({ ...prev, admin: [...(prev.admin || []), { date: '', hours: '' }] }))
+  }
+  function addSupervisionEntry(kind) {
+    setEditData(prev => {
+      const next = { ...prev, supervision: { ...(prev.supervision || {}) } }
+      if (kind === 'individual') {
+        next.supervision.individual = [...(next.supervision.individual || []), { supervisor_name: '', date: '' }]
+      } else {
+        next.supervision.group = [...(next.supervision.group || []), { supervisee_names: [], date: '' }]
+      }
+      return next
+    })
+  }
+
+  // ── Quick-add: enter edit mode + add a row in one click ──
+  function quickAdd(setupFn) {
+    const base = ensureAllSections(JSON.parse(JSON.stringify(editData || recipient.invoice_data || {})))
+    setupFn(base)
+    setEditData(base)
+    setEditMode(true)
+    setRemoveMode(false)
+  }
+
   async function handleApprove() {
-    // Check sick leave decision
+    // Check sick leave decision — only require approve/disapprove if the ORIGINAL submission had sick leave
     const hasSick = data.sick_leave && parseFloat(data.sick_leave.hours) > 0
-    if (hasSick && sickDecision === null) {
+    const originalHadSick = recipient.invoice_data?.sick_leave && parseFloat(recipient.invoice_data.sick_leave.hours) > 0
+    if (hasSick && originalHadSick && sickDecision === null) {
       setError('Please approve or disapprove the sick leave request before approving')
       return
     }
@@ -231,38 +358,59 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
 
   const isEditing = editMode || removeMode
 
-  // ── IIC rendering ──
+  // ── IIC rendering (always shows all 3 billing codes) ──
   function renderIIC() {
-    const iic = data.iic
-    if (!iic) return null
-    const codes = Object.entries(iic)
-    const hasData = codes.some(([, entries]) => entries && entries.length > 0)
-    if (!hasData) return null
+    const iic = data.iic || {}
+    const allCodes = ['IICLC-H0036TJU1', 'IICMA-H0036TJU2', 'BA-H2014TJ']
 
     return (
       <div className="review-section">
         <h4 className="review-section-title">IIC Sessions</h4>
-        {codes.map(([code, entries]) => {
-          if (!entries || entries.length === 0) return null
+        {allCodes.map(code => {
+          const entries = iic[code] || []
           const subtotal = entries.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
           return (
             <div key={code} className="review-subsection">
-              <div className="review-subsection-label">{IIC_CODE_LABELS[code] || code} — <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{code}</span></div>
-              <table className="review-table">
-                <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Cyber # / Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-                <tbody>
-                  {entries.map((e, i) => (
-                    <tr key={i}>
-                      {removeMode && <td><button className="review-remove-x" onClick={() => removeIicEntry(code, i)}><XIcon /></button></td>}
-                      <td>{editMode ? <input className="review-edit-input" value={e.cyber_initials || ''} onChange={ev => editIicField(code, i, 'cyber_initials', ev.target.value)} /> : (e.cyber_initials || '—')}</td>
-                      <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editIicField(code, i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                      <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editIicField(code, i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
-                      {editMode && <td><PencilIcon /></td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="review-subtotal">{subtotal} hrs</div>
+              <div className="review-subsection-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>{IIC_CODE_LABELS[code] || code} — <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{code}</span></span>
+                {isReceived && !isEditing && (
+                  <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+                    onClick={() => quickAdd(b => { if (!b.iic) b.iic = {}; if (!b.iic[code]) b.iic[code] = []; b.iic[code].push({ cyber_initials: '', date: '', hours: '' }) })}>
+                    <PlusIcon /> Add
+                  </button>
+                )}
+              </div>
+              {entries.length > 0 ? (
+                <>
+                  <table className="review-table">
+                    <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Cyber # / Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+                    <tbody>
+                      {entries.map((e, i) => (
+                        <tr key={i}>
+                          {removeMode && <td><button className="review-remove-x" onClick={() => removeIicEntry(code, i)}><XIcon /></button></td>}
+                          <td>{editMode ? <input className="review-edit-input" value={e.cyber_initials || ''} onChange={ev => editIicField(code, i, 'cyber_initials', ev.target.value)} /> : (e.cyber_initials || '—')}</td>
+                          <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editIicField(code, i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                          <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editIicField(code, i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                          {editMode && <td><PencilIcon /></td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {editMode && (
+                    <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                      onClick={() => addIicEntry(code)}><PlusIcon /> Add Row</button>
+                  )}
+                  <div className="review-subtotal">{subtotal} hrs</div>
+                </>
+              ) : isEditing ? (
+                <>
+                  <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                    onClick={() => addIicEntry(code)}><PlusIcon /> Add Row</button>
+                  <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 hrs</div>
+                </>
+              ) : (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
+              )}
             </div>
           )
         })}
@@ -270,214 +418,443 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     )
   }
 
-  // ── OP rendering ──
+  // ── OP rendering (always shown) ──
   function renderOP() {
-    const op = data.op
-    if (!op || !op.sessions || op.sessions.length === 0) return null
-    const sessions = op.sessions.filter(e => !e.cancel_fee)
-    const cancellations = op.sessions.filter(e => e.cancel_fee)
-    // Map indices back to original array for removal
+    const op = data.op || {}
+    const allSessions = op.sessions || []
+    const sessions = allSessions.filter(e => !e.cancel_fee)
+    const cancellations = allSessions.filter(e => e.cancel_fee)
     const sessionIndices = []; const cancelIndices = []
-    op.sessions.forEach((e, i) => { if (!e.cancel_fee) sessionIndices.push(i); else cancelIndices.push(i) })
+    allSessions.forEach((e, i) => { if (!e.cancel_fee) sessionIndices.push(i); else cancelIndices.push(i) })
+    const hasData = allSessions.length > 0
 
     return (
       <div className="review-section">
-        <h4 className="review-section-title">OP Sessions</h4>
-        {sessions.length > 0 && (
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>OP Sessions</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.op) b.op = {}; if (!b.op.sessions) b.op.sessions = []; b.op.sessions.push({ client_initials: '', date: '' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
+        </div>
+        {hasData ? (
           <>
-            <table className="review-table">
-              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-              <tbody>
-                {sessions.map((e, i) => (
-                  <tr key={i}>
-                    {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(sessionIndices[i])}><XIcon /></button></td>}
-                    <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(sessionIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
-                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(sessionIndices[i], 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                    <td className="review-number">1</td>
-                    {editMode && <td><PencilIcon /></td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="review-subtotal">{sessions.length} hrs</div>
+            {sessions.length > 0 && (
+              <>
+                <table className="review-table">
+                  <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+                  <tbody>
+                    {sessions.map((e, i) => (
+                      <tr key={i}>
+                        {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(sessionIndices[i])}><XIcon /></button></td>}
+                        <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(sessionIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                        <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(sessionIndices[i], 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                        <td className="review-number">1</td>
+                        {editMode && <td><PencilIcon /></td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="review-subtotal">{sessions.length} hrs</div>
+              </>
+            )}
+            {cancellations.length > 0 && (
+              <>
+                <div className="review-subsection-label" style={{ marginTop: '0.75rem', color: 'var(--danger, #f87171)' }}>Cancellations</div>
+                <table className="review-table">
+                  <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+                  <tbody>
+                    {cancellations.map((e, i) => (
+                      <tr key={i}>
+                        {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(cancelIndices[i])}><XIcon /></button></td>}
+                        <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(cancelIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                        <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(cancelIndices[i], 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                        <td className="review-number">1</td>
+                        {editMode && <td><PencilIcon /></td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} hrs</div>
+              </>
+            )}
+            {editMode && (
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+                <button className="btn btn--ghost btn--small" style={{ fontSize: '0.75rem' }}
+                  onClick={() => addOpEntry(false)}><PlusIcon /> Add Session</button>
+                <button className="btn btn--ghost btn--small" style={{ fontSize: '0.75rem' }}
+                  onClick={() => addOpEntry(true)}><PlusIcon /> Add Cancellation</button>
+              </div>
+            )}
           </>
-        )}
-        {cancellations.length > 0 && (
+        ) : isEditing ? (
           <>
-            <div className="review-subsection-label" style={{ marginTop: '0.75rem', color: 'var(--danger, #f87171)' }}>Cancellations</div>
-            <table className="review-table">
-              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-              <tbody>
-                {cancellations.map((e, i) => (
-                  <tr key={i}>
-                    {removeMode && <td><button className="review-remove-x" onClick={() => removeOpEntry(cancelIndices[i])}><XIcon /></button></td>}
-                    <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editOpField(cancelIndices[i], 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
-                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editOpField(cancelIndices[i], 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                    <td className="review-number">1</td>
-                    {editMode && <td><PencilIcon /></td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="review-subtotal" style={{ color: 'var(--danger, #f87171)' }}>{cancellations.length} hrs</div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+              <button className="btn btn--ghost btn--small" style={{ fontSize: '0.75rem' }}
+                onClick={() => addOpEntry(false)}><PlusIcon /> Add Session</button>
+              <button className="btn btn--ghost btn--small" style={{ fontSize: '0.75rem' }}
+                onClick={() => addOpEntry(true)}><PlusIcon /> Add Cancellation</button>
+            </div>
+            <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 hrs</div>
           </>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
         )}
       </div>
     )
   }
 
-  // ── SBYS rendering ──
+  // ── SBYS rendering (always shown) ──
   function renderSBYS() {
-    const sbys = data.sbys
-    if (!sbys || sbys.length === 0) return null
+    const sbys = data.sbys || []
     const total = sbys.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
     return (
       <div className="review-section">
-        <h4 className="review-section-title">School Based Youth Services</h4>
-        <table className="review-table">
-          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-          <tbody>
-            {sbys.map((e, i) => (
-              <tr key={i}>
-                {removeMode && <td><button className="review-remove-x" onClick={() => removeSbysEntry(i)}><XIcon /></button></td>}
-                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editSbysField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editSbysField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
-                {editMode && <td><PencilIcon /></td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="review-subtotal">{total} hrs</div>
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>School Based Youth Services</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.sbys) b.sbys = []; b.sbys.push({ date: '', hours: '' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
+        </div>
+        {sbys.length > 0 ? (
+          <>
+            <table className="review-table">
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+              <tbody>
+                {sbys.map((e, i) => (
+                  <tr key={i}>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeSbysEntry(i)}><XIcon /></button></td>}
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editSbysField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                    <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editSbysField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                    {editMode && <td><PencilIcon /></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {editMode && (
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={addSbysEntry}><PlusIcon /> Add Row</button>
+            )}
+            <div className="review-subtotal">{total} hrs</div>
+          </>
+        ) : isEditing ? (
+          <>
+            <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+              onClick={addSbysEntry}><PlusIcon /> Add Row</button>
+            <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 hrs</div>
+          </>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
+        )}
       </div>
     )
   }
 
-  // ── ADOS rendering ──
+  // ── ADOS rendering (always shown) ──
   function renderADOS() {
-    const ados = data.ados
-    if (!ados || ados.length === 0) return null
+    const ados = data.ados || []
     const inHome = ados.filter(e => e.location === 'In home').length
     const atOffice = ados.filter(e => e.location === 'At office').length
     return (
       <div className="review-section">
-        <h4 className="review-section-title">ADOS Assessments</h4>
-        <table className="review-table">
-          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Location</th><th>ID #</th><th>Date</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-          <tbody>
-            {ados.map((e, i) => (
-              <tr key={i}>
-                {removeMode && <td><button className="review-remove-x" onClick={() => removeAdosEntry(i)}><XIcon /></button></td>}
-                <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editAdosField(i, 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
-                <td>{editMode ? <select className="review-edit-input" value={e.location || ''} onChange={ev => editAdosField(i, 'location', ev.target.value)}><option value="In home">In home</option><option value="At office">At office</option></select> : (e.location || '—')}</td>
-                <td>{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.id_number || ''} onChange={ev => editAdosField(i, 'id_number', ev.target.value)} /> : (e.id_number || '—')}</td>
-                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdosField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                {editMode && <td><PencilIcon /></td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="review-subtotal">
-          {ados.length} assessment{ados.length !== 1 ? 's' : ''}
-          {inHome > 0 && <span> · {inHome} in home</span>}
-          {atOffice > 0 && <span> · {atOffice} at office</span>}
-          <span> · {ados.length * 3} hrs toward time worked</span>
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>ADOS Assessments</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.ados) b.ados = []; b.ados.push({ client_initials: '', location: 'In home', id_number: '', date: '' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
         </div>
-      </div>
-    )
-  }
-
-  // ── Admin rendering ──
-  function renderAdmin() {
-    const admin = data.admin
-    if (!admin || admin.length === 0) return null
-    const total = admin.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
-    return (
-      <div className="review-section">
-        <h4 className="review-section-title">Administration</h4>
-        <table className="review-table">
-          <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
-          <tbody>
-            {admin.map((e, i) => (
-              <tr key={i}>
-                {removeMode && <td><button className="review-remove-x" onClick={() => removeAdminEntry(i)}><XIcon /></button></td>}
-                <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdminField(i, 'date', ev.target.value)} /> : (e.date || '—')}</td>
-                <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editAdminField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
-                {editMode && <td><PencilIcon /></td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="review-subtotal">{total} hrs</div>
-      </div>
-    )
-  }
-
-  // ── Supervision rendering ──
-  function renderSupervision() {
-    const sup = data.supervision
-    if (!sup) return null
-    const indiv = sup.individual || []
-    const group = sup.group || []
-    if (indiv.length === 0 && group.length === 0) return null
-    return (
-      <div className="review-section">
-        <h4 className="review-section-title">Supervision</h4>
-        {indiv.length > 0 && (
-          <div className="review-subsection">
-            <div className="review-subsection-label">Individual</div>
+        {ados.length > 0 ? (
+          <>
             <table className="review-table">
-              <thead><tr><th>Date</th><th>Supervisor</th></tr></thead>
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Initials</th><th>Location</th><th>ID #</th><th>Date</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
               <tbody>
-                {indiv.map((e, i) => (
-                  <tr key={i}><td>{e.date || '—'}</td><td>{e.supervisor_name || '—'}</td></tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="review-subtotal">{indiv.length} session{indiv.length !== 1 ? 's' : ''}</div>
-          </div>
-        )}
-        {group.length > 0 && (
-          <div className="review-subsection">
-            <div className="review-subsection-label">Group</div>
-            <table className="review-table">
-              <thead><tr><th>Date</th><th>Supervisees</th></tr></thead>
-              <tbody>
-                {group.map((e, i) => (
+                {ados.map((e, i) => (
                   <tr key={i}>
-                    <td>{e.date || '—'}</td>
-                    <td>{(e.supervisee_names || []).join(', ') || '—'}</td>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeAdosEntry(i)}><XIcon /></button></td>}
+                    <td>{editMode ? <input className="review-edit-input" value={e.client_initials || ''} onChange={ev => editAdosField(i, 'client_initials', ev.target.value)} /> : (e.client_initials || '—')}</td>
+                    <td>{editMode ? <select className="review-edit-input" value={e.location || ''} onChange={ev => editAdosField(i, 'location', ev.target.value)}><option value="In home">In home</option><option value="At office">At office</option></select> : (e.location || '—')}</td>
+                    <td>{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.id_number || ''} onChange={ev => editAdosField(i, 'id_number', ev.target.value)} /> : (e.id_number || '—')}</td>
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdosField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                    {editMode && <td><PencilIcon /></td>}
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="review-subtotal">{group.length} session{group.length !== 1 ? 's' : ''}</div>
-          </div>
+            {editMode && (
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={addAdosEntry}><PlusIcon /> Add Row</button>
+            )}
+            <div className="review-subtotal">
+              {ados.length} assessment{ados.length !== 1 ? 's' : ''}
+              {inHome > 0 && <span> · {inHome} in home</span>}
+              {atOffice > 0 && <span> · {atOffice} at office</span>}
+              <span> · {ados.length * 3} hrs toward time worked</span>
+            </div>
+          </>
+        ) : isEditing ? (
+          <>
+            <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+              onClick={addAdosEntry}><PlusIcon /> Add Row</button>
+            <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 assessments · 0 hrs</div>
+          </>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
         )}
       </div>
     )
   }
 
-  // ── Sick Leave ──
+  // ── APN rendering (always shown) ──
+  function renderAPN() {
+    const apn = data.apn || []
+    const total = apn.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+    return (
+      <div className="review-section">
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>APN</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.apn) b.apn = []; b.apn.push({ date: '', hours: '', type: '30min' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
+        </div>
+        {apn.length > 0 ? (
+          <>
+            <table className="review-table">
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Type</th><th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+              <tbody>
+                {apn.map((e, i) => (
+                  <tr key={i}>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeApnEntry(i)}><XIcon /></button></td>}
+                    <td>{editMode ? (
+                      <select className="review-edit-input" value={e.type || '30min'} onChange={ev => editApnField(i, 'type', ev.target.value)}>
+                        <option value="30min">30 Min</option>
+                        <option value="intake">Intake</option>
+                      </select>
+                    ) : (e.type === 'intake' ? 'Intake' : '30 Min')}</td>
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editApnField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                    <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editApnField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                    {editMode && <td><PencilIcon /></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {editMode && (
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={addApnEntry}><PlusIcon /> Add Row</button>
+            )}
+            <div className="review-subtotal">{total} hrs</div>
+          </>
+        ) : isEditing ? (
+          <>
+            <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+              onClick={addApnEntry}><PlusIcon /> Add Row</button>
+            <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 hrs</div>
+          </>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Admin rendering (always shown) ──
+  function renderAdmin() {
+    const admin = data.admin || []
+    const total = admin.reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+    return (
+      <div className="review-section">
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>Administration</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.admin) b.admin = []; b.admin.push({ date: '', hours: '' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
+        </div>
+        {admin.length > 0 ? (
+          <>
+            <table className="review-table">
+              <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Hours</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+              <tbody>
+                {admin.map((e, i) => (
+                  <tr key={i}>
+                    {removeMode && <td><button className="review-remove-x" onClick={() => removeAdminEntry(i)}><XIcon /></button></td>}
+                    <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editAdminField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                    <td className="review-number">{editMode ? <input className="review-edit-input review-edit-input--narrow" value={e.hours || ''} onChange={ev => editAdminField(i, 'hours', ev.target.value)} /> : (e.hours || '—')}</td>
+                    {editMode && <td><PencilIcon /></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {editMode && (
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={addAdminEntry}><PlusIcon /> Add Row</button>
+            )}
+            <div className="review-subtotal">{total} hrs</div>
+          </>
+        ) : isEditing ? (
+          <>
+            <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+              onClick={addAdminEntry}><PlusIcon /> Add Row</button>
+            <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 hrs</div>
+          </>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 hrs</div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Supervision rendering (always shown, with edit/add) ──
+  function renderSupervision() {
+    const sup = data.supervision || {}
+    const indiv = sup.individual || []
+    const group = sup.group || []
+    const totalSessions = indiv.length + group.length
+    return (
+      <div className="review-section">
+        <div className="review-section-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h4 style={{ margin: 0 }}>Supervision</h4>
+          {isReceived && !isEditing && (
+            <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1 }}
+              onClick={() => quickAdd(b => { if (!b.supervision) b.supervision = {}; if (!b.supervision.individual) b.supervision.individual = []; b.supervision.individual.push({ supervisor_name: '', date: '' }) })}>
+              <PlusIcon /> Add
+            </button>
+          )}
+        </div>
+        {/* Individual */}
+        <div className="review-subsection">
+          <div className="review-subsection-label">Individual</div>
+          {indiv.length > 0 ? (
+            <>
+              <table className="review-table">
+                <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Supervisor</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+                <tbody>
+                  {indiv.map((e, i) => (
+                    <tr key={i}>
+                      {removeMode && <td><button className="review-remove-x" onClick={() => removeSupIndivEntry(i)}><XIcon /></button></td>}
+                      <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editSupIndivField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                      <td>{editMode ? <input className="review-edit-input" value={e.supervisor_name || ''} onChange={ev => editSupIndivField(i, 'supervisor_name', ev.target.value)} /> : (e.supervisor_name || '—')}</td>
+                      {editMode && <td><PencilIcon /></td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {editMode && (
+                <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                  onClick={() => addSupervisionEntry('individual')}><PlusIcon /> Add Row</button>
+              )}
+              <div className="review-subtotal">{indiv.length} session{indiv.length !== 1 ? 's' : ''}</div>
+            </>
+          ) : isEditing ? (
+            <>
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={() => addSupervisionEntry('individual')}><PlusIcon /> Add Row</button>
+              <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 sessions</div>
+            </>
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 sessions</div>
+          )}
+        </div>
+        {/* Group */}
+        <div className="review-subsection">
+          <div className="review-subsection-label">Group</div>
+          {group.length > 0 ? (
+            <>
+              <table className="review-table">
+                <thead><tr>{removeMode && <th style={{ width: 30 }}></th>}<th>Date</th><th>Supervisees</th>{editMode && <th style={{ width: 20 }}></th>}</tr></thead>
+                <tbody>
+                  {group.map((e, i) => (
+                    <tr key={i}>
+                      {removeMode && <td><button className="review-remove-x" onClick={() => removeSupGroupEntry(i)}><XIcon /></button></td>}
+                      <td>{editMode ? <input className="review-edit-input" type="date" value={e.date || ''} onChange={ev => editSupGroupField(i, 'date', ev.target.value)} /> : formatDate(e.date)}</td>
+                      <td>{editMode ? <input className="review-edit-input" value={(e.supervisee_names || []).join(', ')} onChange={ev => editSupGroupField(i, 'supervisee_names', ev.target.value.split(',').map(s => s.trim()).filter(Boolean))} /> : ((e.supervisee_names || []).join(', ') || '—')}</td>
+                      {editMode && <td><PencilIcon /></td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {editMode && (
+                <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                  onClick={() => addSupervisionEntry('group')}><PlusIcon /> Add Row</button>
+              )}
+              <div className="review-subtotal">{group.length} session{group.length !== 1 ? 's' : ''}</div>
+            </>
+          ) : isEditing ? (
+            <>
+              <button className="btn btn--ghost btn--small" style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}
+                onClick={() => addSupervisionEntry('group')}><PlusIcon /> Add Row</button>
+              <div className="review-subtotal" style={{ color: 'var(--text-muted)' }}>0 sessions</div>
+            </>
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>No entries · 0 sessions</div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Sick Leave (always shown, editable) ──
   function renderSickLeave() {
-    const sick = data.sick_leave
-    if (!sick || !(parseFloat(sick.hours) > 0)) return null
+    const sick = data.sick_leave || {}
     const hrs = parseFloat(sick.hours) || 0
-    const approved = sickDecision === 'approve'
+    const hasSickHours = hrs > 0
+    const originalHadSick = recipient.invoice_data?.sick_leave && parseFloat(recipient.invoice_data.sick_leave.hours) > 0
+    // Sick leave counts if: admin approved the request, OR admin added it themselves (not in original)
+    const sickCounts = hasSickHours && (sickDecision === 'approve' || !originalHadSick)
     return (
       <div className="review-section">
         <h4 className="review-section-title" style={{ marginBottom: '0.5rem' }}>Sick Leave</h4>
-        <div className="review-leave-detail">
-          <div className="review-leave-row">
-            <span className="review-leave-label">Date:</span>
-            <span>{sick.date || '—'}</span>
+        {editMode ? (
+          <div className="review-leave-detail">
+            <div className="review-leave-row">
+              <span className="review-leave-label">Date:</span>
+              <input className="review-edit-input" type="date" value={sick.date || ''} onChange={ev => editSickField('date', ev.target.value)} style={{ width: 160 }} />
+            </div>
+            <div className="review-leave-row" style={{ marginTop: '0.375rem' }}>
+              <span className="review-leave-label">Hours:</span>
+              <input className="review-edit-input review-edit-input--narrow" value={sick.hours || ''} onChange={ev => editSickField('hours', ev.target.value)} />
+            </div>
+            <div className="review-leave-row" style={{ marginTop: '0.375rem' }}>
+              <span className="review-leave-label">Reason:</span>
+              <input className="review-edit-input" value={sick.reason || ''} onChange={ev => editSickField('reason', ev.target.value)} style={{ width: 250 }} />
+            </div>
           </div>
-          <div className="review-leave-row" style={{ marginTop: '0.375rem' }}>
-            <span className="review-leave-label">Hours requested:</span>
-            <span className="review-number">{hrs}</span>
+        ) : hasSickHours ? (
+          <div className="review-leave-detail">
+            <div className="review-leave-row">
+              <span className="review-leave-label">Date:</span>
+              <span>{formatDate(sick.date)}</span>
+            </div>
+            <div className="review-leave-row" style={{ marginTop: '0.375rem' }}>
+              <span className="review-leave-label">Hours requested:</span>
+              <span className="review-number">{hrs}</span>
+            </div>
+            {sick.reason && <div className="review-leave-note" style={{ marginTop: '0.5rem' }}>Reason: {sick.reason}</div>}
           </div>
-          {sick.reason && <div className="review-leave-note" style={{ marginTop: '0.5rem' }}>Reason: {sick.reason}</div>}
-        </div>
-        {isReceived && (
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>
+            No sick leave · 0 hrs
+            {isReceived && !isEditing && (
+              <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1, marginLeft: '0.5rem' }}
+                onClick={() => quickAdd(b => { b.sick_leave = { date: '', hours: '', reason: '' } })}>
+                <PlusIcon /> Add
+              </button>
+            )}
+          </div>
+        )}
+        {hasSickHours && originalHadSick && isReceived && (
           <div className="review-sick-choices">
             <label className={`review-sick-choice ${sickDecision === 'approve' ? 'review-sick-choice--active' : ''}`}>
               <input type="radio" name="sick_decision" checked={sickDecision === 'approve'} onChange={() => setSickDecision('approve')} />
@@ -489,25 +866,43 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             </label>
           </div>
         )}
-        <div className="review-subtotal">{approved ? <>{hrs} hrs</> : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+        <div className="review-subtotal">{sickCounts ? <>{hrs} hrs</> : <span style={{ color: 'var(--text-muted)' }}>{hasSickHours ? 'Pending decision' : '0 hrs'}</span>}</div>
       </div>
     )
   }
 
-  // ── PTO ──
+  // ── PTO (always shown, editable) ──
   function renderPTO() {
-    const pto = data.pto
-    if (!pto || !(parseFloat(pto.hours) > 0)) return null
+    const pto = data.pto || {}
     const hrs = parseFloat(pto.hours) || 0
     return (
       <div className="review-section">
         <h4 className="review-section-title">Paid Time Off</h4>
-        <div className="review-leave-detail">
-          <div className="review-leave-row" style={{ marginTop: '0.5rem' }}>
-            <span className="review-leave-label">Hours requested:</span>
-            <span className="review-number">{hrs}</span>
+        {editMode ? (
+          <div className="review-leave-detail">
+            <div className="review-leave-row">
+              <span className="review-leave-label">Hours:</span>
+              <input className="review-edit-input review-edit-input--narrow" value={pto.hours || ''} onChange={ev => editPtoField('hours', ev.target.value)} />
+            </div>
           </div>
-        </div>
+        ) : hrs > 0 ? (
+          <div className="review-leave-detail">
+            <div className="review-leave-row">
+              <span className="review-leave-label">Hours:</span>
+              <span className="review-number">{hrs}</span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '0.25rem 0' }}>
+            No PTO · 0 hrs
+            {isReceived && !isEditing && (
+              <button className="btn btn--ghost btn--small" style={{ padding: '0.1rem 0.4rem', fontSize: '0.7rem', lineHeight: 1, marginLeft: '0.5rem' }}
+                onClick={() => quickAdd(b => { b.pto = { hours: '' } })}>
+                <PlusIcon /> Add
+              </button>
+            )}
+          </div>
+        )}
         <div className="review-subtotal">{hrs} hrs</div>
       </div>
     )
@@ -526,11 +921,17 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     sbys.forEach(e => { total += parseFloat(e.hours) || 0 })
     const ados = data.ados || []
     total += ados.length * 3
+    // APN
+    const apn = data.apn || []
+    apn.forEach(e => { total += parseFloat(e.hours) || 0 })
     const admin = data.admin || []
     admin.forEach(e => { total += parseFloat(e.hours) || 0 })
     const sup = data.supervision || {}
     total += (sup.individual || []).length + (sup.group || []).length
-    if (sickDecision === 'approve') total += parseFloat(data.sick_leave?.hours) || 0
+    // Sick leave: counts if admin approved OR if admin added it (not in original submission)
+    const sickHrs = parseFloat(data.sick_leave?.hours) || 0
+    const originalHadSick = recipient.invoice_data?.sick_leave && parseFloat(recipient.invoice_data.sick_leave.hours) > 0
+    if (sickHrs > 0 && (sickDecision === 'approve' || !originalHadSick)) total += sickHrs
     total += parseFloat(data.pto?.hours) || 0
     return total
   }
@@ -560,7 +961,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           </button>
           {!isEditing ? (
             <>
-              <button className="btn btn--ghost" onClick={startEdit}>Edit Line Items</button>
+              <button className="btn btn--ghost" onClick={startEdit}>Edit / Add Items</button>
               <button className="btn btn--ghost" onClick={startRemove}>Remove Line Items</button>
             </>
           ) : (
@@ -579,6 +980,7 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
           {renderOP()}
           {renderSBYS()}
           {renderADOS()}
+          {renderAPN()}
           {renderAdmin()}
           {renderSupervision()}
           {renderSickLeave()}

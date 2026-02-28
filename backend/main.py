@@ -2026,6 +2026,14 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
         await write_entry("ADOS", 3.0, initials=entry.get("client_initials"),
                           notes=f"{entry.get('location','')} ID:{entry.get('id_number','')}")
 
+    # APN
+    apn_entries = invoice_data.get("apn") or []
+    for entry in apn_entries:
+        hrs = float(entry.get("hours") or 0)
+        apn_type = entry.get("type", "30min")
+        rate_name = "APN Intake" if apn_type == "intake" else "APN 30 Min"
+        await write_entry(rate_name, hrs)
+
     # Admin
     admin_entries = invoice_data.get("admin") or []
     for entry in admin_entries:
