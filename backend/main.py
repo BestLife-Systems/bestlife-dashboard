@@ -1446,7 +1446,7 @@ async def get_pay_periods(admin=Depends(require_admin)):
     """Admin: list all pay periods with recipient counts."""
     periods = await sb_request("GET", "pay_periods", params={
         "select": "*",
-        "order": "start_date.desc",
+        "order": "start_date.asc",
     })
     if not periods:
         return []
@@ -1571,7 +1571,7 @@ def build_invoice_data(row):
 
 @app.post("/api/payroll/pay-periods/{period_id}/bulk-import")
 async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin=Depends(require_admin)):
-    """Admin: bulk-import from spreadsheet. Creates invoice_data and auto-approves each recipient."""
+    """Admin: bulk-import from spreadsheet. Creates recipients with invoice_data (status=received) for review."""
     # Verify the period exists
     periods = await sb_request("GET", "pay_periods", params={"id": f"eq.{period_id}", "select": "*"})
     if not periods:
@@ -1582,9 +1582,6 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
     await sb_request("DELETE", f"time_entries?pay_period_id=eq.{period_id}")
     await sb_request("DELETE", f"rollup_pay_period?pay_period_id=eq.{period_id}")
     await sb_request("DELETE", f"pay_period_recipients?pay_period_id=eq.{period_id}")
-    # Clean monthly rollup for this month so re-import doesn't double-count
-    month_year = period["start_date"][:7]
-    await sb_request("DELETE", f"rollup_monthly?month_year=eq.{month_year}")
 
     # ── Build name→user maps for flexible matching ──
     all_users = await sb_request("GET", "users", params={
@@ -1626,7 +1623,7 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             return None, f"Ambiguous name '{name_str}' — matches: {', '.join(names)}"
         return None, f"User not found: {name_str}"
 
-    # ── Create recipients with invoice_data, then auto-approve ──
+    # ── Create recipients with invoice_data (status=received, ready for review) ──
     imported = 0
     errors = []
 
@@ -1642,24 +1639,15 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             errors.append(f"No hours for {row.user_name}")
             continue
 
-        # Create recipient with proper invoice_data
-        recip = await sb_request("POST", "pay_period_recipients", data={
+        # Create recipient with invoice_data — admin will review and approve manually
+        await sb_request("POST", "pay_period_recipients", data={
             "pay_period_id": period_id,
             "user_id": uid,
             "status": "received",
             "invoice_data": invoice_data,
             "submitted_at": datetime.utcnow().isoformat(),
         })
-        recip_id = recip[0]["id"] if isinstance(recip, list) else recip["id"]
-
-        # Auto-approve using the existing approval pipeline (creates time_entries, rollups, etc.)
-        try:
-            await approve_recipient(recip_id, ApproveRequest(), admin)
-            imported += 1
-        except HTTPException as e:
-            errors.append(f"{row.user_name}: {e.detail}")
-        except Exception as e:
-            errors.append(f"{row.user_name}: {str(e)}")
+        imported += 1
 
     # Open the period if still draft
     if period["status"] == "draft":
@@ -2659,10 +2647,10 @@ async def billing_summary(admin=Depends(require_admin)):
     if not periods:
         periods = []
 
-    # Fetch any open/pending periods so frontend can show a reminder
+    # Fetch truly open periods (not drafts) so frontend can show a reminder
     open_periods_raw = await sb_request("GET", "pay_periods", params={
         "select": "id, label, start_date, end_date, status",
-        "status": "neq.closed",
+        "status": "eq.open",
         "order": "start_date.desc",
     }) or []
 
