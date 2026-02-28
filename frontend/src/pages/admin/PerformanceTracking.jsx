@@ -136,6 +136,12 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser, navigate }) {
     )
   }
 
+  // Split into leader, therapists/apn, and behavioral assistants
+  const leaders = group.therapists.filter(r => r.role === 'clinical_leader')
+  const therapists = group.therapists.filter(r => r.role === 'therapist' || r.role === 'apn')
+  const bas = group.therapists.filter(r => r.role === 'ba')
+  const hasBas = bas.length > 0
+
   return (
     <div className="perf-team-section">
       <div className="perf-team-header">
@@ -148,8 +154,20 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser, navigate }) {
         <table className="data-table perf-table">
           <PerfTableHead />
           <tbody>
-            {group.therapists.map(row => (
-              <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={row.is_leader} navigate={navigate} />
+            {leaders.map(row => (
+              <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={true} navigate={navigate} />
+            ))}
+            {hasBas && therapists.length > 0 && (
+              <tr className="perf-subheader-row"><td colSpan="10" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Therapists</td></tr>
+            )}
+            {therapists.map(row => (
+              <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
+            ))}
+            {hasBas && (
+              <tr className="perf-subheader-row"><td colSpan="10" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Behavioral Assistants</td></tr>
+            )}
+            {bas.map(row => (
+              <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
             ))}
           </tbody>
         </table>

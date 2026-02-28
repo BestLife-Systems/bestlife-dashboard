@@ -3271,7 +3271,7 @@ async def analytics_performance(
             "leader_employment_status": leader_emp.get(lid, "full_time"),
             "team_totals": team,
             "pct_meeting_threshold": pct,
-            "therapists": sorted(therapists, key=lambda t: t["name"]),
+            "therapists": sorted(therapists, key=lambda t: (0 if t.get("role") == "clinical_leader" else 1 if t.get("role") == "therapist" else 2 if t.get("role") == "apn" else 3, t["name"])),
         })
 
     # Add unassigned group at the end
