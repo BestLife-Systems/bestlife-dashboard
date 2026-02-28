@@ -1516,6 +1516,7 @@ async def generate_year_pay_periods(req: GenerateYearRequest, admin=Depends(requ
 class BulkTimeEntryRow(BaseModel):
     user_name: str
     iic: Optional[float] = 0
+    iic_ba: Optional[float] = 0
     op: Optional[float] = 0
     sbys: Optional[float] = 0
     ados: Optional[float] = 0
@@ -1530,25 +1531,70 @@ class BulkImportRequest(BaseModel):
     rows: List[BulkTimeEntryRow]
 
 
+def build_invoice_data(row):
+    """Build invoice_data JSON from a bulk import row (matches the format approve_recipient expects)."""
+    data = {}
+    # IIC — regular hours as IIC-LC, BA hours as BA code
+    iic_entries = {}
+    if (row.iic or 0) > 0:
+        iic_entries["IICLC-H0036TJU1"] = [{"hours": row.iic, "cyber_initials": "BULK"}]
+    if (row.iic_ba or 0) > 0:
+        iic_entries["BA-H2014TJ"] = [{"hours": row.iic_ba, "cyber_initials": "BULK"}]
+    if iic_entries:
+        data["iic"] = iic_entries
+    # OP — each entry = 1 session
+    if (row.op or 0) > 0:
+        data["op"] = {"sessions": [{"client_initials": "BULK"} for _ in range(max(1, round(row.op)))]}
+    # SBYS
+    if (row.sbys or 0) > 0:
+        data["sbys"] = [{"hours": row.sbys}]
+    # ADOS (each assessment = 1 entry → 3 hours)
+    if (row.ados or 0) > 0:
+        data["ados"] = [{"client_initials": "BULK", "location": "home"} for _ in range(max(1, round(row.ados)))]
+    # APN (default to 30-min sessions)
+    if (row.apn or 0) > 0:
+        data["apn"] = [{"duration_minutes": 30, "hours": row.apn}]
+    # Admin
+    if (row.admin_hours or 0) > 0:
+        data["admin"] = [{"hours": row.admin_hours}]
+    # Supervision
+    if (row.supervision or 0) > 0:
+        data["supervision"] = {"individual": [{"supervisor_name": "BULK"} for _ in range(max(1, round(row.supervision)))]}
+    # Sick leave
+    if (row.sick or 0) > 0:
+        data["sick_leave"] = {"hours": row.sick, "reason": "Bulk import"}
+    # PTO
+    if (row.pto or 0) > 0:
+        data["pto"] = {"hours": row.pto}
+    return data
+
+
 @app.post("/api/payroll/pay-periods/{period_id}/bulk-import")
 async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin=Depends(require_admin)):
-    """Admin: bulk-import time entries for a pay period from spreadsheet data."""
+    """Admin: bulk-import from spreadsheet. Creates invoice_data and auto-approves each recipient."""
     # Verify the period exists
     periods = await sb_request("GET", "pay_periods", params={"id": f"eq.{period_id}", "select": "*"})
     if not periods:
         raise HTTPException(status_code=404, detail="Pay period not found")
     period = periods[0]
 
-    # Get all active users to match by name
+    # ── Clean up any previous import for this period (makes re-import safe) ──
+    await sb_request("DELETE", f"time_entries?pay_period_id=eq.{period_id}")
+    await sb_request("DELETE", f"rollup_pay_period?pay_period_id=eq.{period_id}")
+    await sb_request("DELETE", f"pay_period_recipients?pay_period_id=eq.{period_id}")
+    # Clean monthly rollup for this month so re-import doesn't double-count
+    month_year = period["start_date"][:7]
+    await sb_request("DELETE", f"rollup_monthly?month_year=eq.{month_year}")
+
+    # ── Build name→user maps for flexible matching ──
     all_users = await sb_request("GET", "users", params={
         "is_active": "eq.true",
         "select": "id,first_name,last_name,role",
     }) or []
-    # Build multiple name→user maps for flexible matching
-    user_by_full = {}      # "first last" -> user
-    user_by_reverse = {}   # "last, first" -> user
-    user_by_first_li = {}  # "first l" -> user (first name + last initial)
-    user_by_first = {}     # "first" -> [users] (could be ambiguous)
+    user_by_full = {}
+    user_by_reverse = {}
+    user_by_first_li = {}
+    user_by_first = {}
     for u in all_users:
         first = (u.get("first_name") or "").strip()
         last = (u.get("last_name") or "").strip()
@@ -1565,7 +1611,6 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             user_by_first_li[fi_li] = u
 
     def find_user(name_str):
-        """Match a name from the spreadsheet to a user. Supports full name, first+last-initial, or first-name-only."""
         key = name_str.strip().lower()
         if key in user_by_full:
             return user_by_full[key], None
@@ -1581,41 +1626,7 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             return None, f"Ambiguous name '{name_str}' — matches: {', '.join(names)}"
         return None, f"User not found: {name_str}"
 
-    # Get rate types
-    rate_types = await sb_request("GET", "rate_types", params={
-        "is_active": "eq.true",
-        "select": "id,name",
-    }) or []
-    rt_map = {r["name"].lower(): r["id"] for r in rate_types}
-
-    # Map our simple column names to rate_type names
-    col_to_rt = {
-        "iic": ["iic-lc session", "iic-ma session", "iic-ba session"],
-        "op": ["op-lc session", "op-ma session"],
-        "sbys": ["sbys"],
-        "ados": ["ados assessment in home", "ados assessment at office"],
-        "apn": ["apn session", "apn (60 min)", "apn (30 min)", "apn"],
-        "admin_hours": ["administration"],
-        "supervision": ["supervision"],
-        "sick": ["sick leave"],
-        "pto": ["pto"],
-    }
-
-    # Find the best matching rate type for each column (pick the first that exists)
-    col_rt_id = {}
-    for col, candidates in col_to_rt.items():
-        for c in candidates:
-            if c in rt_map:
-                col_rt_id[col] = rt_map[c]
-                break
-
-    # Get or create recipients for this period
-    existing_recipients = await sb_request("GET", "pay_period_recipients", params={
-        "pay_period_id": f"eq.{period_id}",
-        "select": "id,user_id",
-    }) or []
-    recipient_by_user = {r["user_id"]: r["id"] for r in existing_recipients}
-
+    # ── Create recipients with invoice_data, then auto-approve ──
     imported = 0
     errors = []
 
@@ -1626,53 +1637,35 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             continue
 
         uid = user["id"]
+        invoice_data = build_invoice_data(row)
+        if not invoice_data:
+            errors.append(f"No hours for {row.user_name}")
+            continue
 
-        # Create recipient if not exists (draft_token auto-generated by DB)
-        if uid not in recipient_by_user:
-            recip = await sb_request("POST", "pay_period_recipients", data={
-                "pay_period_id": period_id,
-                "user_id": uid,
-                "status": "received",
-            })
-            recipient_by_user[uid] = recip[0]["id"] if isinstance(recip, list) else recip["id"]
+        # Create recipient with proper invoice_data
+        recip = await sb_request("POST", "pay_period_recipients", data={
+            "pay_period_id": period_id,
+            "user_id": uid,
+            "status": "received",
+            "invoice_data": invoice_data,
+            "submitted_at": datetime.utcnow().isoformat(),
+        })
+        recip_id = recip[0]["id"] if isinstance(recip, list) else recip["id"]
 
-        recip_id = recipient_by_user[uid]
-
-        # Create time entries for each non-zero column
-        row_data = {
-            "iic": row.iic or 0,
-            "op": row.op or 0,
-            "sbys": row.sbys or 0,
-            "apn": row.apn or 0,
-            "ados": row.ados or 0,
-            "admin_hours": row.admin_hours or 0,
-            "supervision": row.supervision or 0,
-            "sick": row.sick or 0,
-            "pto": row.pto or 0,
-        }
-
-        for col, hours in row_data.items():
-            if hours <= 0 or col not in col_rt_id:
-                continue
-            await sb_request("POST", "time_entries", data={
-                "recipient_id": recip_id,
-                "user_id": uid,
-                "pay_period_id": period_id,
-                "rate_type_id": col_rt_id[col],
-                "quantity": hours,
-                "est_bill_amount": 0,
-                "est_pay_amount": 0,
-            })
+        # Auto-approve using the existing approval pipeline (creates time_entries, rollups, etc.)
+        try:
+            await approve_recipient(recip_id, ApproveRequest(), admin)
             imported += 1
+        except HTTPException as e:
+            errors.append(f"{row.user_name}: {e.detail}")
+        except Exception as e:
+            errors.append(f"{row.user_name}: {str(e)}")
 
-        # Mark recipient as received
-        await sb_request("PATCH", f"pay_period_recipients?id=eq.{recip_id}", data={"status": "received"})
-
-    # If period is still draft, move to open
+    # Open the period if still draft
     if period["status"] == "draft":
         await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={"status": "open"})
 
-    return {"imported_entries": imported, "users_processed": len(req.rows) - len(errors), "errors": errors}
+    return {"imported_entries": imported, "users_processed": imported, "errors": errors}
 
 
 @app.post("/api/payroll/pay-periods")

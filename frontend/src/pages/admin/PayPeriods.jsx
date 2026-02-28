@@ -228,19 +228,26 @@ export default function PayPeriods() {
         continue
       }
 
-      // Clean name: strip "- BA" / "-BA" suffix
+      // Detect "- BA" suffix for IIC-BA distinction, then strip it
+      const hasBA = /\s*-\s*BA$/i.test(name) || /-BA$/i.test(name)
       const cleanName = name.replace(/\s*-\s*BA$/i, '').replace(/-BA$/i, '').trim()
       const key = cleanName.toLowerCase()
 
       if (!people[key]) {
-        people[key] = { name: cleanName, iic: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
+        people[key] = { name: cleanName, iic: 0, iic_ba: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
       }
-      people[key][currentSection] = (people[key][currentSection] || 0) + hours
+      // "- BA" entries under IIC go to iic_ba, everything else normal
+      if (currentSection === 'iic' && hasBA) {
+        people[key].iic_ba = (people[key].iic_ba || 0) + hours
+      } else {
+        people[key][currentSection] = (people[key][currentSection] || 0) + hours
+      }
     }
 
     return Object.values(people).map(p => ({
       user_name: p.name,
       iic: p.iic || 0,
+      iic_ba: p.iic_ba || 0,
       op: p.op || 0,
       sbys: p.sbys || 0,
       ados: p.ados || 0,
