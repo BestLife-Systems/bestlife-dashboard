@@ -188,7 +188,12 @@ export default function PayPeriods() {
     let currentSection = null
 
     for (const line of lines) {
-      const cells = (line.includes('\t') ? line.split('\t') : line.split(',')).map(s => s.trim())
+      let cells = (line.includes('\t') ? line.split('\t') : line.split(',')).map(s => s.trim())
+      // If only one cell, try to split "Name  123" on trailing number
+      if (cells.length === 1 || (cells.length >= 1 && !cells[1])) {
+        const match = cells[0].match(/^(.+?)\s+([\d.]+)\s*$/)
+        if (match) cells = [match[1].trim(), match[2]]
+      }
       const allText = cells.join(' ').toLowerCase()
 
       // Skip empty lines
