@@ -63,6 +63,7 @@ const RATE_LABELS = {
 }
 
 const ADOS_KEYS = new Set(['ADOS In Home', 'ADOS At Office'])
+const APN_KEYS = new Set(['APN 30 Min', 'APN Intake'])
 
 // ── Detail View ──
 function PeriodDetail({ periodId, period, onBack }) {
@@ -102,12 +103,15 @@ function PeriodDetail({ periodId, period, onBack }) {
   const adosOfficeSec = sections.find(s => s.service === 'ADOS At Office')
   const hasAdos = adosHomeSec || adosOfficeSec
 
-  // Build final display sections: non-ADOS sections first, then combined ADOS
-  const displaySections = sections.filter(s => !ADOS_KEYS.has(s.service))
+  // Combine APN 30 Min + APN Intake into one section
+  const apn30Sec = sections.find(s => s.service === 'APN 30 Min')
+  const apnIntakeSec = sections.find(s => s.service === 'APN Intake')
+  const hasApn = apn30Sec || apnIntakeSec
+
+  // Build final display sections: filter out ADOS + APN subsections, then add combined
+  const displaySections = sections.filter(s => !ADOS_KEYS.has(s.service) && !APN_KEYS.has(s.service))
 
   if (hasAdos) {
-    // Combine ADOS rows under one section
-    const combinedRows = []
     const adosSubsections = []
     if (adosHomeSec) {
       adosSubsections.push({ label: 'In Home', rows: adosHomeSec.rows, totals: adosHomeSec })
@@ -123,8 +127,36 @@ function PeriodDetail({ periodId, period, onBack }) {
 
     displaySections.push({
       service: 'ADOS Assessments',
-      _isAdosCombined: true,
+      _isCombined: true,
+      _combinedLabel: 'ADOS Combined Total',
       _subsections: adosSubsections,
+      total_hours: totalHours,
+      total_revenue: totalRevenue,
+      total_pay: totalPay,
+      total_profit: totalProfit,
+      total_margin: totalMargin,
+    })
+  }
+
+  if (hasApn) {
+    const apnSubsections = []
+    if (apn30Sec) {
+      apnSubsections.push({ label: '30 Min', rows: apn30Sec.rows, totals: apn30Sec })
+    }
+    if (apnIntakeSec) {
+      apnSubsections.push({ label: 'Intake (60 Min)', rows: apnIntakeSec.rows, totals: apnIntakeSec })
+    }
+    const totalHours = (apn30Sec?.total_hours || 0) + (apnIntakeSec?.total_hours || 0)
+    const totalRevenue = (apn30Sec?.total_revenue || 0) + (apnIntakeSec?.total_revenue || 0)
+    const totalPay = (apn30Sec?.total_pay || 0) + (apnIntakeSec?.total_pay || 0)
+    const totalProfit = (apn30Sec?.total_profit || 0) + (apnIntakeSec?.total_profit || 0)
+    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
+
+    displaySections.push({
+      service: 'APN',
+      _isCombined: true,
+      _combinedLabel: 'APN Combined Total',
+      _subsections: apnSubsections,
       total_hours: totalHours,
       total_revenue: totalRevenue,
       total_pay: totalPay,
@@ -156,7 +188,7 @@ function PeriodDetail({ periodId, period, onBack }) {
             </div>
 
             {/* Combined ADOS: one table with subsections + combined total */}
-            {section._isAdosCombined ? (
+            {section._isCombined ? (
               <div className="table-wrapper">
                 <table className="data-table">
                   <thead>
@@ -200,9 +232,9 @@ function PeriodDetail({ periodId, period, onBack }) {
                         </tr>
                       </>
                     ))}
-                    {/* ADOS Combined Total — inside same table so columns align */}
+                    {/* Combined Total — inside same table so columns align */}
                     <tr style={{ fontWeight: 700, background: 'var(--bg-elevated)' }}>
-                      <td style={{ color: 'var(--text-bright)', fontSize: '0.95rem', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}` }}>ADOS Combined Total</td>
+                      <td style={{ color: 'var(--text-bright)', fontSize: '0.95rem', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}` }}>{section._combinedLabel || 'Combined Total'}</td>
                       <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{section.total_hours}</td>
                       <td style={{ textAlign: 'right', color, padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_revenue)}</td>
                       <td style={{ textAlign: 'right', color: 'var(--text-bright)', padding: '0.75rem 0.75rem', borderTop: `3px solid ${color}`, fontSize: '0.95rem' }}>{fmtDollar(section.total_pay)}</td>

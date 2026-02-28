@@ -2700,6 +2700,21 @@ SERVICE_TO_RATE_NAME = {
 # Reverse map
 RATE_NAME_TO_SERVICE = {v: k for k, v in SERVICE_TO_RATE_NAME.items()}
 
+# Map service types → pay rate names (matches what approve_recipient writes)
+SERVICE_TO_PAY_RATE_NAME = {
+    "IIC-LC": "IIC LPC/LCSW",
+    "IIC-MA": "IIC LAC/LSW",
+    "IIC-BA": "Behavioral Assistant",
+    "OP": "OP Session",
+    "SBYS": "SBYS",
+    "ADOS In Home": "ADOS",
+    "ADOS At Office": "ADOS",
+    "APN 30 Min": "APN 30 Min",
+    "APN Intake": "APN Intake",
+    "PTO": "PTO",
+    "Sick Leave": "Sick Leave",
+}
+
 def _extract_service_hours(invoice_data: dict) -> dict:
     """Extract hours per service type from structured invoice_data."""
     hours = {st: 0.0 for st in SERVICE_TYPES}
@@ -2833,12 +2848,17 @@ async def billing_summary(admin=Depends(require_admin)):
             user_rates = user_pay_map_list.get(uid, {})
             for st, h in hours.items():
                 service_totals[st] += h
-                # Compute pay for this user's hours in this service type
-                rate_name = SERVICE_TO_RATE_NAME.get(st, st)
-                pay_rate = user_rates.get(rate_name, 0)
+                # Compute pay: try pay-rate name first, then bill-rate name, then fuzzy
+                pay_rate_name = SERVICE_TO_PAY_RATE_NAME.get(st)
+                bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+                pay_rate = 0
+                if pay_rate_name:
+                    pay_rate = user_rates.get(pay_rate_name, 0)
+                if not pay_rate:
+                    pay_rate = user_rates.get(bill_rate_name, 0)
                 if not pay_rate:
                     for rn, rv in user_rates.items():
-                        if st.lower() in rn.lower() or rn.lower() in st.lower():
+                        if st.lower() in rn.lower():
                             pay_rate = rv
                             break
                 if st.startswith("ADOS"):
@@ -3086,20 +3106,19 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
                 revenue = hrs * bill_rate
             else:
                 revenue = 0
-            # Find the user's pay rate using rate name mapping
-            rate_name = SERVICE_TO_RATE_NAME.get(st, st)
-            pay_rate = user_rates.get(rate_name, 0)
+            # Find the user's pay rate: try pay-rate name, then bill-rate name, then fuzzy
+            pay_rate_name = SERVICE_TO_PAY_RATE_NAME.get(st)
+            bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
+            pay_rate = 0
+            if pay_rate_name:
+                pay_rate = user_rates.get(pay_rate_name, 0)
             if not pay_rate:
-                # Try partial match
+                pay_rate = user_rates.get(bill_rate_name, 0)
+            if not pay_rate:
                 for rn, rv in user_rates.items():
-                    if st.lower() in rn.lower() or rn.lower() in st.lower():
+                    if st.lower() in rn.lower():
                         pay_rate = rv
                         break
-            if not pay_rate:
-                # Fallback: generic hourly
-                pay_rate = user_rates.get("hourly", user_rates.get("Hourly", 0))
-                if not pay_rate and user_rates:
-                    pay_rate = list(user_rates.values())[0]
             # ADOS pay = assessments × session rate (not hours × rate)
             if st.startswith("ADOS"):
                 num_a = counts_map.get(st, 0)
