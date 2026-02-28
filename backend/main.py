@@ -2143,6 +2143,122 @@ async def reject_recipient(recipient_id: str, req: RejectRequest, admin=Depends(
     return {"status": "rejected"}
 
 
+@app.post("/api/payroll/recipients/{recipient_id}/unapprove")
+async def unapprove_recipient(recipient_id: str, admin=Depends(require_admin)):
+    """
+    Admin: revert an approved submission back to 'received' so it can be re-edited.
+    Deletes the time_entries created during approval and recalculates rollups.
+    """
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "id": f"eq.{recipient_id}",
+        "select": "id, user_id, pay_period_id, status",
+    })
+    if not recipients:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    recipient = recipients[0]
+    if recipient["status"] != "approved":
+        raise HTTPException(status_code=400, detail="Can only unapprove approved submissions")
+
+    user_id = recipient["user_id"]
+    period_id = recipient["pay_period_id"]
+
+    # 1. Delete time_entries created by this approval
+    await sb_request("DELETE", f"time_entries?recipient_id=eq.{recipient_id}")
+
+    # 2. Reset recipient status back to received
+    await sb_request("PATCH", f"pay_period_recipients?id=eq.{recipient_id}", data={
+        "status": "received",
+        "approved_at": None,
+        "approved_by": None,
+        "admin_override_data": None,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
+
+    # 3. Recalculate rollup_pay_period from remaining time_entries for this user+period
+    remaining = await sb_request("GET", "time_entries", params={
+        "user_id": f"eq.{user_id}",
+        "pay_period_id": f"eq.{period_id}",
+        "select": "quantity, est_bill_amount, est_pay_amount, rate_types(unit)",
+    })
+    if remaining:
+        total_hours = 0.0
+        total_sessions = 0
+        total_bill = 0.0
+        total_pay = 0.0
+        for te in remaining:
+            total_bill += float(te.get("est_bill_amount") or 0)
+            total_pay += float(te.get("est_pay_amount") or 0)
+            unit = (te.get("rate_types") or {}).get("unit", "hourly")
+            if unit == "hourly":
+                total_hours += float(te.get("quantity") or 0)
+            else:
+                total_sessions += int(te.get("quantity") or 0)
+        await sb_request("PATCH", f"rollup_pay_period?pay_period_id=eq.{period_id}&user_id=eq.{user_id}", data={
+            "total_hours": round(total_hours, 2),
+            "total_sessions": total_sessions,
+            "est_bill_total": round(total_bill, 2),
+            "est_pay_total": round(total_pay, 2),
+            "margin": round(total_bill - total_pay, 2),
+            "updated_at": datetime.utcnow().isoformat(),
+        })
+    else:
+        # No remaining entries — delete the rollup
+        await sb_request("DELETE", f"rollup_pay_period?pay_period_id=eq.{period_id}&user_id=eq.{user_id}")
+
+    # 4. Recalculate rollup_monthly
+    period_data = await sb_request("GET", "pay_periods", params={"id": f"eq.{period_id}", "select": "start_date"})
+    if period_data:
+        month_year = period_data[0]["start_date"][:7]
+        # Sum all rollup_pay_period entries for this user in this month
+        all_rollups = await sb_request("GET", "rollup_pay_period", params={
+            "user_id": f"eq.{user_id}",
+            "select": "total_hours, total_sessions, est_bill_total, est_pay_total, pay_periods!inner(start_date)",
+        })
+        month_hours = 0.0
+        month_sessions = 0
+        month_bill = 0.0
+        month_pay = 0.0
+        for r in (all_rollups or []):
+            pp = r.get("pay_periods") or {}
+            if (pp.get("start_date") or "")[:7] == month_year:
+                month_hours += float(r.get("total_hours") or 0)
+                month_sessions += int(r.get("total_sessions") or 0)
+                month_bill += float(r.get("est_bill_total") or 0)
+                month_pay += float(r.get("est_pay_total") or 0)
+
+        existing_monthly = await sb_request("GET", "rollup_monthly", params={
+            "user_id": f"eq.{user_id}",
+            "month_year": f"eq.{month_year}",
+        })
+        if month_hours > 0 or month_sessions > 0:
+            monthly_data = {
+                "user_id": user_id,
+                "month_year": month_year,
+                "total_hours": round(month_hours, 2),
+                "total_sessions": month_sessions,
+                "est_bill_total": round(month_bill, 2),
+                "est_pay_total": round(month_pay, 2),
+                "margin": round(month_bill - month_pay, 2),
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+            if existing_monthly:
+                await sb_request("PATCH", f"rollup_monthly?user_id=eq.{user_id}&month_year=eq.{month_year}", data=monthly_data)
+            else:
+                await sb_request("POST", "rollup_monthly", data=monthly_data)
+        elif existing_monthly:
+            await sb_request("DELETE", f"rollup_monthly?user_id=eq.{user_id}&month_year=eq.{month_year}")
+
+    # 5. Audit log
+    await sb_request("POST", "audit_log", data={
+        "action": "recipient_unapproved",
+        "entity_type": "pay_period_recipient",
+        "entity_id": recipient_id,
+        "user_id": admin["id"],
+    })
+
+    return {"status": "received"}
+
+
 class AdminNoteRequest(BaseModel):
     note: str
 
@@ -2619,11 +2735,12 @@ def _extract_service_hours(invoice_data: dict) -> dict:
             hours["ADOS In Home"] += 3.0
             counts["ADOS In Home"] += 1
 
-    # APN — split by duration
+    # APN — split by type field or duration_minutes
     for e in (invoice_data.get("apn") or []):
+        apn_type = e.get("type", "")
         mins = float(e.get("duration_minutes") or e.get("minutes") or 30)
         hrs_val = float(e.get("hours") or (mins / 60))
-        if mins >= 50:  # intake (60 min)
+        if apn_type == "intake" or mins >= 50:  # intake (60 min)
             hours["APN Intake"] += hrs_val
         else:
             hours["APN 30 Min"] += hrs_val

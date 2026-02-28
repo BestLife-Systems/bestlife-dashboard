@@ -324,6 +324,18 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
     } finally { setProcessing(false) }
   }
 
+  async function handleUnapprove() {
+    if (!confirm('Revert this approval? Time entries and rollups for this submission will be deleted so you can re-edit and re-approve.')) return
+    setProcessing(true); setError(null)
+    try {
+      await apiPost(`/payroll/recipients/${recipient.id}/unapprove`, {})
+      recipient.status = 'received'
+      onUpdate?.()
+    } catch (err) {
+      setError(err.message)
+    } finally { setProcessing(false) }
+  }
+
   function handleSickDisapprove() {
     setSickDecision('disapprove')
     setShowSickDisapprove(true)
@@ -971,6 +983,15 @@ function ReviewPage({ recipient, onBack, onUpdate }) {
             </>
           )}
           <button className="btn btn--danger-ghost" onClick={() => setShowReject(true)}>Reject</button>
+        </div>
+      )}
+
+      {recipient.status === 'approved' && (
+        <div className="review-action-bar">
+          <button className="btn btn--ghost" onClick={handleUnapprove} disabled={processing} style={{ color: 'var(--warning-text, #fbbf24)' }}>
+            {processing ? 'Processing…' : '↩ Revert to Received'}
+          </button>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Reverts approval so you can re-edit and re-approve</span>
         </div>
       )}
 

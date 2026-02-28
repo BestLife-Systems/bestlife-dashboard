@@ -29,6 +29,7 @@ const PILL_GROUPS = [
   { key: 'OP', label: 'OP', members: ['OP'], color: '#4ade80', unit: 'h' },
   { key: 'SBYS', label: 'SBYS', members: ['SBYS'], color: '#a78bfa', unit: 'h' },
   { key: 'ADOS', label: 'ADOS', members: ['ADOS In Home', 'ADOS At Office'], color: '#fbbf24', unit: 'assessments' },
+  { key: 'APN', label: 'APN', members: ['APN 30 Min', 'APN Intake'], color: '#f97316', unit: 'h' },
   { key: 'PTO', label: 'PTO', members: ['PTO'], color: '#e879f9', unit: 'h' },
   { key: 'Sick', label: 'Sick Leave', members: ['Sick Leave'], color: '#f87171', unit: 'h' },
 ]
