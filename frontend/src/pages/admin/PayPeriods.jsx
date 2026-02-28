@@ -182,30 +182,76 @@ export default function PayPeriods() {
     }
   }
 
-  function parseCsv(text) {
-    const lines = text.trim().split('\n').filter(l => l.trim())
-    if (lines.length < 2) return []
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'))
-    return lines.slice(1).map(line => {
-      const vals = line.split(',').map(v => v.trim())
-      const obj = {}
-      headers.forEach((h, i) => { obj[h] = vals[i] || '' })
-      return {
-        user_name: obj.name || obj.user_name || obj.employee || '',
-        iic: parseFloat(obj.iic) || 0,
-        op: parseFloat(obj.op) || 0,
-        sbys: parseFloat(obj.sbys) || 0,
-        ados: parseFloat(obj.ados) || 0,
-        admin_hours: parseFloat(obj.admin_hours || obj.admin) || 0,
-        supervision: parseFloat(obj.supervision) || 0,
-        sick: parseFloat(obj.sick) || 0,
-        pto: parseFloat(obj.pto) || 0,
+  function parseSpreadsheet(text) {
+    const lines = text.trim().split('\n')
+    const people = {} // key -> { name, iic, op, sbys, ados, apn }
+    let currentSection = null
+
+    for (const line of lines) {
+      const cells = (line.includes('\t') ? line.split('\t') : line.split(',')).map(s => s.trim())
+      const allText = cells.join(' ').toLowerCase()
+
+      // Skip empty lines
+      if (!allText.replace(/\s/g, '')) continue
+
+      // Detect section headers
+      if (allText.includes('intensive in-community')) { currentSection = 'iic'; continue }
+      if (allText.includes('outpatient') && !allText.includes('total')) { currentSection = 'op'; continue }
+      if (allText.includes('school based youth services')) { currentSection = 'sbys'; continue }
+      if (allText.includes('miscellaneous') && !allText.includes('total')) { currentSection = 'misc'; continue }
+      if (allText.includes('pto') && allText.includes('sick')) { currentSection = 'skip'; continue }
+
+      // Skip non-data rows
+      if (!currentSection || currentSection === 'skip') continue
+      if (allText.includes('total')) continue
+      if (allText.includes('# of hrs')) continue
+      if (/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(allText)) continue
+
+      // Column A = name, Column B = hours billed
+      const name = cells[0] || ''
+      const hours = parseFloat(cells[1]) || 0
+      if (!name || hours === 0) continue
+
+      // Handle Miscellaneous section (rows are service types, not people)
+      if (currentSection === 'misc') {
+        const lowerName = name.toLowerCase()
+        if (lowerName.includes('ados')) continue // skip ADOS (can't attribute to a person)
+        if (lowerName.includes('apn')) {
+          // APN hours go to Tracey
+          const key = 'tracey'
+          if (!people[key]) people[key] = { name: 'Tracey', iic: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
+          people[key].apn = (people[key].apn || 0) + hours
+          continue
+        }
+        continue
       }
-    }).filter(r => r.user_name)
+
+      // Clean name: strip "- BA" / "-BA" suffix
+      const cleanName = name.replace(/\s*-\s*BA$/i, '').replace(/-BA$/i, '').trim()
+      const key = cleanName.toLowerCase()
+
+      if (!people[key]) {
+        people[key] = { name: cleanName, iic: 0, op: 0, sbys: 0, ados: 0, apn: 0 }
+      }
+      people[key][currentSection] = (people[key][currentSection] || 0) + hours
+    }
+
+    return Object.values(people).map(p => ({
+      user_name: p.name,
+      iic: p.iic || 0,
+      op: p.op || 0,
+      sbys: p.sbys || 0,
+      ados: p.ados || 0,
+      apn: p.apn || 0,
+      admin_hours: 0,
+      supervision: 0,
+      sick: 0,
+      pto: 0,
+    }))
   }
 
   async function handleBulkImport() {
-    const rows = parseCsv(bulkCsv)
+    const rows = parseSpreadsheet(bulkCsv)
     if (rows.length === 0) {
       setImportResult({ error: 'No valid rows found. Check your CSV format.' })
       return
@@ -323,15 +369,15 @@ export default function PayPeriods() {
         {/* Bulk Import Modal */}
         <Modal open={showBulkImport} onClose={() => setShowBulkImport(false)} title="Bulk Import Time Entries">
           <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
-            Paste CSV data with columns: <strong>name, iic, op, sbys, ados, admin_hours, supervision, sick, pto</strong>
+            Copy <strong>columns A & B</strong> from your billing spreadsheet and paste below. The system reads the section headers (Intensive In-Community, Outpatient, SBYS, etc.) to categorize hours.
           </p>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: '1rem' }}>
-            Names should match users in the system (e.g. "Jane Smith" or "Smith, Jane"). Columns with 0 or blank are skipped.
+            Names are matched by first name or first name + last initial. "- BA" suffixes are stripped automatically. APN hours are assigned to Tracey. PTO/Sick should be entered manually after import.
           </p>
           <textarea
             className="form-input"
-            rows={10}
-            placeholder={'name,iic,op,sbys,ados,admin_hours,supervision,sick,pto\nJane Smith,12,8,0,2,4,1,0,0\nJohn Doe,10,6,2,0,3,1,0,8'}
+            rows={12}
+            placeholder={'Paste columns A & B from your spreadsheet here.\n\nThe system detects sections like:\n  Intensive In-Community\n  Danielle    20\n  Tatyana     2\n  ...\n  Outpatient\n  Kait        11\n  ...'}
             value={bulkCsv}
             onChange={e => setBulkCsv(e.target.value)}
             style={{ fontFamily: 'monospace', fontSize: '0.8rem', width: '100%', resize: 'vertical' }}

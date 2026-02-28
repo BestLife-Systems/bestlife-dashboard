@@ -1519,6 +1519,7 @@ class BulkTimeEntryRow(BaseModel):
     op: Optional[float] = 0
     sbys: Optional[float] = 0
     ados: Optional[float] = 0
+    apn: Optional[float] = 0
     admin_hours: Optional[float] = 0
     supervision: Optional[float] = 0
     sick: Optional[float] = 0
@@ -1543,14 +1544,42 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
         "is_active": "eq.true",
         "select": "id,first_name,last_name,role",
     }) or []
-    # Build name→user map (case-insensitive, "First Last" format)
-    user_by_name = {}
+    # Build multiple name→user maps for flexible matching
+    user_by_full = {}      # "first last" -> user
+    user_by_reverse = {}   # "last, first" -> user
+    user_by_first_li = {}  # "first l" -> user (first name + last initial)
+    user_by_first = {}     # "first" -> [users] (could be ambiguous)
     for u in all_users:
-        full = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip().lower()
-        user_by_name[full] = u
-        # Also map "Last, First" format
-        reverse = f"{u.get('last_name', '')}, {u.get('first_name', '')}".strip().lower()
-        user_by_name[reverse] = u
+        first = (u.get("first_name") or "").strip()
+        last = (u.get("last_name") or "").strip()
+        full = f"{first} {last}".strip().lower()
+        user_by_full[full] = u
+        reverse = f"{last}, {first}".strip().lower()
+        user_by_reverse[reverse] = u
+        fl = first.lower()
+        if fl not in user_by_first:
+            user_by_first[fl] = []
+        user_by_first[fl].append(u)
+        if last:
+            fi_li = f"{first} {last[0]}".lower()
+            user_by_first_li[fi_li] = u
+
+    def find_user(name_str):
+        """Match a name from the spreadsheet to a user. Supports full name, first+last-initial, or first-name-only."""
+        key = name_str.strip().lower()
+        if key in user_by_full:
+            return user_by_full[key], None
+        if key in user_by_reverse:
+            return user_by_reverse[key], None
+        if key in user_by_first_li:
+            return user_by_first_li[key], None
+        if key in user_by_first:
+            matches = user_by_first[key]
+            if len(matches) == 1:
+                return matches[0], None
+            names = [f"{m.get('first_name','')} {m.get('last_name','')}" for m in matches]
+            return None, f"Ambiguous name '{name_str}' — matches: {', '.join(names)}"
+        return None, f"User not found: {name_str}"
 
     # Get rate types
     rate_types = await sb_request("GET", "rate_types", params={
@@ -1565,6 +1594,7 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
         "op": ["op-lc session", "op-ma session"],
         "sbys": ["sbys"],
         "ados": ["ados assessment in home", "ados assessment at office"],
+        "apn": ["apn session", "apn (60 min)", "apn (30 min)", "apn"],
         "admin_hours": ["administration"],
         "supervision": ["supervision"],
         "sick": ["sick leave"],
@@ -1590,10 +1620,9 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
     errors = []
 
     for row in req.rows:
-        name_key = row.user_name.strip().lower()
-        user = user_by_name.get(name_key)
+        user, err = find_user(row.user_name)
         if not user:
-            errors.append(f"User not found: {row.user_name}")
+            errors.append(err)
             continue
 
         uid = user["id"]
@@ -1616,6 +1645,7 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             "iic": row.iic or 0,
             "op": row.op or 0,
             "sbys": row.sbys or 0,
+            "apn": row.apn or 0,
             "ados": row.ados or 0,
             "admin_hours": row.admin_hours or 0,
             "supervision": row.supervision or 0,
