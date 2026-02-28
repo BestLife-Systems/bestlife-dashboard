@@ -3110,15 +3110,23 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
             pay_rate_name = SERVICE_TO_PAY_RATE_NAME.get(st)
             bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
             pay_rate = 0
+            matched_via = "none"
             if pay_rate_name:
                 pay_rate = user_rates.get(pay_rate_name, 0)
+                if pay_rate:
+                    matched_via = f"pay_rate_name={pay_rate_name}"
             if not pay_rate:
                 pay_rate = user_rates.get(bill_rate_name, 0)
+                if pay_rate:
+                    matched_via = f"bill_rate_name={bill_rate_name}"
             if not pay_rate:
                 for rn, rv in user_rates.items():
                     if st.lower() in rn.lower():
                         pay_rate = rv
+                        matched_via = f"fuzzy={rn}"
                         break
+            if st == "OP":
+                logger.info(f"BILLING-DEBUG {name} | st={st} | user_rates={user_rates} | pay_rate_name={pay_rate_name} | bill_rate_name={bill_rate_name} | pay_rate={pay_rate} | matched_via={matched_via}")
             # ADOS pay = assessments × session rate (not hours × rate)
             if st.startswith("ADOS"):
                 num_a = counts_map.get(st, 0)
@@ -3173,6 +3181,37 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
             "margin": round((gr - gp) / gr * 100, 1) if gr > 0 else 0,
         },
         "bill_rates": service_bill_rates,
+    }
+
+
+@app.get("/api/analytics/billing-debug")
+async def billing_debug(admin=Depends(require_admin)):
+    """Temporary debug endpoint: dump rate_types names and user pay rates."""
+    rate_types = await sb_request("GET", "rate_types", params={
+        "select": "id, name, is_active",
+        "order": "sort_order.asc",
+    })
+    all_pay_rates = await sb_request("GET", "user_pay_rates", params={
+        "select": "user_id, pay_rate, rate_types(name), users!user_id(first_name, last_name)",
+    })
+    # Group by user
+    by_user = {}
+    for pr in (all_pay_rates or []):
+        uid = pr["user_id"]
+        u = pr.get("users") or {}
+        name = f"{u.get('first_name','')} {u.get('last_name','')}".strip()
+        rt = pr.get("rate_types") or {}
+        rname = rt.get("name", "")
+        if name not in by_user:
+            by_user[name] = {"user_id": uid, "rates": {}}
+        by_user[name]["rates"][rname] = float(pr["pay_rate"])
+    return {
+        "rate_types": [{"name": rt["name"], "active": rt.get("is_active", True)} for rt in (rate_types or [])],
+        "user_rates": by_user,
+        "lookup_maps": {
+            "SERVICE_TO_PAY_RATE_NAME": SERVICE_TO_PAY_RATE_NAME,
+            "SERVICE_TO_RATE_NAME": {k: v for k, v in SERVICE_TO_RATE_NAME.items()},
+        }
     }
 
 
