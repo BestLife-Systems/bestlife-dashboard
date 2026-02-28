@@ -35,35 +35,48 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // Get initial session — handle stale/expired sessions gracefully
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.warn('Session recovery failed, clearing stale session:', error.message)
+    // Get initial session — validate server-side to catch revoked tokens
+    async function initSession() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        if (error) {
+          console.warn('Session recovery failed:', error.message)
+          nukeSession()
+          return
+        }
+        if (session?.access_token && isTokenExpired(session.access_token)) {
+          console.warn('Access token expired, clearing stale session')
+          nukeSession()
+          return
+        }
+        if (session?.user) {
+          // Server-side validation: catches tokens that decode fine locally but are revoked
+          const { error: userError } = await supabase.auth.getUser()
+          if (userError) {
+            console.warn('Server rejected token, clearing session:', userError.message)
+            nukeSession()
+            return
+          }
+          setUser(session.user)
+          fetchProfile(session.user.id)
+        } else {
+          setLoading(false)
+        }
+      } catch (err) {
+        console.warn('initSession threw:', err)
         nukeSession()
-        return
       }
-      // Check if the access token is actually expired
-      if (session?.access_token && isTokenExpired(session.access_token)) {
-        console.warn('Access token expired, clearing stale session')
-        nukeSession()
-        return
-      }
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      } else {
-        setLoading(false)
-      }
-    }).catch((err) => {
-      console.warn('getSession threw, clearing state:', err)
-      nukeSession()
-    })
+    }
+    initSession()
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          nukeSession()
+          return
+        }
         if (event === 'TOKEN_REFRESHED' && !session) {
-          // Token refresh failed — stale session
           console.warn('Token refresh failed, nuking session')
           nukeSession()
           return
@@ -78,7 +91,29 @@ export function AuthProvider({ children }) {
       }
     )
 
-    return () => subscription.unsubscribe()
+    // Re-validate session when tab regains focus (catches expiry while backgrounded)
+    const handleFocus = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        if (session.access_token && isTokenExpired(session.access_token)) {
+          console.warn('Session expired while tab was in background')
+          nukeSession()
+          return
+        }
+        const { error } = await supabase.auth.getUser()
+        if (error) {
+          console.warn('Session invalid after refocus:', error.message)
+          nukeSession()
+        }
+      } catch {}
+    }
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [])
 
   async function fetchProfile(userId) {

@@ -8,6 +8,7 @@ const ROLE_LABELS = {
   admin: 'Admin',
   clinical_leader: 'Clinical Leader',
   therapist: 'Therapist',
+  ba: 'Behavioral Assistant',
   front_desk: 'Front Desk',
   medical_biller: 'Medical Biller',
   apn: 'APN',

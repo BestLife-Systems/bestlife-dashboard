@@ -61,7 +61,7 @@ export default function Layout({ children, tabs }) {
     clinical_leader: 'Clinical Leader',
     therapist: 'Therapist',
     front_desk: 'Front Desk',
-    ba: 'Billing Admin',
+    ba: 'Behavioral Assistant',
     medical_biller: 'Medical Biller',
     apn: 'APN',
   }

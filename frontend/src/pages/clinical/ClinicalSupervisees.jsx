@@ -74,7 +74,7 @@ export default function ClinicalSupervisees() {
               >
                 <div className="therapist-card-name">{s.first_name} {s.last_name}</div>
                 <div className="therapist-card-stats">
-                  <span className="card-muted">{s.role === 'therapist' ? 'Therapist' : s.role}</span>
+                  <span className="card-muted">{{ therapist: 'Therapist', ba: 'Behavioral Assistant', apn: 'APN', clinical_leader: 'Clinical Leader' }[s.role] || s.role}</span>
                 </div>
               </button>
             ))}

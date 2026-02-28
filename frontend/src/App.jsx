@@ -196,12 +196,12 @@ export default function App() {
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/performance" element={
-            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn']}>
+            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn', 'ba']}>
               <SharedLayout><PerformanceTracking /></SharedLayout>
             </ProtectedRoute>
           } />
           <Route path="/admin/analytics/performance/:userId" element={
-            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn']}>
+            <ProtectedRoute allowedRoles={['admin', 'clinical_leader', 'therapist', 'apn', 'ba']}>
               <SharedLayout><PerformanceDetail /></SharedLayout>
             </ProtectedRoute>
           } />
@@ -289,17 +289,17 @@ export default function App() {
 
           {/* ── Therapist Routes ── */}
           <Route path="/therapist/stats" element={
-            <ProtectedRoute allowedRoles={['therapist']}>
+            <ProtectedRoute allowedRoles={['therapist', 'ba']}>
               <Layout tabs={THERAPIST_TABS}><TherapistStats /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/therapist/invoices" element={
-            <ProtectedRoute allowedRoles={['therapist']}>
+            <ProtectedRoute allowedRoles={['therapist', 'ba']}>
               <Layout tabs={THERAPIST_TABS}><TherapistInvoices /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/therapist/time-off" element={
-            <ProtectedRoute allowedRoles={['therapist']}>
+            <ProtectedRoute allowedRoles={['therapist', 'ba']}>
               <Layout tabs={THERAPIST_TABS}><TherapistTimeOff /></Layout>
             </ProtectedRoute>
           } />
