@@ -508,17 +508,19 @@ export default function Home() {
                     <div
                       key={ann.id}
                       className="home-announcement"
-                      onClick={annEditMode ? handleEdit : undefined}
-                      style={annEditMode ? { cursor: 'pointer', background: 'var(--accent-glow)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : annRemoveMode ? { background: 'var(--danger-bg)', borderRadius: 'var(--radius-sm)', margin: '0 -0.5rem', padding: '0.75rem 0.5rem' } : undefined}
                     >
                       <span className="home-announcement-badge" style={{ background: ANNOUNCEMENT_COLORS[ann.category] || ANNOUNCEMENT_COLORS.general }}>{ann.category}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 500, color: 'var(--text-bright)', fontSize: '0.875rem', marginBottom: '0.125rem' }}>{ann.title}</div>
                         {ann.body && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>{ann.body.length > 200 ? ann.body.slice(0, 200) + '\u2026' : ann.body}</div>}
                       </div>
-                      {annEditMode && <span style={{ flexShrink: 0, color: 'var(--accent)', fontSize: '0.75rem', fontWeight: 500, marginLeft: 'auto' }}>tap to edit</span>}
-                      {annRemoveMode && <button onClick={(e) => { e.stopPropagation(); handleRemove() }} style={{ flexShrink: 0, background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '0.25rem 0.75rem', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, marginLeft: 'auto' }}>Remove</button>}
                       {!annEditMode && !annRemoveMode && <span className="home-announcement-date">{formatDate(ann.effective_date)}</span>}
+                      {annEditMode && (
+                        <button onClick={handleEdit} title="Edit" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--accent-glow)', color: 'var(--accent)', marginLeft: 'auto' }}><PencilIcon /></button>
+                      )}
+                      {annRemoveMode && (
+                        <button onClick={handleRemove} title="Remove" style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--danger-bg)', color: 'var(--danger)', marginLeft: 'auto' }}><XIcon /></button>
+                      )}
                     </div>
                   )
                 })}
