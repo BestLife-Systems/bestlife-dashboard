@@ -81,6 +81,46 @@ const ANNOUNCEMENT_COLORS = {
 
 const ANN_CATEGORIES = ['general', 'policy', 'celebration', 'outing']
 
+const DAILY_MESSAGES = [
+  // Positive / motivational
+  "You're making a bigger impact than you realize.",
+  "Small steps every day lead to big changes.",
+  "Your energy sets the tone — and yours is great.",
+  "The world is a little brighter because of the work you do.",
+  "Progress, not perfection. You've got this.",
+  "You didn't come this far to only come this far.",
+  "Today is full of possibility — go make it count.",
+  "Be the reason someone smiles today.",
+  "You are exactly where you need to be right now.",
+  "What you do matters. Keep going.",
+  "Believe in the power of yet — you're not there yet, but you will be.",
+  "Difficult roads often lead to beautiful destinations.",
+  "Your potential is endless. Go do what you were born to do.",
+  "Every day is a fresh start. Take a deep breath and begin again.",
+  "You bring something to this team that no one else can.",
+  "A little kindness goes a long way — including kindness to yourself.",
+  "You're stronger than you think and braver than you feel.",
+  "Good things are coming. Keep showing up.",
+  "One kind word can change someone's entire day.",
+  "Happiness is not by chance, but by choice.",
+  // Smile & mental health fun facts
+  "😊 Fun fact: Smiling releases endorphins, serotonin, and dopamine — your brain's natural feel-good trio.",
+  "😊 Fun fact: It takes only 17 muscles to smile but 43 to frown. Efficiency win!",
+  "😊 Fun fact: Smiling is contagious — when you see someone smile, your brain automatically wants to return it.",
+  "😊 Fun fact: Studies show that smiling can actually lower your heart rate during stressful situations.",
+  "😊 Fun fact: Even a forced smile can trick your brain into feeling happier. Try it right now!",
+  "😊 Fun fact: Children smile an average of 400 times a day. Adults? Only about 20. Let's close that gap!",
+  "😊 Fun fact: Smiling makes you appear more approachable, competent, and trustworthy to others.",
+  "😊 Fun fact: A genuine smile (called a Duchenne smile) engages the muscles around your eyes — not just your mouth.",
+  "😊 Fun fact: Smiling boosts your immune system by helping your body produce more white blood cells.",
+  "😊 Fun fact: People who smile more tend to live an average of 7 years longer, according to research.",
+  "😊 Fun fact: Your brain can't always tell the difference between a real and fake smile — both trigger happy chemicals.",
+  "😊 Fun fact: Smiling during a workout can reduce your perceived effort and improve endurance.",
+  "😊 Fun fact: A smile is the universal sign of happiness — recognized across every culture on Earth.",
+  "😊 Fun fact: Laughter and smiling together can burn up to 40 calories in 15 minutes.",
+  "😊 Fun fact: Seeing a smiling face activates your orbitofrontal cortex — the brain's reward center.",
+]
+
 // ── Inline icon components ──
 
 function PencilIcon() {
@@ -168,6 +208,7 @@ export default function Home() {
   const firstName = profile?.first_name || 'there'
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const [dailyMessage] = useState(() => DAILY_MESSAGES[Math.floor(Math.random() * DAILY_MESSAGES.length)])
 
   useEffect(() => {
     loadTasks()
@@ -346,7 +387,7 @@ export default function Home() {
       <div className="page-header">
         <div>
           <h2 className="page-title">{greeting}, {firstName}</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>Here's what's on your plate today.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem', fontStyle: 'italic' }}>{dailyMessage}</p>
         </div>
 
         {impactHours && (
