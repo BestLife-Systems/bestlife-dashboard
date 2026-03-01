@@ -2,49 +2,104 @@ import { supabase } from './supabase'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
+// Check if a JWT is expired (with 60s buffer)
+function isTokenExpired(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.exp * 1000 < Date.now() - 60000
+  } catch { return true }
+}
+
 async function getAuthHeaders() {
-  const { data: { session } } = await supabase.auth.getSession()
+  let { data: { session } } = await supabase.auth.getSession()
   if (!session?.access_token) return {}
-  return {
-    'Authorization': `Bearer ${session.access_token}`,
+
+  // If the cached token is already expired, proactively refresh before using it
+  if (isTokenExpired(session.access_token)) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    if (refreshed?.session?.access_token) {
+      return { 'Authorization': `Bearer ${refreshed.session.access_token}` }
+    }
+    // Refresh failed — return empty, server will 401 and apiFetch will handle it
+    return {}
   }
+
+  return { 'Authorization': `Bearer ${session.access_token}` }
+}
+
+// Central fetch wrapper: proactive refresh + 401 retry + hard redirect on dead session
+async function apiFetch(path, options = {}) {
+  const url = `${API_BASE}${path}`
+
+  const doFetch = async () => {
+    const auth = await getAuthHeaders()
+    return fetch(url, {
+      ...options,
+      headers: { ...auth, ...(options.headers || {}) },
+    })
+  }
+
+  let res = await doFetch()
+
+  // On 401, attempt one token refresh + retry
+  if (res.status === 401) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    if (refreshed?.session) {
+      res = await doFetch()
+    }
+  }
+
+  // Still 401 after retry — session is dead, clear everything and go to login
+  if (res.status === 401) {
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key === 'bestlife-auth-v') return
+        if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
+      })
+    } catch {}
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+
+  return res
+}
+
+function parseError(err) {
+  const detail = err.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+  return JSON.stringify(detail) || 'Request failed'
 }
 
 export async function apiGet(path) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(`${API_BASE}${path}`, { headers })
+  const res = await apiFetch(path)
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(detail) || 'Request failed')
-    throw new Error(msg)
+    throw new Error(parseError(err))
   }
   return res.json()
 }
 
 export async function apiPost(path, body) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await apiFetch(path, {
     method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const detail = err.detail
-    const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ') : JSON.stringify(detail) || 'Request failed')
-    throw new Error(msg)
+    throw new Error(parseError(err))
   }
   return res.json()
 }
 
 export async function apiUpload(path, file) {
-  const headers = await getAuthHeaders()
   const formData = new FormData()
   formData.append('file', file)
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await apiFetch(path, {
     method: 'POST',
-    headers,
     body: formData,
   })
   if (!res.ok) {
@@ -55,10 +110,9 @@ export async function apiUpload(path, file) {
 }
 
 export async function apiPatch(path, body) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await apiFetch(path, {
     method: 'PATCH',
-    headers: { ...headers, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -69,11 +123,7 @@ export async function apiPatch(path, body) {
 }
 
 export async function apiDelete(path) {
-  const headers = await getAuthHeaders()
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'DELETE',
-    headers,
-  })
+  const res = await apiFetch(path, { method: 'DELETE' })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Request failed')

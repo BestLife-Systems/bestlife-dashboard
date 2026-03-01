@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
@@ -9,11 +9,15 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const nukingRef = useRef(false)
 
   // Hard-clear all Supabase auth data from localStorage
   function nukeSession() {
+    if (nukingRef.current) return          // prevent recursive calls from signOut listener
+    nukingRef.current = true
     try {
       Object.keys(localStorage).forEach(key => {
+        if (key === 'bestlife-auth-v') return    // preserve deploy version marker
         if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key)
         }
@@ -23,6 +27,7 @@ export function AuthProvider({ children }) {
     setUser(null)
     setProfile(null)
     setLoading(false)
+    setTimeout(() => { nukingRef.current = false }, 500)
   }
 
   // Check if a JWT is expired (with 60s buffer)
@@ -79,7 +84,10 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
-          nukeSession()
+          // Just reset state — nukeSession already handled the cleanup
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
           return
         }
         if (event === 'TOKEN_REFRESHED' && !session) {
