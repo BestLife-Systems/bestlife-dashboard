@@ -100,7 +100,7 @@ const CATEGORIES = [
   { name: 'Training', color: '#f472b6' },
 ]
 
-// ── Canvas space background ──
+// ── Canvas background: night sky (dark) / sunny clouds (light) ──
 function SpaceCanvas() {
   const canvasRef = useRef(null)
 
@@ -110,15 +110,18 @@ function SpaceCanvas() {
     const ctx = canvas.getContext('2d')
     let animId
 
-    // Theme-aware colors: dark stars on light bg, white stars on dark bg
     const isLight = () => document.documentElement.dataset.theme === 'light'
 
+    // ── Dark mode: stars ──
     const stars = []
     const STAR_COUNT = 220
     const shooters = []
-
     let constellationStars = []
     let constellationLines = []
+
+    // ── Light mode: clouds ──
+    const clouds = []
+    const CLOUD_COUNT = 12
 
     function resize() {
       const dpr = window.devicePixelRatio || 1
@@ -144,6 +147,34 @@ function SpaceCanvas() {
       constellationLines = []
     }
 
+    function initClouds() {
+      clouds.length = 0
+      const cw = canvas.offsetWidth, ch = canvas.offsetHeight
+      for (let i = 0; i < CLOUD_COUNT; i++) {
+        const baseY = Math.random() * ch
+        const scale = Math.random() * 0.6 + 0.5
+        // Each cloud is a cluster of overlapping ellipses
+        const puffs = []
+        const puffCount = Math.floor(Math.random() * 4) + 3
+        for (let p = 0; p < puffCount; p++) {
+          puffs.push({
+            dx: (p - puffCount / 2) * 35 * scale + (Math.random() - 0.5) * 20,
+            dy: (Math.random() - 0.5) * 18 * scale,
+            rx: (Math.random() * 25 + 35) * scale,
+            ry: (Math.random() * 12 + 18) * scale,
+          })
+        }
+        clouds.push({
+          x: Math.random() * (cw + 400) - 200,
+          y: baseY,
+          speed: (Math.random() * 0.15 + 0.05) * (Math.random() < 0.3 ? -1 : 1),
+          alpha: Math.random() * 0.25 + 0.12,
+          puffs,
+          scale,
+        })
+      }
+    }
+
     function spawnShooter() {
       const cw = canvas.offsetWidth, ch = canvas.offsetHeight
       shooters.push({
@@ -154,40 +185,30 @@ function SpaceCanvas() {
       })
     }
 
-    resize(); initStars()
-    const onResize = () => { resize(); initStars() }
+    resize(); initStars(); initClouds()
+    const onResize = () => { resize(); initStars(); initClouds() }
     window.addEventListener('resize', onResize)
     let lastShoot = 0
 
-    function draw(now) {
+    function drawDark(now) {
       const cw = canvas.offsetWidth, ch = canvas.offsetHeight
-      ctx.clearRect(0, 0, cw, ch)
 
       // Milky way
       const g = ctx.createLinearGradient(0, 0, cw, ch)
-      if (isLight()) {
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(0.3, 'rgba(60,80,140,0.04)')
-        g.addColorStop(0.45, 'rgba(60,80,160,0.06)')
-        g.addColorStop(0.55, 'rgba(40,80,160,0.05)')
-        g.addColorStop(0.7, 'rgba(60,80,140,0.03)')
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-      } else {
-        g.addColorStop(0, 'rgba(0,0,0,0)')
-        g.addColorStop(0.3, 'rgba(60,50,120,0.05)')
-        g.addColorStop(0.45, 'rgba(80,60,180,0.08)')
-        g.addColorStop(0.55, 'rgba(40,80,200,0.07)')
-        g.addColorStop(0.7, 'rgba(60,50,120,0.04)')
-        g.addColorStop(1, 'rgba(0,0,0,0)')
-      }
+      g.addColorStop(0, 'rgba(0,0,0,0)')
+      g.addColorStop(0.3, 'rgba(60,50,120,0.05)')
+      g.addColorStop(0.45, 'rgba(80,60,180,0.08)')
+      g.addColorStop(0.55, 'rgba(40,80,200,0.07)')
+      g.addColorStop(0.7, 'rgba(60,50,120,0.04)')
+      g.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch)
 
       // Constellation lines
       for (const [a, b, color] of constellationLines) {
-        const sa = constellationStars[a], sb = constellationStars[b]
-        if (!sa || !sb) continue
+        const sa = constellationStars[a], sb2 = constellationStars[b]
+        if (!sa || !sb2) continue
         ctx.strokeStyle = color; ctx.lineWidth = 0.8
-        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb2.x, sb2.y); ctx.stroke()
       }
       // Constellation stars
       const t = now * 0.001
@@ -196,19 +217,15 @@ function SpaceCanvas() {
         const a = s.alpha * fl
         ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${a})`)
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill()
-        // Glow
         ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${0.12 * fl})`)
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 3.5, 0, Math.PI * 2); ctx.fill()
       }
 
       // Background stars
-      const light = isLight()
       for (const s of stars) {
         const fl = Math.sin(t * s.speed * 60 + s.offset) * 0.3 + 0.7
         const a = s.alpha * fl
-        ctx.fillStyle = s.hue
-          ? `hsla(${s.hue},70%,${light ? '35%' : '75%'},${a})`
-          : light ? `rgba(30,60,80,${a * 0.6})` : `rgba(255,255,255,${a})`
+        ctx.fillStyle = s.hue ? `hsla(${s.hue},70%,75%,${a})` : `rgba(255,255,255,${a})`
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill()
       }
 
@@ -219,12 +236,57 @@ function SpaceCanvas() {
         if (s.life <= 0) { shooters.splice(i, 1); continue }
         const tx = s.x - s.vx * s.len * 0.3, ty = s.y - s.vy * s.len * 0.3
         const sg = ctx.createLinearGradient(tx, ty, s.x, s.y)
-        sg.addColorStop(0, light ? 'rgba(30,60,80,0)' : 'rgba(255,255,255,0)')
-        sg.addColorStop(1, light ? `rgba(30,80,120,${s.life * 0.6})` : `rgba(200,220,255,${s.life * 0.8})`)
+        sg.addColorStop(0, 'rgba(255,255,255,0)')
+        sg.addColorStop(1, `rgba(200,220,255,${s.life * 0.8})`)
         ctx.strokeStyle = sg; ctx.lineWidth = 1.5
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(s.x, s.y); ctx.stroke()
-        ctx.fillStyle = light ? `rgba(30,80,120,${s.life * 0.7})` : `rgba(220,240,255,${s.life})`
+        ctx.fillStyle = `rgba(220,240,255,${s.life})`
         ctx.beginPath(); ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+
+    function drawLight(now) {
+      const cw = canvas.offsetWidth, ch = canvas.offsetHeight
+
+      // Soft sky gradient
+      const sky = ctx.createLinearGradient(0, 0, 0, ch)
+      sky.addColorStop(0, 'rgba(135,195,235,0.15)')
+      sky.addColorStop(0.4, 'rgba(165,215,245,0.08)')
+      sky.addColorStop(1, 'rgba(200,230,250,0.03)')
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, cw, ch)
+
+      // Drifting clouds
+      for (const c of clouds) {
+        c.x += c.speed
+        // Wrap around
+        const totalW = c.scale * 200
+        if (c.speed > 0 && c.x > cw + totalW) c.x = -totalW
+        if (c.speed < 0 && c.x < -totalW) c.x = cw + totalW
+
+        ctx.save()
+        for (const p of c.puffs) {
+          const px = c.x + p.dx, py = c.y + p.dy
+          const grad = ctx.createRadialGradient(px, py, 0, px, py, p.rx)
+          grad.addColorStop(0, `rgba(255,255,255,${c.alpha})`)
+          grad.addColorStop(0.5, `rgba(255,255,255,${c.alpha * 0.6})`)
+          grad.addColorStop(1, 'rgba(255,255,255,0)')
+          ctx.fillStyle = grad
+          ctx.beginPath()
+          ctx.ellipse(px, py, p.rx, p.ry, 0, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.restore()
+      }
+    }
+
+    function draw(now) {
+      const cw = canvas.offsetWidth, ch = canvas.offsetHeight
+      ctx.clearRect(0, 0, cw, ch)
+
+      if (isLight()) {
+        drawLight(now)
+      } else {
+        drawDark(now)
       }
 
       animId = requestAnimationFrame(draw)
