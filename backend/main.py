@@ -2810,7 +2810,7 @@ async def billing_summary(admin=Depends(require_admin)):
     periods = await sb_request("GET", "pay_periods", params={
         "select": "id, label, start_date, end_date, status",
         "status": "eq.closed",
-        "order": "start_date.desc",
+        "order": "start_date.asc",
     })
     if not periods:
         periods = []
@@ -2819,7 +2819,7 @@ async def billing_summary(admin=Depends(require_admin)):
     open_periods_raw = await sb_request("GET", "pay_periods", params={
         "select": "id, label, start_date, end_date, status",
         "status": "eq.open",
-        "order": "start_date.desc",
+        "order": "start_date.asc",
     }) or []
 
     # Get bill rate config for projected revenue

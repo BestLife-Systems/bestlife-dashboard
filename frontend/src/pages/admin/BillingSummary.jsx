@@ -515,7 +515,7 @@ export default function BillingSummary() {
     if (!periodsByMonth[mk]) periodsByMonth[mk] = []
     periodsByMonth[mk].push(p)
   }
-  const monthKeys = Object.keys(periodsByMonth).sort().reverse()
+  const monthKeys = Object.keys(periodsByMonth).sort()
 
   return (
     <div>
