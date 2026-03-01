@@ -588,6 +588,12 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
 
 // ── Main ──
 export default function KnowledgeBase() {
+  // Add kb-active class to root so sidebar/topbar can go translucent
+  useEffect(() => {
+    document.documentElement.classList.add('kb-active')
+    return () => document.documentElement.classList.remove('kb-active')
+  }, [])
+
   const { profile, isAdmin } = useAuth()
   const [search, setSearch] = useState('')
   const [selectedTag, setSelectedTag] = useState(null)
