@@ -110,6 +110,9 @@ function SpaceCanvas() {
     const ctx = canvas.getContext('2d')
     let animId
 
+    // Theme-aware colors: dark stars on light bg, white stars on dark bg
+    const isLight = () => document.documentElement.dataset.theme === 'light'
+
     const stars = []
     const STAR_COUNT = 220
     const shooters = []
@@ -162,12 +165,21 @@ function SpaceCanvas() {
 
       // Milky way
       const g = ctx.createLinearGradient(0, 0, cw, ch)
-      g.addColorStop(0, 'rgba(0,0,0,0)')
-      g.addColorStop(0.3, 'rgba(60,50,120,0.05)')
-      g.addColorStop(0.45, 'rgba(80,60,180,0.08)')
-      g.addColorStop(0.55, 'rgba(40,80,200,0.07)')
-      g.addColorStop(0.7, 'rgba(60,50,120,0.04)')
-      g.addColorStop(1, 'rgba(0,0,0,0)')
+      if (isLight()) {
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(0.3, 'rgba(60,80,140,0.04)')
+        g.addColorStop(0.45, 'rgba(60,80,160,0.06)')
+        g.addColorStop(0.55, 'rgba(40,80,160,0.05)')
+        g.addColorStop(0.7, 'rgba(60,80,140,0.03)')
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+      } else {
+        g.addColorStop(0, 'rgba(0,0,0,0)')
+        g.addColorStop(0.3, 'rgba(60,50,120,0.05)')
+        g.addColorStop(0.45, 'rgba(80,60,180,0.08)')
+        g.addColorStop(0.55, 'rgba(40,80,200,0.07)')
+        g.addColorStop(0.7, 'rgba(60,50,120,0.04)')
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+      }
       ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch)
 
       // Constellation lines
@@ -190,10 +202,13 @@ function SpaceCanvas() {
       }
 
       // Background stars
+      const light = isLight()
       for (const s of stars) {
         const fl = Math.sin(t * s.speed * 60 + s.offset) * 0.3 + 0.7
         const a = s.alpha * fl
-        ctx.fillStyle = s.hue ? `hsla(${s.hue},70%,75%,${a})` : `rgba(255,255,255,${a})`
+        ctx.fillStyle = s.hue
+          ? `hsla(${s.hue},70%,${light ? '35%' : '75%'},${a})`
+          : light ? `rgba(30,60,80,${a * 0.6})` : `rgba(255,255,255,${a})`
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill()
       }
 
@@ -204,11 +219,11 @@ function SpaceCanvas() {
         if (s.life <= 0) { shooters.splice(i, 1); continue }
         const tx = s.x - s.vx * s.len * 0.3, ty = s.y - s.vy * s.len * 0.3
         const sg = ctx.createLinearGradient(tx, ty, s.x, s.y)
-        sg.addColorStop(0, 'rgba(255,255,255,0)')
-        sg.addColorStop(1, `rgba(200,220,255,${s.life * 0.8})`)
+        sg.addColorStop(0, light ? 'rgba(30,60,80,0)' : 'rgba(255,255,255,0)')
+        sg.addColorStop(1, light ? `rgba(30,80,120,${s.life * 0.6})` : `rgba(200,220,255,${s.life * 0.8})`)
         ctx.strokeStyle = sg; ctx.lineWidth = 1.5
         ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(s.x, s.y); ctx.stroke()
-        ctx.fillStyle = `rgba(220,240,255,${s.life})`
+        ctx.fillStyle = light ? `rgba(30,80,120,${s.life * 0.7})` : `rgba(220,240,255,${s.life})`
         ctx.beginPath(); ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2); ctx.fill()
       }
 
