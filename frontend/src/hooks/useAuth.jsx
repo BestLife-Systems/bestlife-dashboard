@@ -24,30 +24,44 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false
 
+    // Detect auth callback in URL (magic link or OAuth redirect).
+    // Supabase uses either hash params (#access_token=...) or search params (?code=...)
+    // depending on the flow. We must NOT set loading=false until Supabase processes these.
+    const hash = window.location.hash
+    const search = window.location.search
+    const hasAuthCallback =
+      hash.includes('access_token') || hash.includes('type=magiclink') ||
+      hash.includes('type=recovery') || search.includes('code=')
+
     async function initSession() {
       try {
-        // Step 1: Check for locally stored session
         const { data: { session } } = await supabase.auth.getSession()
+
+        if (!session && hasAuthCallback) {
+          // Auth callback in progress — Supabase is processing URL tokens async.
+          // Keep loading=true and let onAuthStateChange handle it below.
+          // Safety timeout: if callback processing stalls, stop loading after 8s.
+          setTimeout(() => { if (!cancelled) setLoading(false) }, 8000)
+          return
+        }
+
         if (!session) {
           if (!cancelled) setLoading(false)
           return
         }
 
-        // Step 2: Refresh to ensure we have valid tokens.
-        // This is the key fix — refreshSession() handles expired access tokens
-        // gracefully by using the refresh token, whereas getUser() would reject
-        // the expired access token and trigger a failure cascade.
+        // Refresh to ensure we have valid tokens.
+        // refreshSession() handles expired access tokens gracefully by using
+        // the refresh token, whereas getUser() would reject them.
         const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
 
         if (refreshError || !refreshed?.session) {
-          // Refresh token is dead — session is truly gone. Clean up quietly.
           console.info('Session expired, clearing auth state')
           clearAuthStorage()
           if (!cancelled) setLoading(false)
           return
         }
 
-        // Step 3: We have a valid session — set user and fetch profile
         if (!cancelled) {
           setUser(refreshed.session.user)
           await fetchProfile(refreshed.session.user.id)
@@ -61,7 +75,7 @@ export function AuthProvider({ children }) {
 
     initSession()
 
-    // Listen for auth state changes (sign-in, sign-out, token refresh, magic link)
+    // Listen for auth state changes (sign-in, sign-out, token refresh, magic link callback)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (cancelled) return
