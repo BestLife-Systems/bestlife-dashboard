@@ -2011,6 +2011,17 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
             rate_info = pay_rate_map.get(rate_name, {})
             fallback = rate_type_fallback.get(rate_name, {})
         rate_type_id = rate_info.get("rate_type_id") or fallback.get("id")
+        # Auto-create rate type if it doesn't exist (e.g. supervision types)
+        if not rate_type_id:
+            new_name = resolved_name or rate_name
+            created = await sb_request("POST", "rate_types", data={
+                "name": new_name, "unit": "hourly",
+            })
+            if created:
+                new_rt = created[0] if isinstance(created, list) else created
+                rate_type_id = new_rt.get("id")
+                # Cache so subsequent calls in this approval don't re-create
+                rate_type_fallback[new_name] = {"id": rate_type_id, "name": new_name, "unit": "hourly"}
         pay_rate = rate_info.get("pay_rate", 0)
         bill_rate = bill_rate_map.get(resolved_name, 0) or bill_rate_map.get(rate_name, 0)
         unit = rate_info.get("unit") or fallback.get("unit", "hourly")
@@ -2374,6 +2385,87 @@ async def zero_hours_recipient(recipient_id: str, req: ZeroHoursRequest, admin=D
         "updated_at": datetime.utcnow().isoformat(),
     })
     return {"status": "zero_hours"}
+
+
+@app.post("/api/admin/regenerate-time-entries")
+async def regenerate_time_entries(admin=Depends(require_admin)):
+    """One-time migration: rebuild time_entries for all approved recipients."""
+    recipients = await sb_request("GET", "pay_period_recipients", params={
+        "status": "eq.approved",
+        "select": "id,user_id,pay_period_id,invoice_data",
+    }) or []
+    all_rate_types = await sb_request("GET", "rate_types", params={"select": "id,name,unit"})
+    rt_fallback = {rt["name"]: rt for rt in (all_rate_types or [])}
+    bill_defaults = await sb_request("GET", "bill_rate_defaults", params={"select": "*, rate_types(name)"})
+    br_map = {}
+    for bd in (bill_defaults or []):
+        rt = bd.get("rate_types") or {}
+        br_map[rt.get("name", "")] = float(bd["default_bill_rate"])
+    fixed, errors = 0, []
+    for recip in recipients:
+        rid, uid, pid = recip["id"], recip["user_id"], recip["pay_period_id"]
+        inv = recip.get("invoice_data") or {}
+        try:
+            await sb_request("DELETE", f"time_entries?recipient_id=eq.{rid}")
+            pay_rates = await sb_request("GET", "user_pay_rates", params={"user_id": f"eq.{uid}", "select": "*, rate_types(name, unit)"})
+            pr_map = {}
+            for pr in (pay_rates or []):
+                rt = pr.get("rate_types") or {}
+                pr_map[rt.get("name", "")] = {"rate_type_id": pr["rate_type_id"], "pay_rate": float(pr["pay_rate"]), "unit": rt.get("unit", "hourly")}
+            async def _w(rn, qty, ini=None, dur=None, notes=None):
+                if qty == 0: return
+                cands = RATE_NAME_ALIASES.get(rn, [rn])
+                ri, fb, res = {}, {}, rn
+                for c in cands:
+                    if c in pr_map: ri, res = pr_map[c], c; break
+                if not ri.get("rate_type_id"):
+                    for c in cands:
+                        if c in rt_fallback: fb, res = rt_fallback[c], c; break
+                if not ri and not fb: ri, fb = pr_map.get(rn, {}), rt_fallback.get(rn, {})
+                rtid = ri.get("rate_type_id") or fb.get("id")
+                if not rtid:
+                    created = await sb_request("POST", "rate_types", data={"name": res or rn, "unit": "hourly"})
+                    if created:
+                        nrt = created[0] if isinstance(created, list) else created
+                        rtid = nrt.get("id")
+                        rt_fallback[res or rn] = {"id": rtid, "name": res or rn, "unit": "hourly"}
+                if rtid:
+                    pr_val = ri.get("pay_rate", 0)
+                    br_val = br_map.get(res, 0) or br_map.get(rn, 0)
+                    await sb_request("POST", "time_entries", data={
+                        "recipient_id": rid, "user_id": uid, "pay_period_id": pid,
+                        "rate_type_id": rtid, "quantity": qty, "duration_minutes": dur,
+                        "client_initials": ini, "est_bill_amount": round(br_val * qty, 2),
+                        "est_pay_amount": round(pr_val * qty, 2), "notes": notes, "locked": True,
+                    })
+            iic = inv.get("iic") or {}
+            for code, entries in iic.items():
+                if not isinstance(entries, list): continue
+                irn = {"IICLC-H0036TJU1": "IIC LPC/LCSW", "IICMA-H0036TJU2": "IIC LAC/LSW", "BA-H2014TJ": "Behavioral Assistant"}.get(code, code)
+                for e in entries: await _w(irn, float(e.get("hours") or 0), ini=e.get("cyber_initials"))
+            op = inv.get("op") or {}
+            for e in (op.get("sessions") or []):
+                await _w("OP Cancellation" if e.get("cancel_fee") else "OP Session", 1.0, ini=e.get("client_initials"))
+            for e in (inv.get("sbys") or []): await _w("SBYS", float(e.get("hours") or 0))
+            for e in (inv.get("ados") or []):
+                loc = (e.get("location") or "").lower()
+                await _w("ADOS Assessment - At Office" if "office" in loc else "ADOS Assessment - In Home", 3.0, ini=e.get("client_initials"), notes=f"{e.get('location','')} ID:{e.get('id_number','')}")
+            for e in (inv.get("apn") or []):
+                await _w("APN Intake" if e.get("type") == "intake" else "APN 30 Min", float(e.get("hours") or 0))
+            for e in (inv.get("admin") or []): await _w("Administration", float(e.get("hours") or 0))
+            sup = inv.get("supervision") or {}
+            for s in (sup.get("individual") or []): await _w("Individual Supervision", 1.0, notes=f"Supervisor: {s.get('supervisor_name','')}")
+            for s in (sup.get("group") or []): await _w("Group Supervision", 1.0, notes=f"Supervisees: {','.join(s.get('supervisee_names',[]))}")
+            sick = inv.get("sick_leave") or {}
+            sh = float(sick.get("hours") or 0)
+            if sh > 0: await _w("Sick Leave", sh, notes=sick.get("reason"))
+            pto = inv.get("pto") or {}
+            ph = float(pto.get("hours") or 0)
+            if ph > 0: await _w("PTO", ph)
+            fixed += 1
+        except Exception as e:
+            errors.append({"recipient_id": rid, "error": str(e)})
+    return {"status": "done", "recipients_processed": fixed, "errors": errors}
 
 
 # ── Export Batches ─────────────────────────────────────────────────
@@ -3436,12 +3528,20 @@ async def analytics_performance(
         period_label = str(y)
         period = str(y)
     else:
-        # monthly (default)
+        # monthly (default) — default to last complete month with closed periods
         timeframe = "monthly"
         if period and len(period) == 7:
             y, m = int(period[:4]), int(period[5:7])
         else:
-            y, m = today.year, today.month
+            # Find last month with closed pay periods
+            closed_pp = await sb_request("GET", "pay_periods", params={
+                "select": "start_date", "status": "eq.closed", "order": "start_date.desc", "limit": "1",
+            }) or []
+            if closed_pp:
+                last_closed = closed_pp[0]["start_date"][:7]
+                y, m = int(last_closed[:4]), int(last_closed[5:7])
+            else:
+                y, m = today.year, today.month
             period = f"{y}-{m:02d}"
         start_date = f"{y}-{m:02d}-01"
         last_day = calendar.monthrange(y, m)[1]
