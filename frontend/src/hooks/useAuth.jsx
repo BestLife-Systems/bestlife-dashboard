@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
@@ -24,82 +24,83 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false
 
-    // Detect auth callback in URL (magic link or OAuth redirect).
-    // Supabase uses either hash params (#access_token=...) or search params (?code=...)
-    // depending on the flow. We must NOT set loading=false until Supabase processes these.
+    // Detect auth callback in URL (magic link / password recovery).
+    // Supabase processes these async AFTER INITIAL_SESSION fires,
+    // so we must keep loading=true until SIGNED_IN arrives.
     const hash = window.location.hash
     const search = window.location.search
     const hasAuthCallback =
       hash.includes('access_token') || hash.includes('type=magiclink') ||
       hash.includes('type=recovery') || search.includes('code=')
 
-    async function initSession() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-
-        if (!session && hasAuthCallback) {
-          // Auth callback in progress — Supabase is processing URL tokens async.
-          // Keep loading=true and let onAuthStateChange handle it below.
-          // Safety timeout: if callback processing stalls, stop loading after 8s.
-          setTimeout(() => { if (!cancelled) setLoading(false) }, 8000)
-          return
-        }
-
-        if (!session) {
-          if (!cancelled) setLoading(false)
-          return
-        }
-
-        // Refresh to ensure we have valid tokens.
-        // refreshSession() handles expired access tokens gracefully by using
-        // the refresh token, whereas getUser() would reject them.
-        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
-
-        if (refreshError || !refreshed?.session) {
-          console.info('Session expired, clearing auth state')
-          clearAuthStorage()
-          if (!cancelled) setLoading(false)
-          return
-        }
-
-        if (!cancelled) {
-          setUser(refreshed.session.user)
-          await fetchProfile(refreshed.session.user.id)
-        }
-      } catch (err) {
-        console.warn('initSession error:', err)
-        clearAuthStorage()
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    initSession()
-
-    // Listen for auth state changes (sign-in, sign-out, token refresh, magic link callback)
+    // Single source of truth: let Supabase handle ALL session management.
+    //
+    // CRITICAL: We do NOT call refreshSession() manually. Supabase's internal
+    // _initialize() already refreshes expired tokens before firing INITIAL_SESSION.
+    // Calling refreshSession() ourselves races with that internal refresh, and
+    // with refresh token rotation enabled (Supabase default), the second refresh
+    // sees an already-rotated token and fails — killing the session every time.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (cancelled) return
 
-        if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+        // INITIAL_SESSION: fires once on startup, after Supabase loads and
+        // refreshes the stored session (if any). This is our "is user logged in?" check.
+        if (event === 'INITIAL_SESSION') {
+          if (session?.user) {
+            setUser(session.user)
+            await fetchProfile(session.user.id)
+          } else if (!hasAuthCallback) {
+            // No session and not returning from a magic link — not logged in.
+            setLoading(false)
+          }
+          // If hasAuthCallback, stay in loading state — SIGNED_IN will fire next.
+          return
+        }
+
+        // SIGNED_IN: fires on login (password, magic link, OAuth).
+        // Also fires when magic link tokens in URL are processed.
+        if (event === 'SIGNED_IN') {
+          if (session?.user) {
+            setUser(session.user)
+            await fetchProfile(session.user.id)
+          }
+          return
+        }
+
+        // TOKEN_REFRESHED: Supabase auto-refreshed the access token.
+        // Update user in case anything changed, but don't re-fetch profile.
+        if (event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            setUser(session.user)
+          } else {
+            // Refresh produced no session — treat as sign out
+            setUser(null)
+            setProfile(null)
+            setLoading(false)
+          }
+          return
+        }
+
+        // SIGNED_OUT: user logged out or session was invalidated.
+        if (event === 'SIGNED_OUT') {
           setUser(null)
           setProfile(null)
           setLoading(false)
           return
         }
-
-        if (session?.user) {
-          setUser(session.user)
-          await fetchProfile(session.user.id)
-        } else {
-          setUser(null)
-          setProfile(null)
-          setLoading(false)
-        }
       }
     )
 
+    // Safety timeout: if auth callback processing stalls, stop loading after 8s
+    let safetyTimer
+    if (hasAuthCallback) {
+      safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false) }, 8000)
+    }
+
     return () => {
       cancelled = true
+      if (safetyTimer) clearTimeout(safetyTimer)
       subscription.unsubscribe()
     }
   }, [])
@@ -113,7 +114,6 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
-        // Auth-level errors mean the session is bad
         if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.code === '401') {
           console.warn('Profile fetch auth error — clearing session')
           clearAuthStorage()
