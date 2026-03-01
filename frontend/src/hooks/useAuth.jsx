@@ -38,16 +38,22 @@ export function AuthProvider({ children }) {
     // Get initial session — validate server-side to catch revoked tokens
     async function initSession() {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession()
+        let { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
           console.warn('Session recovery failed:', error.message)
           nukeSession()
           return
         }
+        // If access token is expired, try refreshing before giving up
         if (session?.access_token && isTokenExpired(session.access_token)) {
-          console.warn('Access token expired, clearing stale session')
-          nukeSession()
-          return
+          console.info('Access token expired locally, attempting refresh…')
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
+          if (refreshError || !refreshed?.session) {
+            console.warn('Token refresh failed, clearing session:', refreshError?.message)
+            nukeSession()
+            return
+          }
+          session = refreshed.session
         }
         if (session?.user) {
           // Server-side validation: catches tokens that decode fine locally but are revoked
@@ -97,8 +103,14 @@ export function AuthProvider({ children }) {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) return
         if (session.access_token && isTokenExpired(session.access_token)) {
-          console.warn('Session expired while tab was in background')
-          nukeSession()
+          // Try refresh before nuking — token may have expired while tab was in background
+          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
+          if (refreshError || !refreshed?.session) {
+            console.warn('Session expired and refresh failed after refocus')
+            nukeSession()
+            return
+          }
+          // Refresh succeeded, session is valid
           return
         }
         const { error } = await supabase.auth.getUser()

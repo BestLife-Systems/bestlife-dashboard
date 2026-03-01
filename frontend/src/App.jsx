@@ -42,6 +42,7 @@ import ClinicalSupervision from './pages/clinical/ClinicalSupervision'
 // Shared pages
 import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
+import RoomSchedule from './pages/shared/RoomSchedule'
 import MyWork from './pages/shared/MyWork'
 import VTO from './pages/shared/VTO'
 
@@ -65,6 +66,7 @@ const ADMIN_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/room-schedule', label: 'Room Schedule', icon: <IconCalendar /> },
   { section: 'Admin' },
   {
     label: 'Analytics', icon: <IconBarChart />, children: [
@@ -92,6 +94,7 @@ const THERAPIST_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/room-schedule', label: 'Room Schedule', icon: <IconCalendar /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
@@ -99,6 +102,7 @@ const CLINICAL_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/room-schedule', label: 'Room Schedule', icon: <IconCalendar /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
@@ -106,6 +110,7 @@ const APN_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/room-schedule', label: 'Room Schedule', icon: <IconCalendar /> },
   { path: '/admin/analytics/performance', label: 'Performance', icon: <IconTrendingUp /> },
 ]
 
@@ -113,6 +118,7 @@ const FRONT_DESK_TABS = [
   { path: '/home', label: 'Home', icon: <IconHome /> },
   { path: '/vto', label: 'VTO', icon: <IconClipboard /> },
   { path: '/knowledge-base', label: 'Knowledge Base', icon: <IconBrain /> },
+  { path: '/room-schedule', label: 'Room Schedule', icon: <IconCalendar /> },
 ]
 
 // ── Role Router ───────────────────────────────────────────────────
@@ -186,6 +192,11 @@ export default function App() {
           <Route path="/knowledge-base" element={
             <ProtectedRoute>
               <SharedLayout><KnowledgeBase /></SharedLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/room-schedule" element={
+            <ProtectedRoute>
+              <SharedLayout><RoomSchedule /></SharedLayout>
             </ProtectedRoute>
           } />
 
