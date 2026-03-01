@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDateFull as formatDate } from '../../lib/utils'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
 
 const STATUS_OPTIONS = ['draft', 'open', 'closed']
-
-function formatDate(d) {
-  if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export default function PayPeriods() {
   const [periods, setPeriods] = useState([])

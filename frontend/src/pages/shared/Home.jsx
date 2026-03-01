@@ -7,57 +7,8 @@ import { fetchMeetingInstances, deleteMeetingInstance } from '../../lib/meetings
 import { fetchAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../lib/announcementsApi'
 import { apiGet, apiPatch } from '../../lib/api'
 import { supabase } from '../../lib/supabase'
+import { formatDateWeekday as formatDate, isOverdue, isToday, isThisWeek, relativeTime, todayStr } from '../../lib/utils'
 import Modal from '../../components/Modal'
-
-// ── Helpers ──────────────────────────────────────────────────────
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function isOverdue(dateStr, status) {
-  if (!dateStr || status === 'done' || status === 'skipped') return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return new Date(dateStr + 'T00:00:00') < today
-}
-
-function isToday(dateStr) {
-  if (!dateStr) return false
-  const today = new Date()
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toDateString() === today.toDateString()
-}
-
-function isThisWeek(dateStr) {
-  if (!dateStr) return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const d = new Date(dateStr + 'T00:00:00')
-  const diff = (d - today) / (1000 * 60 * 60 * 24)
-  return diff >= 0 && diff < 7
-}
-
-function relativeTime(isoStr) {
-  if (!isoStr) return ''
-  const now = new Date()
-  const d = new Date(isoStr)
-  const diffMs = now - d
-  const mins = Math.floor(diffMs / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  if (days < 7) return `${days}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function todayStr() {
-  return new Date().toISOString().split('T')[0]
-}
 
 function weatherInfo(code) {
   if (code <= 0) return { icon: '\u2600\uFE0F', label: 'Clear' }

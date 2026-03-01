@@ -4,6 +4,7 @@ import {
   fetchMeetingInstances, generateMeetings, deleteMeetingInstance,
 } from '../../lib/meetingsApi'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDateWeekday as formatDate } from '../../lib/utils'
 import Modal from '../../components/Modal'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -110,12 +111,6 @@ function scheduleLabel(tmpl) {
     return `Yearly: ${mo} ${rule.day}`
   }
   return tmpl.cadence
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 export default function AdminMeetings() {

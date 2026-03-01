@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../lib/announcementsApi'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDateFull as formatDate } from '../../lib/utils'
 import Modal from '../../components/Modal'
 
 const CATEGORIES = ['general', 'policy', 'celebration', 'outing']
@@ -20,12 +21,6 @@ const DEFAULT_FORM = {
   audience_roles: [],
   effective_date: new Date().toISOString().split('T')[0],
   expiration_date: '',
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function isExpired(ann) {

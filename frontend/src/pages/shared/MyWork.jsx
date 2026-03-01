@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchMyInstances, updateInstanceStatus } from '../../lib/tasksApi'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDate, isOverdue } from '../../lib/utils'
 
 const COLUMNS = [
   { key: 'backlog',     label: 'Backlog',     color: 'var(--text-muted)' },
@@ -18,19 +19,6 @@ const STATUS_ACTION = {
   backlog:     'Start',
   in_progress: 'Complete',
   done:        'Reopen',
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function isOverdue(dateStr, status) {
-  if (!dateStr || status === 'done' || status === 'skipped') return false
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return new Date(dateStr + 'T00:00:00') < today
 }
 
 export default function MyWork() {

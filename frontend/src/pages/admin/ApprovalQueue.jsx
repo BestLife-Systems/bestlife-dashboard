@@ -1,18 +1,9 @@
 import { useState, useEffect } from 'react'
 import { apiGet, apiPost, apiPatch } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDate, formatDateTime } from '../../lib/utils'
 import StatusBadge from '../../components/StatusBadge'
 import Modal from '../../components/Modal'
-
-function formatDate(d) {
-  if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function formatDateTime(d) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
 const IIC_CODE_LABELS = {
   'IICLC-H0036TJU1': 'LPC/LCSW',

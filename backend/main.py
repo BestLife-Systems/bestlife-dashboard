@@ -369,8 +369,8 @@ async def upload_therapynotes(file: UploadFile = File(...), admin=Depends(requir
                         break
                     except ValueError:
                         continue
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Date parse failed for '{service_date}': {e}")
 
         # Parse amount
         try:
@@ -649,7 +649,8 @@ async def therapist_analytics(user_id: str, user=Depends(verify_token)):
     try:
         # Use the summary endpoint logic
         summary_data = await analytics_summary.__wrapped__(user) if hasattr(analytics_summary, '__wrapped__') else None
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Analytics summary shortcut failed (will use fallback): {e}")
         summary_data = None
 
     if not summary_data:
@@ -3359,6 +3360,15 @@ async def migrate_rate_types(admin=Depends(require_admin)):
     return {"status": "migration_complete", "message": "Rate types updated successfully"}
 
 
+# ── Shared: service-hours column initializer ──
+# Used by billing summary, performance tracking, and performance detail.
+PERF_COLUMNS = ("iic", "op", "op_cancel", "sbys", "ados", "apn", "sup", "sick", "pto", "admin", "total")
+
+def _new_service_hours() -> dict:
+    """Return a zeroed-out service-hours dict (one key per performance column)."""
+    return {c: 0.0 for c in PERF_COLUMNS}
+
+
 # ── Performance Tracking Thresholds ──
 PERF_THRESHOLDS = {
     "full_time": {"monthly": 80, "per_period": 40},
@@ -3541,7 +3551,7 @@ async def analytics_performance(
     num_periods = max(len(period_ids), 1)
 
     # ── 5. Fetch time_entries for those periods, joined to rate_types ──
-    user_service_hours = {uid: {"iic": 0, "op": 0, "op_cancel": 0, "sbys": 0, "ados": 0, "apn": 0, "sup": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
+    user_service_hours = {uid: _new_service_hours() for uid in user_map}
 
     if period_ids:
         for pid in period_ids:
@@ -3807,7 +3817,7 @@ async def analytics_performance_detail(user_id: str, user=Depends(verify_token))
     months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
     for mk, minfo in months_data.items():
-        hrs = {"iic": 0, "op": 0, "op_cancel": 0, "sbys": 0, "ados": 0, "apn": 0, "sup": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
+        hrs = _new_service_hours()
         for pid in minfo["period_ids"]:
             entries = await sb_request("GET", "time_entries", params={
                 "pay_period_id": f"eq.{pid}",
@@ -4003,8 +4013,8 @@ async def get_impact_hours(user=Depends(verify_token)):
     if rows and rows[0].get("value"):
         try:
             baseline = float(rows[0]["value"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Impact hours baseline parse failed: {e}")
 
     # Sum directly from time_entries (not rollup_monthly) so that
     # deleted pay periods are automatically subtracted from the total
@@ -4200,15 +4210,15 @@ async def build_betty_context(user_profile: dict) -> str:
                     sections.append(f"Open pay period: {p['label']} ({p['start_date']} to {p['end_date']}), due {p.get('due_date', 'N/A')}")
             else:
                 sections.append("No pay periods currently open.")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Betty context: pay periods fetch failed: {e}")
 
         # Announcements count
         try:
             announcements = await sb_request("GET", "announcements", params={"select": "id"}) or []
             sections.append(f"Current announcements: {len(announcements)}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Betty context: announcements fetch failed: {e}")
 
         # Knowledge Base article count
         try:
@@ -4223,8 +4233,8 @@ async def build_betty_context(user_profile: dict) -> str:
                     cat_counts[cat] = cat_counts.get(cat, 0) + 1
                 kb_summary = ", ".join(f"{c}: {n}" for c, n in sorted(cat_counts.items()))
                 sections.append(f"Knowledge Base articles: {len(kb_articles)} published ({kb_summary})")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Betty context: KB articles fetch failed: {e}")
 
     except Exception as e:
         logger.warning(f"Failed to build Betty context: {e}")

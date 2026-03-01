@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react'
 import { apiGet, apiPatch } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
+import { formatDateFull as formatDate } from '../../lib/utils'
 import Modal from '../../components/Modal'
-
-function formatDate(d) {
-  if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 function formatMonth(ym) {
   if (!ym) return '—'

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { formatDate } from '../../lib/utils'
 import Modal from '../../components/Modal'
 import StatusBadge from '../../components/StatusBadge'
 
@@ -230,9 +231,4 @@ export default function TherapistInvoices() {
       </Modal>
     </div>
   )
-}
-
-function formatDate(d) {
-  if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
