@@ -2695,7 +2695,7 @@ async def analytics_hours_margin(view: str = "pay_period", user=Depends(verify_t
 # ── Billing Summary (new) ──────────────────────────────────────────
 
 # Revenue-generating service types (split by license/location)
-REVENUE_TYPES = ["IIC-LC", "IIC-MA", "IIC-BA", "OP", "SBYS", "ADOS In Home", "ADOS At Office", "APN 30 Min", "APN Intake"]
+REVENUE_TYPES = ["IIC-LC", "IIC-MA", "IIC-BA", "OP", "OP Cancellation", "SBYS", "ADOS In Home", "ADOS At Office", "APN 30 Min", "APN Intake"]
 # Non-revenue (still tracked for hours)
 NON_REVENUE_TYPES = ["PTO", "Sick Leave"]
 SERVICE_TYPES = REVENUE_TYPES + NON_REVENUE_TYPES
@@ -2713,6 +2713,7 @@ SERVICE_TO_RATE_NAME = {
     "IIC-MA": "IIC-MA",
     "IIC-BA": "IIC-BA",
     "OP": "OP-LC Session",
+    "OP Cancellation": "OP Cancellation",
     "SBYS": "SBYS",
     "ADOS In Home": "ADOS Assessment - In Home",
     "ADOS At Office": "ADOS Assessment - At Office",
@@ -2729,6 +2730,7 @@ SERVICE_TO_PAY_RATE_NAMES = {
     "IIC-MA": ["IIC LAC/LSW", "IIC-MA"],
     "IIC-BA": ["Behavioral Assistant", "IIC-BA"],
     "OP": ["OP-LC Session", "OP-MA Session", "OP Session"],
+    "OP Cancellation": ["OP Cancellation"],
     "SBYS": ["SBYS"],
     "ADOS In Home": ["ADOS", "ADOS Assessment - In Home"],
     "ADOS At Office": ["ADOS", "ADOS Assessment - At Office"],
@@ -2754,10 +2756,13 @@ def _extract_service_hours(invoice_data: dict) -> dict:
             for e in entries:
                 hours[stype] += float(e.get("hours") or 0)
 
-    # OP (each session = 1 hour, cancellations also = 1 hour)
+    # OP — split regular sessions vs cancellations (each = 1 hour)
     op = invoice_data.get("op") or {}
     for s in (op.get("sessions") or []):
-        hours["OP"] += 1.0
+        if s.get("cancel_fee"):
+            hours["OP Cancellation"] += 1.0
+        else:
+            hours["OP"] += 1.0
 
     # SBYS
     for e in (invoice_data.get("sbys") or []):

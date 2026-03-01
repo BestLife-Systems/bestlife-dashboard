@@ -26,7 +26,7 @@ function fmtPct(v) {
 // Grouped pill categories (what shows on main page)
 const PILL_GROUPS = [
   { key: 'IIC', label: 'IIC', members: ['IIC-LC', 'IIC-MA', 'IIC-BA'], color: '#00bbee', unit: 'h' },
-  { key: 'OP', label: 'OP', members: ['OP'], color: '#4ade80', unit: 'h' },
+  { key: 'OP', label: 'OP', members: ['OP', 'OP Cancellation'], color: '#4ade80', unit: 'h' },
   { key: 'SBYS', label: 'SBYS', members: ['SBYS'], color: '#a78bfa', unit: 'h' },
   { key: 'ADOS', label: 'ADOS', members: ['ADOS In Home', 'ADOS At Office'], color: '#fbbf24', unit: 'assessments' },
   { key: 'APN', label: 'APN', members: ['APN 30 Min', 'APN Intake'], color: '#f97316', unit: 'h' },
@@ -40,6 +40,7 @@ const SVC_COLORS = {
   'IIC-MA': '#0ea5e9',
   'IIC-BA': '#38bdf8',
   OP: '#4ade80',
+  'OP Cancellation': '#86efac',
   SBYS: '#a78bfa',
   'ADOS In Home': '#fbbf24',
   'ADOS At Office': '#f59e0b',
@@ -55,6 +56,7 @@ const RATE_LABELS = {
   'IIC-MA': 'IIC — LAC/LSW',
   'IIC-BA': 'IIC — Behavioral Assistant',
   OP: 'Outpatient',
+  'OP Cancellation': 'OP — Cancellation',
   SBYS: 'School Based Youth Services',
   'ADOS In Home': 'ADOS — In Home',
   'ADOS At Office': 'ADOS — At Office',
@@ -62,6 +64,7 @@ const RATE_LABELS = {
   'APN Intake': 'APN — Intake (60 Min)',
 }
 
+const OP_KEYS = new Set(['OP', 'OP Cancellation'])
 const ADOS_KEYS = new Set(['ADOS In Home', 'ADOS At Office'])
 const APN_KEYS = new Set(['APN 30 Min', 'APN Intake'])
 
@@ -98,6 +101,11 @@ function PeriodDetail({ periodId, period, onBack }) {
 
   const { sections, grand_total } = data
 
+  // Combine OP + OP Cancellation into one section
+  const opRegSec = sections.find(s => s.service === 'OP')
+  const opCancelSec = sections.find(s => s.service === 'OP Cancellation')
+  const hasOpSplit = opRegSec && opCancelSec  // only combine if both exist
+
   // Combine ADOS In Home + ADOS At Office into one section
   const adosHomeSec = sections.find(s => s.service === 'ADOS In Home')
   const adosOfficeSec = sections.find(s => s.service === 'ADOS At Office')
@@ -108,8 +116,41 @@ function PeriodDetail({ periodId, period, onBack }) {
   const apnIntakeSec = sections.find(s => s.service === 'APN Intake')
   const hasApn = apn30Sec || apnIntakeSec
 
-  // Build final display sections: filter out ADOS + APN subsections, then add combined
-  const displaySections = sections.filter(s => !ADOS_KEYS.has(s.service) && !APN_KEYS.has(s.service))
+  // Build final display sections: filter out combined subsections, then add combined
+  const displaySections = sections.filter(s =>
+    !(hasOpSplit && OP_KEYS.has(s.service)) &&
+    !ADOS_KEYS.has(s.service) &&
+    !APN_KEYS.has(s.service)
+  )
+
+  if (hasOpSplit) {
+    const opSubsections = []
+    if (opRegSec) {
+      opSubsections.push({ label: 'Sessions', rows: opRegSec.rows, totals: opRegSec })
+    }
+    if (opCancelSec) {
+      opSubsections.push({ label: 'Cancellations', rows: opCancelSec.rows, totals: opCancelSec })
+    }
+    const totalHours = (opRegSec?.total_hours || 0) + (opCancelSec?.total_hours || 0)
+    const totalRevenue = (opRegSec?.total_revenue || 0) + (opCancelSec?.total_revenue || 0)
+    const totalPay = (opRegSec?.total_pay || 0) + (opCancelSec?.total_pay || 0)
+    const totalProfit = (opRegSec?.total_profit || 0) + (opCancelSec?.total_profit || 0)
+    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
+
+    // Insert OP combined at the position where OP was (keep ordering natural)
+    const opIdx = displaySections.findIndex(s => s.service && s.service.startsWith('IIC'))
+    displaySections.splice(opIdx >= 0 ? opIdx + 1 : displaySections.length, 0, {
+      service: 'OP',
+      _isCombined: true,
+      _combinedLabel: 'OP Combined Total',
+      _subsections: opSubsections,
+      total_hours: totalHours,
+      total_revenue: totalRevenue,
+      total_pay: totalPay,
+      total_profit: totalProfit,
+      total_margin: totalMargin,
+    })
+  }
 
   if (hasAdos) {
     const adosSubsections = []
