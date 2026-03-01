@@ -5,94 +5,109 @@ const AuthContext = createContext({})
 
 export const useAuth = () => useContext(AuthContext)
 
+// Pages where we should NOT hard-redirect on auth failure
+const PUBLIC_PATHS = ['/login', '/reset-password', '/invoice', '/unauthorized']
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const loadingRef = useRef(true)
   const nukingRef = useRef(false)
 
-  // Hard-clear all Supabase auth data from localStorage
+  function setLoadingState(val) {
+    loadingRef.current = val
+    setLoading(val)
+  }
+
+  // Nuclear option: clear all auth data and redirect to login
+  // Uses hard redirect (window.location) instead of React state to guarantee
+  // the Supabase client, React tree, and localStorage are ALL fully reset.
   function nukeSession() {
-    if (nukingRef.current) return          // prevent recursive calls from signOut listener
+    if (nukingRef.current) return
     nukingRef.current = true
     try {
       Object.keys(localStorage).forEach(key => {
-        if (key === 'bestlife-auth-v') return    // preserve deploy version marker
+        if (key === 'bestlife-auth-v') return
         if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key)
         }
       })
     } catch {}
-    supabase.auth.signOut().catch(() => {})
+    // On protected pages: hard redirect (full page reload = fresh Supabase client)
+    const isPublic = PUBLIC_PATHS.some(p => window.location.pathname.startsWith(p))
+    if (!isPublic) {
+      window.location.href = '/login'
+      return
+    }
+    // On public pages (login, reset-password, etc.): just reset React state
     setUser(null)
     setProfile(null)
-    setLoading(false)
+    setLoadingState(false)
     setTimeout(() => { nukingRef.current = false }, 500)
   }
 
-  // Check if a JWT is expired (with 60s buffer)
-  function isTokenExpired(token) {
-    if (!token) return true
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      return payload.exp * 1000 < Date.now() - 60000
-    } catch { return true }
-  }
-
   useEffect(() => {
-    // Get initial session — validate server-side to catch revoked tokens
+    let cancelled = false
+
     async function initSession() {
       try {
-        let { data: { session }, error } = await supabase.auth.getSession()
-        if (error) {
-          console.warn('Session recovery failed:', error.message)
-          nukeSession()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          if (!cancelled) setLoadingState(false)
           return
         }
-        // If access token is expired, try refreshing before giving up
-        if (session?.access_token && isTokenExpired(session.access_token)) {
-          console.info('Access token expired locally, attempting refresh…')
+
+        // Validate with the server (not local token checks — let the server decide)
+        let { data: { user: validUser }, error: userError } = await supabase.auth.getUser()
+
+        // If access token was rejected, try one refresh
+        if (userError) {
+          console.info('Token rejected, attempting refresh…')
           const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
           if (refreshError || !refreshed?.session) {
-            console.warn('Token refresh failed, clearing session:', refreshError?.message)
+            console.warn('Refresh failed:', refreshError?.message)
             nukeSession()
             return
           }
-          session = refreshed.session
+          // Re-validate with fresh token
+          const retry = await supabase.auth.getUser()
+          if (retry.error || !retry.data?.user) {
+            console.warn('Still rejected after refresh')
+            nukeSession()
+            return
+          }
+          validUser = retry.data.user
         }
-        if (session?.user) {
-          // Server-side validation: catches tokens that decode fine locally but are revoked
-          const { error: userError } = await supabase.auth.getUser()
-          if (userError) {
-            console.warn('Server rejected token, clearing session:', userError.message)
-            nukeSession()
-            return
-          }
-          setUser(session.user)
-          fetchProfile(session.user.id)
-        } else {
-          setLoading(false)
+
+        if (!cancelled && validUser) {
+          setUser(validUser)
+          fetchProfile(validUser.id)
+        } else if (!cancelled) {
+          setLoadingState(false)
         }
       } catch (err) {
-        console.warn('initSession threw:', err)
+        console.warn('initSession error:', err)
         nukeSession()
       }
     }
     initSession()
 
-    // Listen for auth changes
+    // Safety net: if loading is still true after 15 seconds, force recovery
+    const safetyTimeout = setTimeout(() => {
+      if (loadingRef.current) {
+        console.warn('Auth loading timed out after 15s — forcing recovery')
+        nukeSession()
+      }
+    }, 15000)
+
+    // Listen for auth changes (auto-refresh success/failure, sign-in, sign-out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === 'SIGNED_OUT') {
-          // Just reset state — nukeSession already handled the cleanup
+        if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
           setUser(null)
           setProfile(null)
-          setLoading(false)
-          return
-        }
-        if (event === 'TOKEN_REFRESHED' && !session) {
-          console.warn('Token refresh failed, nuking session')
-          nukeSession()
+          setLoadingState(false)
           return
         }
         setUser(session?.user ?? null)
@@ -100,39 +115,37 @@ export function AuthProvider({ children }) {
           await fetchProfile(session.user.id)
         } else {
           setProfile(null)
-          setLoading(false)
+          setLoadingState(false)
         }
       }
     )
 
-    // Re-validate session when tab regains focus (catches expiry while backgrounded)
-    const handleFocus = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
-        if (session.access_token && isTokenExpired(session.access_token)) {
-          // Try refresh before nuking — token may have expired while tab was in background
-          const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession()
-          if (refreshError || !refreshed?.session) {
-            console.warn('Session expired and refresh failed after refocus')
+    // Re-validate session when tab becomes visible again (debounced)
+    let focusTimer = null
+    const handleVisibility = () => {
+      if (document.hidden) return
+      if (focusTimer) clearTimeout(focusTimer)
+      focusTimer = setTimeout(async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!session) return
+          // Always refresh when returning — token may have expired while backgrounded
+          const { error } = await supabase.auth.refreshSession()
+          if (error) {
+            console.warn('Refresh failed on tab focus:', error.message)
             nukeSession()
-            return
           }
-          // Refresh succeeded, session is valid
-          return
-        }
-        const { error } = await supabase.auth.getUser()
-        if (error) {
-          console.warn('Session invalid after refocus:', error.message)
-          nukeSession()
-        }
-      } catch {}
+        } catch {}
+      }, 500)
     }
-    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
+      cancelled = true
+      clearTimeout(safetyTimeout)
+      if (focusTimer) clearTimeout(focusTimer)
       subscription.unsubscribe()
-      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 
@@ -145,9 +158,8 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error) {
-        // If it's an auth error (401/403), the session is stale — nuke it
         if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.code === '401') {
-          console.warn('Profile fetch auth error, clearing session:', error.message)
+          console.warn('Profile fetch auth error:', error.message)
           nukeSession()
           return
         }
@@ -158,7 +170,7 @@ export function AuthProvider({ children }) {
       console.error('Error fetching profile:', err)
       setProfile(null)
     } finally {
-      setLoading(false)
+      setLoadingState(false)
     }
   }
 
@@ -172,10 +184,16 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
-    setUser(null)
-    setProfile(null)
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key === 'bestlife-auth-v') return
+        if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
+          localStorage.removeItem(key)
+        }
+      })
+    } catch {}
+    supabase.auth.signOut().catch(() => {})
+    window.location.href = '/login'
   }
 
   async function resetPassword(email) {

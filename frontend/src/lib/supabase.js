@@ -15,7 +15,7 @@ try {
 
 // Pre-flight: clear stale/corrupt sessions before Supabase client reads them
 // Bump this version on deploys that change auth behavior to force a clean session
-const AUTH_VERSION = '4'
+const AUTH_VERSION = '5'
 try {
   if (localStorage.getItem('bestlife-auth-v') !== AUTH_VERSION) {
     Object.keys(localStorage).forEach(key => {

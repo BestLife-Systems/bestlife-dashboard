@@ -576,7 +576,7 @@ export default function Home() {
     <div>
       {/* ── Header ── */}
       <div className="page-header">
-        <div>
+        <div style={{ flex: '1 1 0', minWidth: 0 }}>
           <h2 className="page-title">{greeting}, {firstName}</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem', fontStyle: 'italic' }}>{dailyMessage}</p>
         </div>
