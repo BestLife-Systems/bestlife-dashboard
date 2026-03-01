@@ -3187,32 +3187,40 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
 @app.get("/api/analytics/billing-debug")
 async def billing_debug():
     """Temporary debug endpoint: dump rate_types names and user pay rates."""
-    rate_types = await sb_request("GET", "rate_types", params={
-        "select": "id, name, is_active",
-        "order": "sort_order.asc",
-    })
-    all_pay_rates = await sb_request("GET", "user_pay_rates", params={
-        "select": "user_id, pay_rate, rate_types(name), users!user_id(first_name, last_name)",
-    })
-    # Group by user
-    by_user = {}
-    for pr in (all_pay_rates or []):
-        uid = pr["user_id"]
-        u = pr.get("users") or {}
-        name = f"{u.get('first_name','')} {u.get('last_name','')}".strip()
-        rt = pr.get("rate_types") or {}
-        rname = rt.get("name", "")
-        if name not in by_user:
-            by_user[name] = {"user_id": uid, "rates": {}}
-        by_user[name]["rates"][rname] = float(pr["pay_rate"])
-    return {
-        "rate_types": [{"name": rt["name"], "active": rt.get("is_active", True)} for rt in (rate_types or [])],
-        "user_rates": by_user,
-        "lookup_maps": {
-            "SERVICE_TO_PAY_RATE_NAME": SERVICE_TO_PAY_RATE_NAME,
-            "SERVICE_TO_RATE_NAME": {k: v for k, v in SERVICE_TO_RATE_NAME.items()},
+    try:
+        rate_types = await sb_request("GET", "rate_types", params={
+            "select": "id, name, is_active",
+            "order": "sort_order.asc",
+        })
+        all_pay_rates = await sb_request("GET", "user_pay_rates", params={
+            "select": "user_id, pay_rate, rate_types(name)",
+        })
+        # Get users separately
+        users_list = await sb_request("GET", "users", params={
+            "select": "id, first_name, last_name",
+        })
+        user_names = {u["id"]: f"{u.get('first_name','')} {u.get('last_name','')}".strip() for u in (users_list or [])}
+
+        # Group by user
+        by_user = {}
+        for pr in (all_pay_rates or []):
+            uid = pr["user_id"]
+            name = user_names.get(uid, uid)
+            rt = pr.get("rate_types") or {}
+            rname = rt.get("name", "")
+            if name not in by_user:
+                by_user[name] = {"user_id": uid, "rates": {}}
+            by_user[name]["rates"][rname] = float(pr["pay_rate"])
+        return {
+            "rate_types": [{"name": rt["name"], "active": rt.get("is_active", True)} for rt in (rate_types or [])],
+            "user_rates": by_user,
+            "lookup_maps": {
+                "SERVICE_TO_PAY_RATE_NAME": SERVICE_TO_PAY_RATE_NAME,
+                "SERVICE_TO_RATE_NAME": {k: v for k, v in SERVICE_TO_RATE_NAME.items()},
+            }
         }
-    }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.patch("/api/analytics/billing-rates")
