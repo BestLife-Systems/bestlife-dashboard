@@ -5,7 +5,6 @@ import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { useAuth } from '../../hooks/useAuth'
 
 const TIMEFRAMES = [
-  { value: 'pay_period', label: 'Pay Period' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
   { value: 'yearly', label: 'Yearly' },
@@ -158,13 +157,13 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser, navigate }) {
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={true} navigate={navigate} />
             ))}
             {hasBas && therapists.length > 0 && (
-              <tr className="perf-subheader-row"><td colSpan="10" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Therapists</td></tr>
+              <tr className="perf-subheader-row"><td colSpan="11" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Therapists</td></tr>
             )}
             {therapists.map(row => (
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
             ))}
             {hasBas && (
-              <tr className="perf-subheader-row"><td colSpan="10" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Behavioral Assistants</td></tr>
+              <tr className="perf-subheader-row"><td colSpan="11" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Behavioral Assistants</td></tr>
             )}
             {bas.map(row => (
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
@@ -187,6 +186,7 @@ function PerfTableHead() {
         <th className="num">OP</th>
         <th className="num">SBYS</th>
         <th className="num">ADOS</th>
+        <th className="num">APN</th>
         <th className="num">Sick</th>
         <th className="num">PTO</th>
         <th className="num">Total</th>
@@ -198,7 +198,6 @@ function PerfTableHead() {
 
 
 function StaffRow({ row, thresholds, isLeader, navigate }) {
-  const threshold = thresholds[row.employment_status] || thresholds.full_time || 80
   const avgPerPd = row.avg_per_period || 0
   const onTrack = row.status === 'on_track'
 
@@ -221,6 +220,7 @@ function StaffRow({ row, thresholds, isLeader, navigate }) {
       <td className="num">{row.op || '—'}</td>
       <td className="num">{row.sbys || '—'}</td>
       <td className="num">{row.ados || '—'}</td>
+      <td className="num">{row.apn || '—'}</td>
       <td className="num">{row.sick || '—'}</td>
       <td className="num">{row.pto || '—'}</td>
       <td className="num perf-total-bold">{row.total_hours || '—'}</td>

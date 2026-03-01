@@ -1987,13 +1987,32 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
         nonlocal total_bill, total_pay, total_hours, total_sessions
         if qty == 0:
             return
-        rate_info = pay_rate_map.get(rate_name, {})
-        # Fall back to the rate_types catalog so entries are always written
-        # even when a user has no pay rate configured for this service type
-        fallback = rate_type_fallback.get(rate_name, {})
+        # Resolve rate_name through aliases — the names used in invoice parsing
+        # (e.g. "IIC LPC/LCSW") may not match actual DB rate_type names ("IIC-LC")
+        candidates = RATE_NAME_ALIASES.get(rate_name, [rate_name])
+        rate_info = {}
+        fallback = {}
+        resolved_name = rate_name
+        # Try each candidate in order against the user's pay rates first
+        for candidate in candidates:
+            if candidate in pay_rate_map:
+                rate_info = pay_rate_map[candidate]
+                resolved_name = candidate
+                break
+        # If no pay rate found, try the rate_types catalog (fallback)
+        if not rate_info.get("rate_type_id"):
+            for candidate in candidates:
+                if candidate in rate_type_fallback:
+                    fallback = rate_type_fallback[candidate]
+                    resolved_name = candidate
+                    break
+        # Final fallback: try original name directly
+        if not rate_info and not fallback:
+            rate_info = pay_rate_map.get(rate_name, {})
+            fallback = rate_type_fallback.get(rate_name, {})
         rate_type_id = rate_info.get("rate_type_id") or fallback.get("id")
         pay_rate = rate_info.get("pay_rate", 0)
-        bill_rate = bill_rate_map.get(rate_name, 0)
+        bill_rate = bill_rate_map.get(resolved_name, 0) or bill_rate_map.get(rate_name, 0)
         unit = rate_info.get("unit") or fallback.get("unit", "hourly")
         est_bill = bill_rate * qty
         est_pay = pay_rate * qty
@@ -2045,7 +2064,12 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
     # ADOS (each assessment = 3 hours toward time worked)
     ados = invoice_data.get("ados") or []
     for entry in ados:
-        await write_entry("ADOS", 3.0, initials=entry.get("client_initials"),
+        loc = (entry.get("location") or "").lower()
+        if "office" in loc:
+            ados_rate = "ADOS Assessment - At Office"
+        else:
+            ados_rate = "ADOS Assessment - In Home"
+        await write_entry(ados_rate, 3.0, initials=entry.get("client_initials"),
                           notes=f"{entry.get('location','')} ID:{entry.get('id_number','')}")
 
     # APN
@@ -2740,6 +2764,27 @@ SERVICE_TO_PAY_RATE_NAMES = {
     "Sick Leave": ["Sick Leave"],
 }
 
+# Aliases: names used in approve_recipient → candidates to try in DB rate_types table.
+# approve_recipient writes time entries with these names, but the DB rate_types
+# table uses different naming conventions.
+RATE_NAME_ALIASES = {
+    "IIC LPC/LCSW": ["IIC-LC", "IIC LPC/LCSW"],
+    "IIC LAC/LSW": ["IIC-MA", "IIC LAC/LSW"],
+    "Behavioral Assistant": ["IIC-BA", "Behavioral Assistant"],
+    "OP Session": ["OP-LC Session", "OP-MA Session", "OP Session"],
+    "OP Cancellation": ["OP Cancellation"],
+    "SBYS": ["SBYS"],
+    "ADOS Assessment - In Home": ["ADOS Assessment - In Home", "ADOS Assessment (In Home)", "ADOS"],
+    "ADOS Assessment - At Office": ["ADOS Assessment - At Office", "ADOS Assessment (In Office)", "ADOS"],
+    "APN 30 Min": ["APN Session (30)", "APN 30 Min"],
+    "APN Intake": ["APN Intake (60)", "APN Intake"],
+    "Administration": ["Administration"],
+    "Individual Supervision": ["Individual Supervision"],
+    "Group Supervision": ["Group Supervision"],
+    "Sick Leave": ["Sick Leave"],
+    "PTO": ["PTO"],
+}
+
 def _extract_service_hours(invoice_data: dict) -> dict:
     """Extract hours per service type from structured invoice_data."""
     hours = {st: 0.0 for st in SERVICE_TYPES}
@@ -3330,7 +3375,8 @@ RATE_TO_PERF_COL = {
     # Admin
     "Administration": "admin", "Community Event (Day)": "admin",
     # APN
-    "APN Session (30)": "iic", "APN Intake (60)": "iic",
+    "APN Session (30)": "apn", "APN Intake (60)": "apn",
+    "APN 30 Min": "apn", "APN Intake": "apn",
 }
 
 
@@ -3472,7 +3518,7 @@ async def analytics_performance(
     num_periods = max(len(period_ids), 1)
 
     # ── 5. Fetch time_entries for those periods, joined to rate_types ──
-    user_service_hours = {uid: {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
+    user_service_hours = {uid: {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "apn": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
 
     if period_ids:
         for pid in period_ids:
@@ -3556,6 +3602,19 @@ async def analytics_performance(
         cap = cap_map.get(uid, {})
         status, trend = compute_status(uid, emp)
 
+        # Direct compliance check from actual time_entries hours
+        emp_thresh = PERF_THRESHOLDS.get(emp, PERF_THRESHOLDS["full_time"])
+        total_hrs = hrs.get("total", 0)
+        if timeframe == "monthly":
+            on_track = total_hrs >= emp_thresh["monthly"]
+        elif timeframe == "quarterly":
+            on_track = total_hrs >= emp_thresh["monthly"] * 3
+        elif timeframe == "yearly":
+            on_track = total_hrs >= emp_thresh["monthly"] * 12
+        else:
+            on_track = total_hrs >= emp_thresh["per_period"]
+        direct_status = "on_track" if on_track else "off_track"
+
         iic_cap = int(cap.get("iic_capacity", 0) or 0)
         op_cap = int(cap.get("op_capacity", 0) or 0)
         total_cap = iic_cap + op_cap
@@ -3567,17 +3626,18 @@ async def analytics_performance(
             "role": u.get("role", ""),
             "is_leader": u.get("role") == "clinical_leader",
             "employment_status": emp,
-            "status": status,
+            "status": direct_status,
             "quarter_trend": trend,
             "iic": round(hrs.get("iic", 0), 1),
             "op": round(hrs.get("op", 0), 1),
             "sbys": round(hrs.get("sbys", 0), 1),
             "ados": round(hrs.get("ados", 0), 1),
+            "apn": round(hrs.get("apn", 0), 1),
             "sick": round(hrs.get("sick", 0), 1),
             "pto": round(hrs.get("pto", 0), 1),
             "admin_hours": round(hrs.get("admin", 0), 1),
-            "total_hours": round(hrs.get("total", 0), 1),
-            "avg_per_period": round(hrs.get("total", 0) / num_periods, 1),
+            "total_hours": round(total_hrs, 1),
+            "avg_per_period": round(total_hrs / num_periods, 1),
             "caseload_iic": None,  # Placeholder
             "caseload_op": None,   # Placeholder
             "iic_capacity": iic_cap,
@@ -3613,6 +3673,7 @@ async def analytics_performance(
             "op": sum(t["op"] for t in therapists),
             "sbys": sum(t["sbys"] for t in therapists),
             "ados": sum(t["ados"] for t in therapists),
+            "apn": sum(t["apn"] for t in therapists),
             "sick": sum(t["sick"] for t in therapists),
             "pto": sum(t["pto"] for t in therapists),
             "total_hours": sum(t["total_hours"] for t in therapists),
@@ -3639,6 +3700,7 @@ async def analytics_performance(
             "op": sum(t["op"] for t in unassigned),
             "sbys": sum(t["sbys"] for t in unassigned),
             "ados": sum(t["ados"] for t in unassigned),
+            "apn": sum(t["apn"] for t in unassigned),
             "sick": sum(t["sick"] for t in unassigned),
             "pto": sum(t["pto"] for t in unassigned),
             "total_hours": sum(t["total_hours"] for t in unassigned),
@@ -3716,7 +3778,7 @@ async def analytics_performance_detail(user_id: str, user=Depends(verify_token))
     months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
     for mk, minfo in months_data.items():
-        hrs = {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
+        hrs = {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "apn": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
         for pid in minfo["period_ids"]:
             entries = await sb_request("GET", "time_entries", params={
                 "pay_period_id": f"eq.{pid}",
@@ -3741,6 +3803,7 @@ async def analytics_performance_detail(user_id: str, user=Depends(verify_token))
             "op": round(hrs["op"], 1),
             "sbys": round(hrs["sbys"], 1),
             "ados": round(hrs["ados"], 1),
+            "apn": round(hrs["apn"], 1),
             "sick": round(hrs["sick"], 1),
             "pto": round(hrs["pto"], 1),
             "admin_hours": round(hrs["admin"], 1),

@@ -84,6 +84,7 @@ export default function PerformanceDetail() {
                 <th className="num">OP</th>
                 <th className="num">SBYS</th>
                 <th className="num">ADOS</th>
+                <th className="num">APN</th>
                 <th className="num">Sick</th>
                 <th className="num">PTO</th>
                 <th className="num">Total</th>
@@ -98,6 +99,7 @@ export default function PerformanceDetail() {
                   <td className="num">{row.op || '—'}</td>
                   <td className="num">{row.sbys || '—'}</td>
                   <td className="num">{row.ados || '—'}</td>
+                  <td className="num">{row.apn || '—'}</td>
                   <td className="num">{row.sick || '—'}</td>
                   <td className="num">{row.pto || '—'}</td>
                   <td className="num perf-total-bold">{row.total_hours || '—'}</td>
@@ -128,6 +130,7 @@ export default function PerformanceDetail() {
                       <th className="num">OP</th>
                       <th className="num">SBYS</th>
                       <th className="num">ADOS</th>
+                      <th className="num">APN</th>
                       <th className="num">Sick</th>
                       <th className="num">PTO</th>
                       <th className="num">Total</th>
@@ -141,6 +144,7 @@ export default function PerformanceDetail() {
                         <td className="num">{row.op || '—'}</td>
                         <td className="num">{row.sbys || '—'}</td>
                         <td className="num">{row.ados || '—'}</td>
+                        <td className="num">{row.apn || '—'}</td>
                         <td className="num">{row.sick || '—'}</td>
                         <td className="num">{row.pto || '—'}</td>
                         <td className={`num perf-total-bold ${row.on_track ? 'perf-avg--on-track' : 'perf-avg--off-track'}`}>{row.total_hours || '—'}</td>
@@ -150,7 +154,7 @@ export default function PerformanceDetail() {
                   <tfoot>
                     <tr style={{ fontWeight: 600 }}>
                       <td>Quarter Total</td>
-                      <td className="num" colSpan="6"></td>
+                      <td className="num" colSpan="7"></td>
                       <td className="num perf-total-bold">{q.total_hours}</td>
                     </tr>
                   </tfoot>
