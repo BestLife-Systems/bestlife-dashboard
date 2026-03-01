@@ -2,32 +2,18 @@ import { supabase } from './supabase'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
-// Check if a JWT is expired (with 60s buffer)
-function isTokenExpired(token) {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.exp * 1000 < Date.now() - 60000
-  } catch { return true }
-}
-
 async function getAuthHeaders() {
-  let { data: { session } } = await supabase.auth.getSession()
+  const { data: { session } } = await supabase.auth.getSession()
   if (!session?.access_token) return {}
-
-  // If the cached token is already expired, proactively refresh before using it
-  if (isTokenExpired(session.access_token)) {
-    const { data: refreshed } = await supabase.auth.refreshSession()
-    if (refreshed?.session?.access_token) {
-      return { 'Authorization': `Bearer ${refreshed.session.access_token}` }
-    }
-    // Refresh failed — return empty, server will 401 and apiFetch will handle it
-    return {}
-  }
-
   return { 'Authorization': `Bearer ${session.access_token}` }
 }
 
-// Central fetch wrapper: proactive refresh + 401 retry + hard redirect on dead session
+// Central fetch wrapper: 401 retry (no manual refreshSession!) + hard redirect on dead session
+//
+// CRITICAL: We never call refreshSession() here. Supabase's autoRefreshToken handles
+// token rotation internally. Calling refreshSession() ourselves races with that internal
+// refresh, and with refresh-token-rotation enabled (Supabase default), the second refresh
+// sees an already-rotated token → kills the session permanently.
 async function apiFetch(path, options = {}) {
   const url = `${API_BASE}${path}`
 
@@ -41,16 +27,14 @@ async function apiFetch(path, options = {}) {
 
   let res = await doFetch()
 
-  // On 401, attempt one token refresh + retry
+  // On 401, Supabase's auto-refresh may have just rotated the token in the background.
+  // Brief pause to let it settle, then retry once with the updated session.
   if (res.status === 401) {
-    const { data: refreshed } = await supabase.auth.refreshSession()
-    if (refreshed?.session) {
-      res = await doFetch()
-    }
+    await new Promise(r => setTimeout(r, 1000))
+    res = await doFetch()
   }
 
-  // Still 401 after retry — session is dead, redirect to login
-  // Don't nuke localStorage here — let useAuth handle cleanup on next mount
+  // Still 401 after retry — session is truly dead, redirect to login
   if (res.status === 401) {
     window.location.href = '/login'
     throw new Error('Session expired')

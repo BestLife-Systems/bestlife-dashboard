@@ -115,8 +115,10 @@ export function AuthProvider({ children }) {
 
       if (error) {
         if (error.code === 'PGRST301' || error.message?.includes('JWT') || error.code === '401') {
-          console.warn('Profile fetch auth error — clearing session')
-          clearAuthStorage()
+          // Don't clear localStorage here! Nuking storage kills the refresh token,
+          // making it impossible for Supabase's auto-refresh to recover the session.
+          // Just reset React state — user will be redirected to login naturally.
+          console.warn('Profile fetch auth error:', error.message)
           setUser(null)
           setProfile(null)
           setLoading(false)
