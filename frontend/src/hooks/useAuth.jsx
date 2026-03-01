@@ -23,85 +23,108 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false
+    let resolved = false  // tracks whether ANY auth event set loading=false
+
+    const markResolved = () => { resolved = true }
 
     // Detect auth callback in URL (magic link / password recovery).
-    // Supabase processes these async AFTER INITIAL_SESSION fires,
-    // so we must keep loading=true until SIGNED_IN arrives.
     const hash = window.location.hash
     const search = window.location.search
     const hasAuthCallback =
       hash.includes('access_token') || hash.includes('type=magiclink') ||
       hash.includes('type=recovery') || search.includes('code=')
 
-    // Single source of truth: let Supabase handle ALL session management.
-    //
     // CRITICAL: We do NOT call refreshSession() manually. Supabase's internal
     // _initialize() already refreshes expired tokens before firing INITIAL_SESSION.
     // Calling refreshSession() ourselves races with that internal refresh, and
     // with refresh token rotation enabled (Supabase default), the second refresh
     // sees an already-rotated token and fails — killing the session every time.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (cancelled) return
+    let subscription
+    try {
+      const result = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (cancelled) return
 
-        // INITIAL_SESSION: fires once on startup, after Supabase loads and
-        // refreshes the stored session (if any). This is our "is user logged in?" check.
-        if (event === 'INITIAL_SESSION') {
-          if (session?.user) {
-            setUser(session.user)
-            await fetchProfile(session.user.id)
-          } else if (!hasAuthCallback) {
-            // No session and not returning from a magic link — not logged in.
-            setLoading(false)
+          if (event === 'INITIAL_SESSION') {
+            markResolved()
+            if (session?.user) {
+              setUser(session.user)
+              await fetchProfile(session.user.id)
+            } else if (!hasAuthCallback) {
+              setLoading(false)
+            }
+            return
           }
-          // If hasAuthCallback, stay in loading state — SIGNED_IN will fire next.
-          return
-        }
 
-        // SIGNED_IN: fires on login (password, magic link, OAuth).
-        // Also fires when magic link tokens in URL are processed.
-        if (event === 'SIGNED_IN') {
-          if (session?.user) {
-            setUser(session.user)
-            await fetchProfile(session.user.id)
+          if (event === 'SIGNED_IN') {
+            markResolved()
+            if (session?.user) {
+              setUser(session.user)
+              await fetchProfile(session.user.id)
+            }
+            return
           }
-          return
-        }
 
-        // TOKEN_REFRESHED: Supabase auto-refreshed the access token.
-        // Update user in case anything changed, but don't re-fetch profile.
-        if (event === 'TOKEN_REFRESHED') {
-          if (session?.user) {
-            setUser(session.user)
-          } else {
-            // Refresh produced no session — treat as sign out
+          if (event === 'TOKEN_REFRESHED') {
+            if (session?.user) {
+              setUser(session.user)
+            } else {
+              setUser(null)
+              setProfile(null)
+              setLoading(false)
+            }
+            return
+          }
+
+          if (event === 'SIGNED_OUT') {
             setUser(null)
             setProfile(null)
             setLoading(false)
+            return
           }
-          return
         }
-
-        // SIGNED_OUT: user logged out or session was invalidated.
-        if (event === 'SIGNED_OUT') {
-          setUser(null)
-          setProfile(null)
-          setLoading(false)
-          return
-        }
-      }
-    )
-
-    // Safety timeout: if auth callback processing stalls, stop loading after 8s
-    let safetyTimer
-    if (hasAuthCallback) {
-      safetyTimer = setTimeout(() => { if (!cancelled) setLoading(false) }, 8000)
+      )
+      subscription = result.data.subscription
+    } catch (err) {
+      console.error('Auth listener registration failed:', err)
+      setLoading(false)
+      return
     }
+
+    // Fallback: if no auth event fires within 5s (Supabase _initialize() hung,
+    // slow network, etc.), check the session directly via getSession() and
+    // force loading=false. Without this, the app shows an infinite spinner.
+    const fallbackTimer = setTimeout(async () => {
+      if (cancelled || resolved) return
+      console.warn('Auth: no event after 5s — falling back to getSession()')
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled || resolved) return
+        if (session?.user) {
+          setUser(session.user)
+          await fetchProfile(session.user.id)
+        } else {
+          setLoading(false)
+        }
+      } catch (err) {
+        console.error('Auth fallback getSession failed:', err)
+        if (!cancelled) setLoading(false)
+      }
+    }, 5000)
+
+    // Hard safety net: NEVER let loading stay true for more than 10s, period.
+    const safetyTimer = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('Auth: 10s safety timeout — forcing loading=false')
+        setLoading(false)
+      }
+    }, 10000)
 
     return () => {
       cancelled = true
-      if (safetyTimer) clearTimeout(safetyTimer)
-      subscription.unsubscribe()
+      clearTimeout(fallbackTimer)
+      clearTimeout(safetyTimer)
+      if (subscription) subscription.unsubscribe()
     }
   }, [])
 
