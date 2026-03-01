@@ -49,16 +49,9 @@ async function apiFetch(path, options = {}) {
     }
   }
 
-  // Still 401 after retry — session is dead, clear everything and go to login
+  // Still 401 after retry — session is dead, redirect to login
+  // Don't nuke localStorage here — let useAuth handle cleanup on next mount
   if (res.status === 401) {
-    try {
-      Object.keys(localStorage).forEach(key => {
-        if (key === 'bestlife-auth-v') return
-        if (key.startsWith('bestlife-auth') || key.startsWith('sb-') || key.includes('supabase')) {
-          localStorage.removeItem(key)
-        }
-      })
-    } catch {}
     window.location.href = '/login'
     throw new Error('Session expired')
   }

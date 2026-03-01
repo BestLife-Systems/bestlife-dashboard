@@ -7,8 +7,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState('login') // login | forgot | sent
-  const { signIn, resetPassword, user, profile } = useAuth()
+  const [mode, setMode] = useState('login') // login | magic | forgot | sent
+  const { signIn, signInWithMagicLink, resetPassword, user, profile } = useAuth()
   const navigate = useNavigate()
 
   // If already logged in, redirect
@@ -24,9 +24,23 @@ export default function LoginPage() {
       await signIn(email, password)
       navigate('/')
     } catch (err) {
-      setError(err.message === 'Invalid login credentials' 
-        ? 'Invalid email or password' 
+      setError(err.message === 'Invalid login credentials'
+        ? 'Invalid email or password'
         : err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleMagicLink = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      await signInWithMagicLink(email)
+      setMode('sent')
+    } catch (err) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
@@ -59,6 +73,7 @@ export default function LoginPage() {
           <h1 className="login-title">BestLife Hub</h1>
           <p className="login-subtitle">
             {mode === 'login' && 'Sign in to your account'}
+            {mode === 'magic' && 'Sign in with a magic link'}
             {mode === 'forgot' && 'Reset your password'}
             {mode === 'sent' && 'Check your email'}
           </p>
@@ -94,8 +109,36 @@ export default function LoginPage() {
             <button type="submit" className="btn btn--primary btn--full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
-            <button type="button" className="btn btn--ghost btn--full" onClick={() => { setMode('forgot'); setError('') }}>
-              Forgot password?
+            <div className="login-alt-actions">
+              <button type="button" className="btn btn--ghost btn--full" onClick={() => { setMode('magic'); setError('') }}>
+                ✉️ Send me a sign-in link instead
+              </button>
+              <button type="button" className="btn btn--ghost btn--full btn--muted" onClick={() => { setMode('forgot'); setError('') }}>
+                Forgot password?
+              </button>
+            </div>
+          </form>
+        )}
+
+        {mode === 'magic' && (
+          <form onSubmit={handleMagicLink} className="login-form">
+            <div className="form-field">
+              <label htmlFor="magic-email">Email</label>
+              <input
+                id="magic-email"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="you@bestlifecounseling.com"
+                required
+                autoFocus
+              />
+            </div>
+            <button type="submit" className="btn btn--primary btn--full" disabled={loading}>
+              {loading ? 'Sending...' : 'Send Magic Link'}
+            </button>
+            <button type="button" className="btn btn--ghost btn--full" onClick={() => { setMode('login'); setError('') }}>
+              Sign in with password instead
             </button>
           </form>
         )}
@@ -126,7 +169,7 @@ export default function LoginPage() {
         {mode === 'sent' && (
           <div className="login-form">
             <p style={{ color: 'var(--text)', textAlign: 'center', marginBottom: '1.5rem' }}>
-              We sent a password reset link to <strong>{email}</strong>. Check your inbox and follow the instructions.
+              We sent a link to <strong>{email}</strong>. Check your inbox — it may take a minute.
             </p>
             <button className="btn btn--ghost btn--full" onClick={() => { setMode('login'); setError('') }}>
               Back to sign in
