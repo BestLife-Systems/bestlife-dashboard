@@ -228,9 +228,10 @@ export default function PayPeriods() {
         continue
       }
 
-      // Detect "- BA" suffix for IIC-BA distinction, then strip it
-      const hasBA = /\s*-\s*BA$/i.test(name) || /-BA$/i.test(name)
-      const cleanName = name.replace(/\s*-\s*BA$/i, '').replace(/-BA$/i, '').trim()
+      // Detect "- BA" / "– BA" / "— BA" suffix for IIC-BA distinction, then strip it
+      // Handle regular hyphen (-), en dash (–), em dash (—), and Unicode variants
+      const hasBA = /\s*[-–—]\s*BA$/i.test(name)
+      const cleanName = name.replace(/\s*[-–—]\s*BA$/i, '').trim()
       const key = cleanName.toLowerCase()
 
       if (!people[key]) {

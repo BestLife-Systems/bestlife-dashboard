@@ -1623,8 +1623,8 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
             return None, f"Ambiguous name '{name_str}' — matches: {', '.join(names)}"
         return None, f"User not found: {name_str}"
 
-    # ── Create recipients with invoice_data (status=received, ready for review) ──
-    imported = 0
+    # ── Merge rows by user (same person may appear multiple times, e.g. IIC + BA rows) ──
+    merged = {}   # uid → { "user_name": str, "row_data": accumulated BulkTimeEntryRow fields }
     errors = []
 
     for row in req.rows:
@@ -1632,11 +1632,33 @@ async def bulk_import_time_entries(period_id: str, req: BulkImportRequest, admin
         if not user:
             errors.append(err)
             continue
-
         uid = user["id"]
-        invoice_data = build_invoice_data(row)
+        if uid not in merged:
+            merged[uid] = {"user_name": row.user_name, "iic": 0, "iic_ba": 0, "op": 0,
+                           "sbys": 0, "ados": 0, "apn": 0, "admin_hours": 0,
+                           "supervision": 0, "sick": 0, "pto": 0}
+        m = merged[uid]
+        m["iic"] += row.iic or 0
+        m["iic_ba"] += row.iic_ba or 0
+        m["op"] += row.op or 0
+        m["sbys"] += row.sbys or 0
+        m["ados"] += row.ados or 0
+        m["apn"] += row.apn or 0
+        m["admin_hours"] += row.admin_hours or 0
+        m["supervision"] += row.supervision or 0
+        m["sick"] += row.sick or 0
+        m["pto"] += row.pto or 0
+
+    # ── Create one recipient per user with merged invoice_data ──
+    imported = 0
+    for uid, m in merged.items():
+        row_obj = BulkTimeEntryRow(user_name=m["user_name"], iic=m["iic"], iic_ba=m["iic_ba"],
+                                    op=m["op"], sbys=m["sbys"], ados=m["ados"], apn=m["apn"],
+                                    admin_hours=m["admin_hours"], supervision=m["supervision"],
+                                    sick=m["sick"], pto=m["pto"])
+        invoice_data = build_invoice_data(row_obj)
         if not invoice_data:
-            errors.append(f"No hours for {row.user_name}")
+            errors.append(f"No hours for {m['user_name']}")
             continue
 
         # Create recipient with invoice_data — admin will review and approve manually
