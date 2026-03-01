@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet, apiPost } from '../../lib/api'
+import { apiGet } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -11,6 +11,7 @@ const TIMEFRAMES = [
 ]
 
 const EMP_LABELS = { full_time: 'FT', part_time: 'PT', '1099': '1099' }
+const EMP_COLORS = { full_time: '#4ade80', part_time: '#facc15', '1099': '#f97316' }
 
 export default function PerformanceTracking() {
   const { profile } = useAuth()
@@ -22,8 +23,6 @@ export default function PerformanceTracking() {
   const [timeframe, setTimeframe] = useState('monthly')
   const [period, setPeriod] = useState('')
   const verb = useLoadingVerb(loading)
-  const [migrating, setMigrating] = useState(false)
-  const [migrateResult, setMigrateResult] = useState(null)
 
   useEffect(() => { loadData() }, [timeframe, period])
 
@@ -56,33 +55,6 @@ export default function PerformanceTracking() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Performance Tracking</h2>
-        {isAdmin && !migrateResult && (
-          <button
-            className="btn btn--primary btn--small"
-            disabled={migrating}
-            onClick={async () => {
-              setMigrating(true)
-              try {
-                const res = await apiPost('/admin/regenerate-time-entries', {})
-                setMigrateResult(res)
-                loadData()
-              } catch (err) {
-                setMigrateResult({ error: err.message })
-              } finally {
-                setMigrating(false)
-              }
-            }}
-          >
-            {migrating ? 'Regenerating…' : '🔄 Regenerate Performance Data'}
-          </button>
-        )}
-        {migrateResult && (
-          <span style={{ fontSize: '0.85rem', color: migrateResult.error ? 'var(--danger)' : 'var(--success)' }}>
-            {migrateResult.error
-              ? `Error: ${migrateResult.error}`
-              : `✓ Done — ${migrateResult.recipients_processed} recipients processed`}
-          </span>
-        )}
       </div>
 
       {/* Controls row */}
@@ -112,11 +84,11 @@ export default function PerformanceTracking() {
         )}
 
         <div className="perf-thresholds-legend">
-          <span>FT: {thresholds.full_time || 80}hrs/mo</span>
+          <span><span className="perf-emp-dot" style={{ background: EMP_COLORS.full_time }} /> FT: {thresholds.full_time || 80}hrs/mo</span>
           <span className="perf-legend-sep">·</span>
-          <span>PT: {thresholds.part_time || 40}hrs/mo</span>
+          <span><span className="perf-emp-dot" style={{ background: EMP_COLORS.part_time }} /> PT: {thresholds.part_time || 40}hrs/mo</span>
           <span className="perf-legend-sep">·</span>
-          <span>1099: {thresholds['1099'] || 20}hrs/mo</span>
+          <span><span className="perf-emp-dot" style={{ background: EMP_COLORS['1099'] }} /> 1099: {thresholds['1099'] || 20}hrs/mo</span>
         </div>
       </div>
 
@@ -186,13 +158,13 @@ function TeamSection({ group, thresholds, isAdmin, isSingleUser, navigate }) {
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} isLeader={true} navigate={navigate} />
             ))}
             {hasBas && therapists.length > 0 && (
-              <tr className="perf-subheader-row"><td colSpan="11" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Therapists</td></tr>
+              <tr className="perf-subheader-row"><td colSpan="14" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Therapists</td></tr>
             )}
             {therapists.map(row => (
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
             ))}
             {hasBas && (
-              <tr className="perf-subheader-row"><td colSpan="11" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Behavioral Assistants</td></tr>
+              <tr className="perf-subheader-row"><td colSpan="14" style={{ padding: '0.625rem 0.75rem 0.25rem', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', borderBottom: 'none' }}>Behavioral Assistants</td></tr>
             )}
             {bas.map(row => (
               <StaffRow key={row.user_id} row={row} thresholds={thresholds} navigate={navigate} />
@@ -213,9 +185,11 @@ function PerfTableHead() {
         <th>Emp</th>
         <th className="num">IIC</th>
         <th className="num">OP</th>
+        <th className="num">OP Cancel</th>
         <th className="num">SBYS</th>
         <th className="num">ADOS</th>
         <th className="num">APN</th>
+        <th className="num">Sup</th>
         <th className="num">Sick</th>
         <th className="num">PTO</th>
         <th className="num">Total</th>
@@ -229,6 +203,7 @@ function PerfTableHead() {
 function StaffRow({ row, thresholds, isLeader, navigate }) {
   const avgPerPd = row.avg_per_period || 0
   const onTrack = row.status === 'on_track'
+  const empColor = EMP_COLORS[row.employment_status] || EMP_COLORS.full_time
 
   return (
     <tr className={`data-table-row perf-staff-row ${isLeader ? 'perf-staff-row--leader' : ''}`}>
@@ -243,13 +218,17 @@ function StaffRow({ row, thresholds, isLeader, navigate }) {
         </button>
       </td>
       <td>
-        <span className="badge badge--muted">{EMP_LABELS[row.employment_status] || 'FT'}</span>
+        <span className="perf-emp-badge" style={{ borderColor: empColor, color: empColor }}>
+          {EMP_LABELS[row.employment_status] || 'FT'}
+        </span>
       </td>
       <td className="num">{row.iic || '—'}</td>
       <td className="num">{row.op || '—'}</td>
+      <td className="num">{row.op_cancel || '—'}</td>
       <td className="num">{row.sbys || '—'}</td>
       <td className="num">{row.ados || '—'}</td>
       <td className="num">{row.apn || '—'}</td>
+      <td className="num">{row.sup || '—'}</td>
       <td className="num">{row.sick || '—'}</td>
       <td className="num">{row.pto || '—'}</td>
       <td className="num perf-total-bold">{row.total_hours || '—'}</td>

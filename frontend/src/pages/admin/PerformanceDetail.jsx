@@ -4,6 +4,7 @@ import { apiGet } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 
 const EMP_LABELS = { full_time: 'FT', part_time: 'PT', '1099': '1099' }
+const EMP_COLORS = { full_time: '#4ade80', part_time: '#facc15', '1099': '#f97316' }
 
 export default function PerformanceDetail() {
   const { userId } = useParams()
@@ -47,6 +48,7 @@ export default function PerformanceDetail() {
   }
 
   const { user, threshold, months, quarters } = data
+  const empColor = EMP_COLORS[user.employment_status] || EMP_COLORS.full_time
 
   return (
     <div>
@@ -54,7 +56,9 @@ export default function PerformanceDetail() {
         <div>
           <h2 className="page-title">{user.name}</h2>
           <div className="page-header-sub">
-            <span className="badge badge--muted">{EMP_LABELS[user.employment_status] || 'FT'}</span>
+            <span className="perf-emp-badge" style={{ borderColor: empColor, color: empColor }}>
+              {EMP_LABELS[user.employment_status] || 'FT'}
+            </span>
             <span style={{ marginLeft: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Threshold: {threshold} hrs/mo
             </span>
@@ -82,9 +86,11 @@ export default function PerformanceDetail() {
                 <th>Month</th>
                 <th className="num">IIC</th>
                 <th className="num">OP</th>
+                <th className="num">OP Cancel</th>
                 <th className="num">SBYS</th>
                 <th className="num">ADOS</th>
                 <th className="num">APN</th>
+                <th className="num">Sup</th>
                 <th className="num">Sick</th>
                 <th className="num">PTO</th>
                 <th className="num">Total</th>
@@ -97,9 +103,11 @@ export default function PerformanceDetail() {
                   <td className="data-table-primary">{row.label}</td>
                   <td className="num">{row.iic || '—'}</td>
                   <td className="num">{row.op || '—'}</td>
+                  <td className="num">{row.op_cancel || '—'}</td>
                   <td className="num">{row.sbys || '—'}</td>
                   <td className="num">{row.ados || '—'}</td>
                   <td className="num">{row.apn || '—'}</td>
+                  <td className="num">{row.sup || '—'}</td>
                   <td className="num">{row.sick || '—'}</td>
                   <td className="num">{row.pto || '—'}</td>
                   <td className="num perf-total-bold">{row.total_hours || '—'}</td>
@@ -128,9 +136,11 @@ export default function PerformanceDetail() {
                       <th>Month</th>
                       <th className="num">IIC</th>
                       <th className="num">OP</th>
+                      <th className="num">OP Cancel</th>
                       <th className="num">SBYS</th>
                       <th className="num">ADOS</th>
                       <th className="num">APN</th>
+                      <th className="num">Sup</th>
                       <th className="num">Sick</th>
                       <th className="num">PTO</th>
                       <th className="num">Total</th>
@@ -142,9 +152,11 @@ export default function PerformanceDetail() {
                         <td className="data-table-primary">{row.label}</td>
                         <td className="num">{row.iic || '—'}</td>
                         <td className="num">{row.op || '—'}</td>
+                        <td className="num">{row.op_cancel || '—'}</td>
                         <td className="num">{row.sbys || '—'}</td>
                         <td className="num">{row.ados || '—'}</td>
                         <td className="num">{row.apn || '—'}</td>
+                        <td className="num">{row.sup || '—'}</td>
                         <td className="num">{row.sick || '—'}</td>
                         <td className="num">{row.pto || '—'}</td>
                         <td className={`num perf-total-bold ${row.on_track ? 'perf-avg--on-track' : 'perf-avg--off-track'}`}>{row.total_hours || '—'}</td>
@@ -154,7 +166,7 @@ export default function PerformanceDetail() {
                   <tfoot>
                     <tr style={{ fontWeight: 600 }}>
                       <td>Quarter Total</td>
-                      <td className="num" colSpan="7"></td>
+                      <td className="num" colSpan="9"></td>
                       <td className="num perf-total-bold">{q.total_hours}</td>
                     </tr>
                   </tfoot>

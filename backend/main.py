@@ -2376,178 +2376,6 @@ async def zero_hours_recipient(recipient_id: str, req: ZeroHoursRequest, admin=D
     return {"status": "zero_hours"}
 
 
-@app.post("/api/admin/regenerate-time-entries")
-async def regenerate_time_entries(admin=Depends(require_admin)):
-    """
-    One-time migration: delete and regenerate all time_entries for approved recipients.
-    Fixes rate_type_id mismatches from the old write_entry logic.
-    """
-    # Fetch all approved recipients
-    recipients = await sb_request("GET", "pay_period_recipients", params={
-        "status": "eq.approved",
-        "select": "id,user_id,pay_period_id,invoice_data",
-    }) or []
-
-    # Pre-fetch all rate types once
-    all_rate_types = await sb_request("GET", "rate_types", params={"select": "id,name,unit"})
-    rate_type_fallback = {rt["name"]: rt for rt in (all_rate_types or [])}
-
-    # Pre-fetch bill rate defaults
-    bill_defaults = await sb_request("GET", "bill_rate_defaults", params={
-        "select": "*, rate_types(name)",
-    })
-    bill_rate_map = {}
-    for bd in (bill_defaults or []):
-        rt = bd.get("rate_types") or {}
-        bill_rate_map[rt.get("name", "")] = float(bd["default_bill_rate"])
-
-    fixed = 0
-    errors = []
-
-    for recip in recipients:
-        recipient_id = recip["id"]
-        user_id = recip["user_id"]
-        period_id = recip["pay_period_id"]
-        invoice_data = recip.get("invoice_data") or {}
-
-        try:
-            # Delete existing time_entries for this recipient
-            await sb_request("DELETE", f"time_entries?recipient_id=eq.{recipient_id}")
-
-            # Get user's pay rates
-            pay_rates = await sb_request("GET", "user_pay_rates", params={
-                "user_id": f"eq.{user_id}",
-                "select": "*, rate_types(name, unit)",
-            })
-            pay_rate_map = {}
-            for pr in (pay_rates or []):
-                rt = pr.get("rate_types") or {}
-                pay_rate_map[rt.get("name", "")] = {
-                    "rate_type_id": pr["rate_type_id"],
-                    "pay_rate": float(pr["pay_rate"]),
-                    "unit": rt.get("unit", "hourly"),
-                }
-
-            # Helper: write a time entry (same logic as approve_recipient)
-            async def write_entry(rate_name, qty, initials=None, duration=None, notes=None):
-                if qty == 0:
-                    return
-                candidates = RATE_NAME_ALIASES.get(rate_name, [rate_name])
-                rate_info = {}
-                fallback = {}
-                resolved_name = rate_name
-                for candidate in candidates:
-                    if candidate in pay_rate_map:
-                        rate_info = pay_rate_map[candidate]
-                        resolved_name = candidate
-                        break
-                if not rate_info.get("rate_type_id"):
-                    for candidate in candidates:
-                        if candidate in rate_type_fallback:
-                            fallback = rate_type_fallback[candidate]
-                            resolved_name = candidate
-                            break
-                if not rate_info and not fallback:
-                    rate_info = pay_rate_map.get(rate_name, {})
-                    fallback = rate_type_fallback.get(rate_name, {})
-                rate_type_id = rate_info.get("rate_type_id") or fallback.get("id")
-                pay_rate = rate_info.get("pay_rate", 0)
-                bill_rate = bill_rate_map.get(resolved_name, 0) or bill_rate_map.get(rate_name, 0)
-                unit = rate_info.get("unit") or fallback.get("unit", "hourly")
-                if rate_type_id:
-                    await sb_request("POST", "time_entries", data={
-                        "recipient_id": recipient_id, "user_id": user_id, "pay_period_id": period_id,
-                        "rate_type_id": rate_type_id, "quantity": qty,
-                        "duration_minutes": duration, "client_initials": initials,
-                        "est_bill_amount": round(bill_rate * qty, 2),
-                        "est_pay_amount": round(pay_rate * qty, 2),
-                        "notes": notes, "locked": True,
-                    })
-
-            # IIC sessions
-            iic = invoice_data.get("iic") or {}
-            for code, entries in iic.items():
-                if not isinstance(entries, list):
-                    continue
-                iic_rate_names = {
-                    "IICLC-H0036TJU1": "IIC LPC/LCSW",
-                    "IICMA-H0036TJU2": "IIC LAC/LSW",
-                    "BA-H2014TJ": "Behavioral Assistant",
-                }
-                rate_name = iic_rate_names.get(code, code)
-                for entry in entries:
-                    hrs = float(entry.get("hours") or 0)
-                    await write_entry(rate_name, hrs, initials=entry.get("cyber_initials"))
-
-            # OP sessions
-            op = invoice_data.get("op") or {}
-            op_sessions = op.get("sessions") or []
-            for entry in op_sessions:
-                is_cancel = entry.get("cancel_fee")
-                rate_name = "OP Cancellation" if is_cancel else "OP Session"
-                await write_entry(rate_name, 1.0, initials=entry.get("client_initials"))
-
-            # SBYS
-            sbys = invoice_data.get("sbys") or []
-            for entry in sbys:
-                hrs = float(entry.get("hours") or 0)
-                await write_entry("SBYS", hrs)
-
-            # ADOS
-            ados = invoice_data.get("ados") or []
-            for entry in ados:
-                loc = (entry.get("location") or "").lower()
-                if "office" in loc:
-                    ados_rate = "ADOS Assessment - At Office"
-                else:
-                    ados_rate = "ADOS Assessment - In Home"
-                await write_entry(ados_rate, 3.0, initials=entry.get("client_initials"),
-                                  notes=f"{entry.get('location','')} ID:{entry.get('id_number','')}")
-
-            # APN
-            apn_entries = invoice_data.get("apn") or []
-            for entry in apn_entries:
-                hrs = float(entry.get("hours") or 0)
-                apn_type = entry.get("type", "30min")
-                rate_name = "APN Intake" if apn_type == "intake" else "APN 30 Min"
-                await write_entry(rate_name, hrs)
-
-            # Admin
-            admin_entries = invoice_data.get("admin") or []
-            for entry in admin_entries:
-                hrs = float(entry.get("hours") or 0)
-                await write_entry("Administration", hrs)
-
-            # Supervision
-            sup = invoice_data.get("supervision") or {}
-            for s in (sup.get("individual") or []):
-                await write_entry("Individual Supervision", 1.0, notes=f"Supervisor: {s.get('supervisor_name','')}")
-            for s in (sup.get("group") or []):
-                await write_entry("Group Supervision", 1.0, notes=f"Supervisees: {','.join(s.get('supervisee_names',[]))}")
-
-            # Sick Leave
-            sick = invoice_data.get("sick_leave") or {}
-            sick_hrs = float(sick.get("hours") or 0)
-            if sick_hrs > 0:
-                await write_entry("Sick Leave", sick_hrs, notes=sick.get("reason"))
-
-            # PTO
-            pto = invoice_data.get("pto") or {}
-            pto_hrs = float(pto.get("hours") or 0)
-            if pto_hrs > 0:
-                await write_entry("PTO", pto_hrs)
-
-            fixed += 1
-        except Exception as e:
-            errors.append({"recipient_id": recipient_id, "error": str(e)})
-
-    return {
-        "status": "done",
-        "recipients_processed": fixed,
-        "errors": errors,
-    }
-
-
 # ── Export Batches ─────────────────────────────────────────────────
 
 @app.get("/api/payroll/export-batches")
@@ -3534,7 +3362,9 @@ RATE_TO_PERF_COL = {
     "IIC": "iic", "IIC-LC": "iic", "IIC-MA": "iic", "IIC-BA": "iic",
     "IIC LPC/LCSW": "iic", "IIC LAC/LSW": "iic", "Behavioral Assistant": "iic",
     # OP (all variants)
-    "OP Session": "op", "OP-LC Session": "op", "OP-MA Session": "op", "OP Cancellation": "op",
+    "OP Session": "op", "OP-LC Session": "op", "OP-MA Session": "op",
+    # OP Cancellation (separate column)
+    "OP Cancellation": "op_cancel",
     # SBYS
     "SBYS": "sbys",
     # ADOS (all variants)
@@ -3549,6 +3379,8 @@ RATE_TO_PERF_COL = {
     # APN
     "APN Session (30)": "apn", "APN Intake (60)": "apn",
     "APN 30 Min": "apn", "APN Intake": "apn",
+    # Supervision
+    "Individual Supervision": "sup", "Group Supervision": "sup",
 }
 
 
@@ -3690,7 +3522,7 @@ async def analytics_performance(
     num_periods = max(len(period_ids), 1)
 
     # ── 5. Fetch time_entries for those periods, joined to rate_types ──
-    user_service_hours = {uid: {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "apn": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
+    user_service_hours = {uid: {"iic": 0, "op": 0, "op_cancel": 0, "sbys": 0, "ados": 0, "apn": 0, "sup": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0} for uid in user_map}
 
     if period_ids:
         for pid in period_ids:
@@ -3802,9 +3634,11 @@ async def analytics_performance(
             "quarter_trend": trend,
             "iic": round(hrs.get("iic", 0), 1),
             "op": round(hrs.get("op", 0), 1),
+            "op_cancel": round(hrs.get("op_cancel", 0), 1),
             "sbys": round(hrs.get("sbys", 0), 1),
             "ados": round(hrs.get("ados", 0), 1),
             "apn": round(hrs.get("apn", 0), 1),
+            "sup": round(hrs.get("sup", 0), 1),
             "sick": round(hrs.get("sick", 0), 1),
             "pto": round(hrs.get("pto", 0), 1),
             "admin_hours": round(hrs.get("admin", 0), 1),
@@ -3843,9 +3677,11 @@ async def analytics_performance(
         team = {
             "iic": sum(t["iic"] for t in therapists),
             "op": sum(t["op"] for t in therapists),
+            "op_cancel": sum(t["op_cancel"] for t in therapists),
             "sbys": sum(t["sbys"] for t in therapists),
             "ados": sum(t["ados"] for t in therapists),
             "apn": sum(t["apn"] for t in therapists),
+            "sup": sum(t["sup"] for t in therapists),
             "sick": sum(t["sick"] for t in therapists),
             "pto": sum(t["pto"] for t in therapists),
             "total_hours": sum(t["total_hours"] for t in therapists),
@@ -3870,9 +3706,11 @@ async def analytics_performance(
         team = {
             "iic": sum(t["iic"] for t in unassigned),
             "op": sum(t["op"] for t in unassigned),
+            "op_cancel": sum(t["op_cancel"] for t in unassigned),
             "sbys": sum(t["sbys"] for t in unassigned),
             "ados": sum(t["ados"] for t in unassigned),
             "apn": sum(t["apn"] for t in unassigned),
+            "sup": sum(t["sup"] for t in unassigned),
             "sick": sum(t["sick"] for t in unassigned),
             "pto": sum(t["pto"] for t in unassigned),
             "total_hours": sum(t["total_hours"] for t in unassigned),
@@ -3950,7 +3788,7 @@ async def analytics_performance_detail(user_id: str, user=Depends(verify_token))
     months_names = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
     for mk, minfo in months_data.items():
-        hrs = {"iic": 0, "op": 0, "sbys": 0, "ados": 0, "apn": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
+        hrs = {"iic": 0, "op": 0, "op_cancel": 0, "sbys": 0, "ados": 0, "apn": 0, "sup": 0, "sick": 0, "pto": 0, "admin": 0, "total": 0}
         for pid in minfo["period_ids"]:
             entries = await sb_request("GET", "time_entries", params={
                 "pay_period_id": f"eq.{pid}",
@@ -3973,9 +3811,11 @@ async def analytics_performance_detail(user_id: str, user=Depends(verify_token))
             "label": f"{months_names[m2-1]} {y2}",
             "iic": round(hrs["iic"], 1),
             "op": round(hrs["op"], 1),
+            "op_cancel": round(hrs["op_cancel"], 1),
             "sbys": round(hrs["sbys"], 1),
             "ados": round(hrs["ados"], 1),
             "apn": round(hrs["apn"], 1),
+            "sup": round(hrs["sup"], 1),
             "sick": round(hrs["sick"], 1),
             "pto": round(hrs["pto"], 1),
             "admin_hours": round(hrs["admin"], 1),
