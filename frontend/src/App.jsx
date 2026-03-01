@@ -8,8 +8,6 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import UnauthorizedPage from './pages/UnauthorizedPage'
 
 // Admin pages
-import AdminAnalytics from './pages/admin/AdminAnalytics'
-import AdminPayroll from './pages/admin/AdminPayroll'
 import AdminUsers from './pages/admin/AdminUsers'
 import AdminSettings from './pages/admin/AdminSettings'
 import AdminTaskTemplates from './pages/admin/AdminTaskTemplates'
@@ -43,7 +41,6 @@ import ClinicalSupervision from './pages/clinical/ClinicalSupervision'
 import Home from './pages/shared/Home'
 import KnowledgeBase from './pages/shared/KnowledgeBase'
 import RoomSchedule from './pages/shared/RoomSchedule'
-import MyWork from './pages/shared/MyWork'
 import VTO from './pages/shared/VTO'
 
 // Public pages (no auth required)
@@ -51,10 +48,9 @@ import PublicInvoice from './pages/public/PublicInvoice'
 
 // Icons
 import {
-  IconHome, IconCheckSquare, IconBrain, IconBarChart, IconDollar,
-  IconUsers, IconCalendar, IconSettings, IconBriefcase, IconPalmTree,
-  IconUserCheck, IconClipboard, IconMegaphone, IconClock, IconTrendingUp,
-  IconShield, IconFileText, IconInbox, IconDownload, IconTag, IconCreditCard,
+  IconHome, IconBrain, IconBarChart, IconDollar,
+  IconUsers, IconCalendar, IconSettings,
+  IconClipboard, IconTrendingUp,
 } from './components/Icons'
 
 // ── Nav Tabs ──────────────────────────────────────────────────────
