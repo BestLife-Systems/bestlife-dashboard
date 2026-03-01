@@ -3185,7 +3185,7 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
 
 
 @app.get("/api/analytics/billing-debug")
-async def billing_debug(admin=Depends(require_admin)):
+async def billing_debug():
     """Temporary debug endpoint: dump rate_types names and user pay rates."""
     rate_types = await sb_request("GET", "rate_types", params={
         "select": "id, name, is_active",
