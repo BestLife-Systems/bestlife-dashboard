@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiGet } from '../../lib/api'
+import { apiGet, apiPost } from '../../lib/api'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -22,6 +22,8 @@ export default function PerformanceTracking() {
   const [timeframe, setTimeframe] = useState('monthly')
   const [period, setPeriod] = useState('')
   const verb = useLoadingVerb(loading)
+  const [migrating, setMigrating] = useState(false)
+  const [migrateResult, setMigrateResult] = useState(null)
 
   useEffect(() => { loadData() }, [timeframe, period])
 
@@ -54,6 +56,33 @@ export default function PerformanceTracking() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Performance Tracking</h2>
+        {isAdmin && !migrateResult && (
+          <button
+            className="btn btn--primary btn--small"
+            disabled={migrating}
+            onClick={async () => {
+              setMigrating(true)
+              try {
+                const res = await apiPost('/admin/regenerate-time-entries', {})
+                setMigrateResult(res)
+                loadData()
+              } catch (err) {
+                setMigrateResult({ error: err.message })
+              } finally {
+                setMigrating(false)
+              }
+            }}
+          >
+            {migrating ? 'Regenerating…' : '🔄 Regenerate Performance Data'}
+          </button>
+        )}
+        {migrateResult && (
+          <span style={{ fontSize: '0.85rem', color: migrateResult.error ? 'var(--danger)' : 'var(--success)' }}>
+            {migrateResult.error
+              ? `Error: ${migrateResult.error}`
+              : `✓ Done — ${migrateResult.recipients_processed} recipients processed`}
+          </span>
+        )}
       </div>
 
       {/* Controls row */}
