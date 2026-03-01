@@ -159,9 +159,15 @@ export function AuthProvider({ children }) {
   }
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-    return data
+    // Race against a 15s timeout so "Signing in..." never hangs forever
+    const result = await Promise.race([
+      supabase.auth.signInWithPassword({ email, password }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Sign-in timed out — please refresh and try again')), 15000)
+      ),
+    ])
+    if (result.error) throw result.error
+    return result.data
   }
 
   async function signInWithMagicLink(email) {

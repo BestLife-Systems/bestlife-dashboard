@@ -15,7 +15,7 @@ try {
 
 // Pre-flight: clear stale/corrupt sessions before Supabase client reads them
 // Bump this version on deploys that change auth behavior to force a clean session
-const AUTH_VERSION = '7'
+const AUTH_VERSION = '8'
 try {
   if (localStorage.getItem('bestlife-auth-v') !== AUTH_VERSION) {
     Object.keys(localStorage).forEach(key => {
@@ -33,5 +33,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storageKey: 'bestlife-auth',
+    // Disable navigator.locks — it causes signInWithPassword to hang indefinitely
+    // when _initialize() holds the lock during a slow/stale token refresh.
+    // A no-op lock is safe for a single-org dashboard; the only trade-off is
+    // two tabs could race on a token refresh, which is far less harmful than
+    // a permanently stuck login screen.
+    lock: async (name, acquireTimeout, fn) => await fn(),
   },
 })
