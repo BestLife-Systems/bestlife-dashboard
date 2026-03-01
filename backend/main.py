@@ -2700,19 +2700,20 @@ SERVICE_TO_RATE_NAME = {
 # Reverse map
 RATE_NAME_TO_SERVICE = {v: k for k, v in SERVICE_TO_RATE_NAME.items()}
 
-# Map service types → pay rate names (matches what approve_recipient writes)
-SERVICE_TO_PAY_RATE_NAME = {
-    "IIC-LC": "IIC LPC/LCSW",
-    "IIC-MA": "IIC LAC/LSW",
-    "IIC-BA": "Behavioral Assistant",
-    "OP": "OP Session",
-    "SBYS": "SBYS",
-    "ADOS In Home": "ADOS",
-    "ADOS At Office": "ADOS",
-    "APN 30 Min": "APN 30 Min",
-    "APN Intake": "APN Intake",
-    "PTO": "PTO",
-    "Sick Leave": "Sick Leave",
+# Map service types → pay rate name candidates (try in order until one matches)
+# Some services have LC/MA variants — e.g. OP-LC Session vs OP-MA Session
+SERVICE_TO_PAY_RATE_NAMES = {
+    "IIC-LC": ["IIC LPC/LCSW", "IIC-LC"],
+    "IIC-MA": ["IIC LAC/LSW", "IIC-MA"],
+    "IIC-BA": ["Behavioral Assistant", "IIC-BA"],
+    "OP": ["OP-LC Session", "OP-MA Session", "OP Session"],
+    "SBYS": ["SBYS"],
+    "ADOS In Home": ["ADOS", "ADOS Assessment - In Home"],
+    "ADOS At Office": ["ADOS", "ADOS Assessment - At Office"],
+    "APN 30 Min": ["APN 30 Min", "APN Session (30)"],
+    "APN Intake": ["APN Intake", "APN Intake (60)"],
+    "PTO": ["PTO"],
+    "Sick Leave": ["Sick Leave"],
 }
 
 def _extract_service_hours(invoice_data: dict) -> dict:
@@ -2848,19 +2849,16 @@ async def billing_summary(admin=Depends(require_admin)):
             user_rates = user_pay_map_list.get(uid, {})
             for st, h in hours.items():
                 service_totals[st] += h
-                # Compute pay: try pay-rate name first, then bill-rate name, then fuzzy
-                pay_rate_name = SERVICE_TO_PAY_RATE_NAME.get(st)
+                # Compute pay: try each candidate pay-rate name, then bill-rate name
+                pay_rate_candidates = SERVICE_TO_PAY_RATE_NAMES.get(st, [])
                 bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
                 pay_rate = 0
-                if pay_rate_name:
-                    pay_rate = user_rates.get(pay_rate_name, 0)
+                for candidate in pay_rate_candidates:
+                    pay_rate = user_rates.get(candidate, 0)
+                    if pay_rate:
+                        break
                 if not pay_rate:
                     pay_rate = user_rates.get(bill_rate_name, 0)
-                if not pay_rate:
-                    for rn, rv in user_rates.items():
-                        if st.lower() in rn.lower():
-                            pay_rate = rv
-                            break
                 if st.startswith("ADOS"):
                     # ADOS pay = assessments × session rate
                     num_a = counts.get(st, 0)
@@ -3106,27 +3104,16 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
                 revenue = hrs * bill_rate
             else:
                 revenue = 0
-            # Find the user's pay rate: try pay-rate name, then bill-rate name, then fuzzy
-            pay_rate_name = SERVICE_TO_PAY_RATE_NAME.get(st)
+            # Find the user's pay rate: try each candidate pay-rate name, then bill-rate name
+            pay_rate_candidates = SERVICE_TO_PAY_RATE_NAMES.get(st, [])
             bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
             pay_rate = 0
-            matched_via = "none"
-            if pay_rate_name:
-                pay_rate = user_rates.get(pay_rate_name, 0)
+            for candidate in pay_rate_candidates:
+                pay_rate = user_rates.get(candidate, 0)
                 if pay_rate:
-                    matched_via = f"pay_rate_name={pay_rate_name}"
+                    break
             if not pay_rate:
                 pay_rate = user_rates.get(bill_rate_name, 0)
-                if pay_rate:
-                    matched_via = f"bill_rate_name={bill_rate_name}"
-            if not pay_rate:
-                for rn, rv in user_rates.items():
-                    if st.lower() in rn.lower():
-                        pay_rate = rv
-                        matched_via = f"fuzzy={rn}"
-                        break
-            if st == "OP":
-                logger.info(f"BILLING-DEBUG {name} | st={st} | user_rates={user_rates} | pay_rate_name={pay_rate_name} | bill_rate_name={bill_rate_name} | pay_rate={pay_rate} | matched_via={matched_via}")
             # ADOS pay = assessments × session rate (not hours × rate)
             if st.startswith("ADOS"):
                 num_a = counts_map.get(st, 0)
@@ -3182,45 +3169,6 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         },
         "bill_rates": service_bill_rates,
     }
-
-
-@app.get("/api/analytics/billing-debug")
-async def billing_debug():
-    """Temporary debug endpoint: dump rate_types names and user pay rates."""
-    try:
-        rate_types = await sb_request("GET", "rate_types", params={
-            "select": "id, name, is_active",
-            "order": "sort_order.asc",
-        })
-        all_pay_rates = await sb_request("GET", "user_pay_rates", params={
-            "select": "user_id, pay_rate, rate_types(name)",
-        })
-        # Get users separately
-        users_list = await sb_request("GET", "users", params={
-            "select": "id, first_name, last_name",
-        })
-        user_names = {u["id"]: f"{u.get('first_name','')} {u.get('last_name','')}".strip() for u in (users_list or [])}
-
-        # Group by user
-        by_user = {}
-        for pr in (all_pay_rates or []):
-            uid = pr["user_id"]
-            name = user_names.get(uid, uid)
-            rt = pr.get("rate_types") or {}
-            rname = rt.get("name", "")
-            if name not in by_user:
-                by_user[name] = {"user_id": uid, "rates": {}}
-            by_user[name]["rates"][rname] = float(pr["pay_rate"])
-        return {
-            "rate_types": [{"name": rt["name"], "active": rt.get("is_active", True)} for rt in (rate_types or [])],
-            "user_rates": by_user,
-            "lookup_maps": {
-                "SERVICE_TO_PAY_RATE_NAME": SERVICE_TO_PAY_RATE_NAME,
-                "SERVICE_TO_RATE_NAME": {k: v for k, v in SERVICE_TO_RATE_NAME.items()},
-            }
-        }
-    except Exception as e:
-        return {"error": str(e)}
 
 
 @app.patch("/api/analytics/billing-rates")
