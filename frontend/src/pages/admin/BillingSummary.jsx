@@ -26,7 +26,8 @@ function fmtPct(v) {
 // Grouped pill categories (what shows on main page)
 const PILL_GROUPS = [
   { key: 'IIC', label: 'IIC', members: ['IIC-LC', 'IIC-MA', 'IIC-BA'], color: '#00bbee', unit: 'h' },
-  { key: 'OP', label: 'OP', members: ['OP', 'OP Cancellation'], color: '#4ade80', unit: 'h' },
+  { key: 'OP', label: 'OP', members: ['OP'], color: '#4ade80', unit: 'h' },
+  { key: 'OP Cancel', label: 'OP Cancel', members: ['OP Cancellation'], color: '#f87171', unit: 'h' },
   { key: 'SBYS', label: 'SBYS', members: ['SBYS'], color: '#a78bfa', unit: 'h' },
   { key: 'ADOS', label: 'ADOS', members: ['ADOS In Home', 'ADOS At Office'], color: '#fbbf24', unit: 'assessments' },
   { key: 'APN', label: 'APN', members: ['APN 30 Min', 'APN Intake'], color: '#f97316', unit: 'h' },

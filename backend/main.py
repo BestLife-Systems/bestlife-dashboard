@@ -2914,7 +2914,9 @@ async def billing_summary(admin=Depends(require_admin)):
             else:
                 revenue = 0
             pay = service_pay.get(st, 0)
-            grand_hours += hrs
+            # PTO and Sick Leave don't count toward total hours of impact
+            if st not in NON_REVENUE_TYPES:
+                grand_hours += hrs
             grand_revenue += revenue
             grand_pay += pay
             entry = {
@@ -2971,7 +2973,7 @@ async def billing_summary(admin=Depends(require_admin)):
             m["services_map"][sname]["assessments"] += svc.get("assessments", 0)
 
     period_summaries = []
-    for key in sorted(merged_map.keys(), reverse=True):
+    for key in sorted(merged_map.keys()):
         m = merged_map[key]
         svc_list = []
         for st in SERVICE_TYPES:
@@ -3016,7 +3018,7 @@ async def billing_summary(admin=Depends(require_admin)):
         monthly[month_key]["total_pay"] += ps["total_pay"]
 
     monthly_list = []
-    for mk, mv in sorted(monthly.items(), reverse=True):
+    for mk, mv in sorted(monthly.items()):
         svc_list = []
         for st in SERVICE_TYPES:
             sd = mv["services"][st]
@@ -3179,8 +3181,8 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
             "total_margin": round(profit / t["revenue"] * 100, 1) if t["revenue"] > 0 else 0,
         })
 
-    # Grand totals
-    gh = sum(s["total_hours"] for s in sections)
+    # Grand totals (exclude PTO/Sick from hours — they're not hours of impact)
+    gh = sum(s["total_hours"] for s in sections if s["service"] not in NON_REVENUE_TYPES)
     gr = sum(s["total_revenue"] for s in sections)
     gp = sum(s["total_pay"] for s in sections)
 
