@@ -420,13 +420,33 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
                     id={arcId}
                     d={`M ${cx - arcR} ${cy} A ${arcR} ${arcR} 0 0 1 ${cx + arcR} ${cy}`}
                   />
+                  <filter id={`shadow-${arcId}`} x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.5" />
+                  </filter>
                 </defs>
+                {/* White stroke outline behind colored text for contrast on any sky */}
+                <text
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth="3.5"
+                  strokeLinejoin="round"
+                  fontSize="13.5"
+                  fontFamily="'DM Sans', sans-serif"
+                  fontWeight="600"
+                  letterSpacing="0.04em"
+                  opacity="0.85"
+                >
+                  <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
+                    {cat.name}
+                  </textPath>
+                </text>
                 <text
                   fill={isHovered ? '#ffffff' : (cat.color || '#7d8a82')}
                   fontSize="13.5"
                   fontFamily="'DM Sans', sans-serif"
                   fontWeight="600"
                   letterSpacing="0.04em"
+                  filter={`url(#shadow-${arcId})`}
                 >
                   <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
                     {cat.name}
