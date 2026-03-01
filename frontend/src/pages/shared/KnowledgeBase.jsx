@@ -100,7 +100,8 @@ const CATEGORIES = [
   { name: 'Training', color: '#f472b6' },
 ]
 
-// ── Canvas background: night sky (dark) / sunny clouds (light) ──
+// ── Canvas background: real-time sky based on Eastern Time ──
+// Nighttime = shooting stars; daytime = drifting clouds; smooth dawn/dusk blend.
 function SpaceCanvas() {
   const canvasRef = useRef(null)
 
@@ -110,18 +111,35 @@ function SpaceCanvas() {
     const ctx = canvas.getContext('2d')
     let animId
 
-    const isLight = () => document.documentElement.dataset.theme === 'light'
+    // Returns 0 (full night) → 1 (full day) based on Eastern Time.
+    // Dawn 6–7:30 AM, dusk 7:30–9 PM, smooth sine-eased transition.
+    function getDaylight() {
+      const now = new Date()
+      const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+      const h = et.getHours() + et.getMinutes() / 60
+      if (h >= 7.5 && h < 19.5) return 1             // full day
+      if (h >= 19.5 && h < 21) return (21 - h) / 1.5  // dusk
+      if (h >= 6 && h < 7.5) return (h - 6) / 1.5     // dawn
+      return 0                                          // full night
+    }
 
-    // ── Dark mode: stars ──
+    // Lerp between two [r,g,b] colors
+    function lerpRGB(a, b, t) {
+      return [
+        Math.round(a[0] + (b[0] - a[0]) * t),
+        Math.round(a[1] + (b[1] - a[1]) * t),
+        Math.round(a[2] + (b[2] - a[2]) * t),
+      ]
+    }
+
+    // ── Night elements ──
     const stars = []
     const STAR_COUNT = 220
     const shooters = []
-    let constellationStars = []
-    let constellationLines = []
 
-    // ── Light mode: clouds ──
+    // ── Day elements ──
     const clouds = []
-    const CLOUD_COUNT = 12
+    const CLOUD_COUNT = 14
 
     function resize() {
       const dpr = window.devicePixelRatio || 1
@@ -143,17 +161,14 @@ function SpaceCanvas() {
           hue: Math.random() < 0.12 ? (Math.random() < 0.5 ? 195 : 270) : 0,
         })
       }
-      constellationStars = []
-      constellationLines = []
     }
 
     function initClouds() {
       clouds.length = 0
       const cw = canvas.offsetWidth, ch = canvas.offsetHeight
       for (let i = 0; i < CLOUD_COUNT; i++) {
-        const baseY = Math.random() * ch
+        const baseY = Math.random() * ch * 0.85
         const scale = Math.random() * 0.6 + 0.5
-        // Each cloud is a cluster of overlapping ellipses
         const puffs = []
         const puffCount = Math.floor(Math.random() * 4) + 3
         for (let p = 0; p < puffCount; p++) {
@@ -190,36 +205,64 @@ function SpaceCanvas() {
     window.addEventListener('resize', onResize)
     let lastShoot = 0
 
-    function drawDark(now) {
-      const cw = canvas.offsetWidth, ch = canvas.offsetHeight
+    // Sky color palettes
+    const nightTop = [10, 14, 26], nightBot = [18, 24, 42]
+    const dayTop = [135, 195, 235], dayBot = [210, 232, 248]
+    const dawnTop = [45, 30, 60], dawnBot = [200, 130, 90]  // purple-orange horizon
 
-      // Milky way
+    function drawSky(daylight, cw, ch) {
+      // Blend sky gradient: night → dawn tint → day
+      // Use a peaked dawn tint at daylight ≈ 0.3–0.5
+      const dawnStrength = daylight < 0.5
+        ? daylight * 2               // 0→1 as daylight goes 0→0.5
+        : (1 - daylight) * 2         // 1→0 as daylight goes 0.5→1
+      const clampedDawn = Math.max(0, Math.min(1, dawnStrength))
+
+      let topC, botC
+      if (daylight <= 0.5) {
+        // Night → dawn
+        const t = daylight * 2
+        topC = lerpRGB(nightTop, lerpRGB(dawnTop, dayTop, t), t)
+        botC = lerpRGB(nightBot, lerpRGB(dawnBot, dayBot, t), t)
+      } else {
+        // Dawn → day
+        const t = (daylight - 0.5) * 2
+        topC = lerpRGB(lerpRGB(dawnTop, dayTop, 0.5 + t * 0.5), dayTop, t)
+        botC = lerpRGB(lerpRGB(dawnBot, dayBot, 0.5 + t * 0.5), dayBot, t)
+      }
+
+      const sky = ctx.createLinearGradient(0, 0, 0, ch)
+      sky.addColorStop(0, `rgb(${topC[0]},${topC[1]},${topC[2]})`)
+      sky.addColorStop(1, `rgb(${botC[0]},${botC[1]},${botC[2]})`)
+      ctx.fillStyle = sky
+      ctx.fillRect(0, 0, cw, ch)
+
+      // Warm horizon glow at dawn/dusk
+      if (clampedDawn > 0.05) {
+        const glow = ctx.createRadialGradient(cw * 0.5, ch * 1.1, 0, cw * 0.5, ch * 1.1, ch * 0.9)
+        glow.addColorStop(0, `rgba(255,160,60,${clampedDawn * 0.25})`)
+        glow.addColorStop(0.4, `rgba(255,100,50,${clampedDawn * 0.1})`)
+        glow.addColorStop(1, 'rgba(255,80,40,0)')
+        ctx.fillStyle = glow
+        ctx.fillRect(0, 0, cw, ch)
+      }
+    }
+
+    function drawStars(now, opacity) {
+      if (opacity < 0.01) return
+      const cw = canvas.offsetWidth, ch = canvas.offsetHeight
+      const t = now * 0.001
+
+      // Milky way glow
+      ctx.globalAlpha = opacity
       const g = ctx.createLinearGradient(0, 0, cw, ch)
       g.addColorStop(0, 'rgba(0,0,0,0)')
-      g.addColorStop(0.3, 'rgba(60,50,120,0.05)')
-      g.addColorStop(0.45, 'rgba(80,60,180,0.08)')
-      g.addColorStop(0.55, 'rgba(40,80,200,0.07)')
-      g.addColorStop(0.7, 'rgba(60,50,120,0.04)')
+      g.addColorStop(0.3, 'rgba(60,50,120,0.06)')
+      g.addColorStop(0.45, 'rgba(80,60,180,0.1)')
+      g.addColorStop(0.55, 'rgba(40,80,200,0.08)')
+      g.addColorStop(0.7, 'rgba(60,50,120,0.05)')
       g.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = g; ctx.fillRect(0, 0, cw, ch)
-
-      // Constellation lines
-      for (const [a, b, color] of constellationLines) {
-        const sa = constellationStars[a], sb2 = constellationStars[b]
-        if (!sa || !sb2) continue
-        ctx.strokeStyle = color; ctx.lineWidth = 0.8
-        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb2.x, sb2.y); ctx.stroke()
-      }
-      // Constellation stars
-      const t = now * 0.001
-      for (const s of constellationStars) {
-        const fl = Math.sin(t * 0.8 + s.x) * 0.15 + 0.85
-        const a = s.alpha * fl
-        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${a})`)
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = s.color.replace(/[\d.]+\)$/, `${0.12 * fl})`)
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r * 3.5, 0, Math.PI * 2); ctx.fill()
-      }
 
       // Background stars
       for (const s of stars) {
@@ -243,27 +286,19 @@ function SpaceCanvas() {
         ctx.fillStyle = `rgba(220,240,255,${s.life})`
         ctx.beginPath(); ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2); ctx.fill()
       }
+      ctx.globalAlpha = 1
     }
 
-    function drawLight(now) {
+    function drawClouds(now, opacity) {
+      if (opacity < 0.01) return
       const cw = canvas.offsetWidth, ch = canvas.offsetHeight
-
-      // Soft sky gradient
-      const sky = ctx.createLinearGradient(0, 0, 0, ch)
-      sky.addColorStop(0, 'rgba(135,195,235,0.15)')
-      sky.addColorStop(0.4, 'rgba(165,215,245,0.08)')
-      sky.addColorStop(1, 'rgba(200,230,250,0.03)')
-      ctx.fillStyle = sky; ctx.fillRect(0, 0, cw, ch)
-
-      // Drifting clouds
+      ctx.globalAlpha = opacity
       for (const c of clouds) {
         c.x += c.speed
-        // Wrap around
         const totalW = c.scale * 200
         if (c.speed > 0 && c.x > cw + totalW) c.x = -totalW
         if (c.speed < 0 && c.x < -totalW) c.x = cw + totalW
 
-        ctx.save()
         for (const p of c.puffs) {
           const px = c.x + p.dx, py = c.y + p.dy
           const grad = ctx.createRadialGradient(px, py, 0, px, py, p.rx)
@@ -275,19 +310,22 @@ function SpaceCanvas() {
           ctx.ellipse(px, py, p.rx, p.ry, 0, 0, Math.PI * 2)
           ctx.fill()
         }
-        ctx.restore()
       }
+      ctx.globalAlpha = 1
     }
 
     function draw(now) {
       const cw = canvas.offsetWidth, ch = canvas.offsetHeight
       ctx.clearRect(0, 0, cw, ch)
 
-      if (isLight()) {
-        drawLight(now)
-      } else {
-        drawDark(now)
-      }
+      const daylight = getDaylight()
+
+      // Full opaque sky gradient (night → dawn → day blend)
+      drawSky(daylight, cw, ch)
+
+      // Stars fade out as daylight rises; clouds fade in
+      if (daylight < 1) drawStars(now, 1 - daylight)
+      if (daylight > 0) drawClouds(now, daylight)
 
       animId = requestAnimationFrame(draw)
     }
