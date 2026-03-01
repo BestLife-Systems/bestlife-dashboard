@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiPost, apiGet } from '../../lib/api'
 import Modal from '../../components/Modal'
-import StatusBadge from '../../components/StatusBadge'
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -14,6 +13,10 @@ const ROLES = [
   { value: 'front_desk', label: 'Front Desk' },
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
+
+// Display order for role grouping
+const ROLE_ORDER = ['admin', 'clinical_leader', 'therapist', 'apn', 'ba', 'front_desk', 'intern', 'medical_biller']
+const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.value, r.label]))
 
 const EMPLOYMENT_STATUSES = [
   { value: 'full_time', label: 'Full-Time' },
@@ -99,9 +102,16 @@ function ModalSection({ label }) {
 
 // ── Main component ────────────────────────────────────────────────
 
+function displayPhone(raw) {
+  if (!raw) return '—'
+  const digits = raw.replace(/^\+1/, '').replace(/\D/g, '')
+  return digits.length >= 10 ? formatPhone(digits) : raw
+}
+
 export default function AdminUsers() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState('active')
   const [showAdd, setShowAdd] = useState(false)
   const [editUser, setEditUser] = useState(null)
   const [editUserRates, setEditUserRates] = useState({})
@@ -121,6 +131,19 @@ export default function AdminUsers() {
   const [allPayRates, setAllPayRates] = useState([])
 
   const clinicalLeaders = users.filter(u => u.role === 'clinical_leader' && u.is_active)
+
+  // Filter by active/inactive tab, then group by role
+  const filteredUsers = users.filter(u => tab === 'active' ? u.is_active : !u.is_active)
+  const activeCount = users.filter(u => u.is_active).length
+  const inactiveCount = users.filter(u => !u.is_active).length
+
+  const groupedByRole = ROLE_ORDER
+    .map(role => ({
+      role,
+      label: ROLE_LABEL[role] || role,
+      users: filteredUsers.filter(u => u.role === role).sort((a, b) => (a.last_name || '').localeCompare(b.last_name || '')),
+    }))
+    .filter(g => g.users.length > 0)
 
   useEffect(() => { loadUsers(); loadRateData() }, [])
 
@@ -263,8 +286,29 @@ export default function AdminUsers() {
         </button>
       </div>
 
+      {/* Active / Inactive tabs */}
+      <div className="filter-tabs" style={{ marginBottom: '1rem' }}>
+        {[
+          { key: 'active', label: 'Active', count: activeCount },
+          { key: 'inactive', label: 'Inactive', count: inactiveCount },
+        ].map(t => (
+          <button
+            key={t.key}
+            className={`filter-tab ${tab === t.key ? 'filter-tab--active' : ''}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            {t.count > 0 && <span className="filter-tab-count">{t.count}</span>}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="page-loading"><div className="loading-spinner" /></div>
+      ) : groupedByRole.length === 0 ? (
+        <div className="empty-state">
+          <p>No {tab} users.</p>
+        </div>
       ) : (
         <>
           {/* Desktop Table */}
@@ -275,31 +319,50 @@ export default function AdminUsers() {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Phone</th>
-                  <th>Role</th>
-                  <th>Status</th>
+                  <th>Employment</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
-                  <tr key={u.id} className="data-table-row">
-                    <td className="data-table-primary">{u.first_name} {u.last_name}</td>
-                    <td>{u.email}</td>
-                    <td>{u.phone_number || '—'}</td>
-                    <td>{ROLES.find(r => r.value === u.role)?.label || u.role}</td>
-                    <td><StatusBadge status={u.is_active ? 'active' : 'inactive'} /></td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
-                        <button
-                          className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`}
-                          onClick={() => handleToggleActive(u)}
-                        >
-                          {u.is_active ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                {groupedByRole.map(group => (
+                  <React.Fragment key={group.role}>
+                    <tr>
+                      <td colSpan={5} style={{
+                        background: 'var(--bg-elevated)',
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        color: 'var(--accent)',
+                        padding: '0.625rem 0.75rem',
+                        borderBottom: '2px solid var(--accent)',
+                      }}>
+                        {group.label}
+                        <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: '0.5rem', fontSize: '0.75rem', textTransform: 'none' }}>
+                          ({group.users.length})
+                        </span>
+                      </td>
+                    </tr>
+                    {group.users.map(u => (
+                      <tr key={u.id} className="data-table-row">
+                        <td className="data-table-primary">{u.first_name} {u.last_name}</td>
+                        <td>{u.email}</td>
+                        <td>{displayPhone(u.phone_number)}</td>
+                        <td>{EMPLOYMENT_STATUSES.find(s => s.value === u.employment_status)?.label || u.employment_status || '—'}</td>
+                        <td>
+                          <div className="table-actions">
+                            <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
+                            <button
+                              className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`}
+                              onClick={() => handleToggleActive(u)}
+                            >
+                              {u.is_active ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -307,23 +370,34 @@ export default function AdminUsers() {
 
           {/* Mobile Cards */}
           <div className="card-list show-mobile">
-            {users.map(u => (
-              <div key={u.id} className="card">
-                <div className="card-row">
-                  <span className="card-label">{u.first_name} {u.last_name}</span>
-                  <StatusBadge status={u.is_active ? 'active' : 'inactive'} />
+            {groupedByRole.map(group => (
+              <React.Fragment key={group.role}>
+                <div style={{
+                  fontWeight: 700, fontSize: '0.8rem', textTransform: 'uppercase',
+                  letterSpacing: '0.04em', color: 'var(--accent)',
+                  padding: '0.5rem 0', marginTop: '0.5rem',
+                  borderBottom: '2px solid var(--accent)',
+                }}>
+                  {group.label} ({group.users.length})
                 </div>
-                <div className="card-row">
-                  <span className="card-muted">{u.email}</span>
-                  <span className="card-value">{ROLES.find(r => r.value === u.role)?.label || u.role}</span>
-                </div>
-                <div className="card-actions">
-                  <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
-                  <button className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`} onClick={() => handleToggleActive(u)}>
-                    {u.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                </div>
-              </div>
+                {group.users.map(u => (
+                  <div key={u.id} className="card">
+                    <div className="card-row">
+                      <span className="card-label">{u.first_name} {u.last_name}</span>
+                      <span className="card-value">{displayPhone(u.phone_number)}</span>
+                    </div>
+                    <div className="card-row">
+                      <span className="card-muted">{u.email}</span>
+                    </div>
+                    <div className="card-actions">
+                      <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
+                      <button className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`} onClick={() => handleToggleActive(u)}>
+                        {u.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </React.Fragment>
             ))}
           </div>
         </>
