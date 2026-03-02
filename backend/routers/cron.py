@@ -16,16 +16,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Depends
 
-from backend.deps import sb_request
+from backend.deps import sb_request, require_admin
 from backend.email_service import send_admin_summary_email, send_reminder_email
 from backend.scheduler import (
+    calculate_period_info,
     get_reminder_actions,
     today_et,
     upcoming_periods,
 )
-from backend.sms_service import send_sms
+from backend.sms_service import send_sms, SMS_ENABLED
 
 logger = logging.getLogger("bestlife")
 
@@ -460,3 +461,90 @@ async def _send_admin_summary(period: dict):
             )
 
     logger.info(f"Admin summary for {period_label}: {len(non_submitters)} non-submitters emailed to {len(admins or [])} admins")
+
+
+# ══════════════════════════════════════════════════════════════════
+# Admin endpoints — scheduler status / config / dry-run
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/scheduler/status")
+async def scheduler_status(admin=Depends(require_admin)):
+    """Return current scheduler configuration, last-run info, and upcoming cadence."""
+    from datetime import date as date_type
+
+    today = today_et()
+
+    # Build upcoming cadence (next ~45 days)
+    cadence_preview = []
+    periods = upcoming_periods(today, days_ahead=45)
+    for p in periods:
+        end_date = p["end_date"]
+        window_open = end_date - timedelta(days=2)
+        deadline = end_date + timedelta(days=4)
+        info = calculate_period_info(p["start_date"], p["end_date"])
+
+        # For each date in the cadence window, show what fires
+        actions_by_date = {}
+        for d_offset in range(-3, 10):  # scan days around period
+            check_date = window_open + timedelta(days=d_offset)
+            if check_date < today - timedelta(days=7):
+                continue
+            actions = get_reminder_actions(check_date, window_open, deadline)
+            if actions:
+                actions_by_date[check_date.isoformat()] = actions
+
+        cadence_preview.append({
+            "label": p["label"],
+            "period_type": p["period_type"],
+            "start_date": p["start_date"].isoformat(),
+            "end_date": p["end_date"].isoformat(),
+            "window_open": window_open.isoformat(),
+            "deadline": deadline.isoformat(),
+            "pay_date": info["effective_pay_date"].isoformat(),
+            "actions": actions_by_date,
+        })
+
+    # Check existing pay periods in DB
+    db_periods = await sb_request("GET", "pay_periods", params={
+        "select": "id,label,status,start_date,end_date,due_date,opened_at",
+        "order": "start_date.desc",
+        "limit": "6",
+    }) or []
+
+    return {
+        "scheduler_running": True,
+        "last_run_date": _last_run_date,
+        "scheduler_hour": SCHEDULER_HOUR,
+        "sms_enabled": SMS_ENABLED,
+        "app_url": APP_URL,
+        "today": today.isoformat(),
+        "cadence_preview": cadence_preview,
+        "recent_periods": db_periods,
+    }
+
+
+@router.post("/scheduler/dry-run")
+async def scheduler_dry_run(
+    test_date: Optional[str] = None,
+    admin=Depends(require_admin),
+):
+    """Run a dry-run of the scheduler for a given date (defaults to today).
+
+    Shows what actions WOULD fire without actually executing them.
+    """
+    date_str = test_date or today_et().isoformat()
+    return await _run_daily_logic(today_str=date_str, dry_run=True)
+
+
+@router.post("/scheduler/run-now")
+async def scheduler_run_now(admin=Depends(require_admin)):
+    """Manually trigger the daily scheduler for today (real run, not dry-run).
+
+    Use with caution — this will send real emails/SMS if providers are due.
+    """
+    global _last_run_date
+    date_str = today_et().isoformat()
+    results = await _run_daily_logic(today_str=date_str, dry_run=False)
+    _last_run_date = date_str
+    return results

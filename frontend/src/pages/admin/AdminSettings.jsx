@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiUpload, apiGet } from '../../lib/api'
+import { apiUpload, apiGet, apiPost } from '../../lib/api'
 import { fetchTemplates, createTemplate, updateTemplate, deleteTemplate, generateInstances } from '../../lib/tasksApi'
 import { fetchMeetingTemplates, createMeetingTemplate, updateMeetingTemplate, deleteMeetingTemplate, generateMeetings } from '../../lib/meetingsApi'
 import Modal from '../../components/Modal'
@@ -113,15 +113,27 @@ export default function AdminSettings() {
   // Collapse states
   const [taskTmplOpen, setTaskTmplOpen] = useState(false)
   const [meetingTmplOpen, setMeetingTmplOpen] = useState(false)
+  const [schedulerOpen, setSchedulerOpen] = useState(false)
 
   // AI status
   const [aiConfigured, setAiConfigured] = useState(null)
+
+  // Scheduler
+  const [schedulerStatus, setSchedulerStatus] = useState(null)
+  const [schedulerLoading, setSchedulerLoading] = useState(false)
+  const [schedulerError, setSchedulerError] = useState(null)
+  const [dryRunResult, setDryRunResult] = useState(null)
+  const [dryRunDate, setDryRunDate] = useState('')
+  const [dryRunning, setDryRunning] = useState(false)
+  const [runningNow, setRunningNow] = useState(false)
+  const [runNowResult, setRunNowResult] = useState(null)
 
   useEffect(() => {
     apiGet('/settings/last-upload').then(setLastUpload).catch(() => {})
     apiGet('/ai/status').then(r => setAiConfigured(r.configured)).catch(() => setAiConfigured(false))
     loadTaskTemplates()
     loadMeetingTemplates()
+    loadSchedulerStatus()
   }, [])
 
   // ── Upload ──
@@ -326,6 +338,68 @@ export default function AdminSettings() {
     }
   }
 
+  // ── Scheduler ──
+
+  async function loadSchedulerStatus() {
+    setSchedulerLoading(true)
+    try {
+      const data = await apiGet('/scheduler/status')
+      setSchedulerStatus(data)
+      setSchedulerError(null)
+    } catch (err) {
+      setSchedulerError('Could not load scheduler status: ' + err.message)
+    } finally {
+      setSchedulerLoading(false)
+    }
+  }
+
+  async function handleDryRun() {
+    setDryRunning(true)
+    setDryRunResult(null)
+    setRunNowResult(null)
+    try {
+      const params = dryRunDate ? `?test_date=${dryRunDate}` : ''
+      const data = await apiPost(`/scheduler/dry-run${params}`)
+      setDryRunResult(data)
+    } catch (err) {
+      setSchedulerError('Dry run failed: ' + err.message)
+    } finally {
+      setDryRunning(false)
+    }
+  }
+
+  async function handleRunNow() {
+    if (!confirm('Run the scheduler now? This will send real emails to providers if any actions are due today.')) return
+    setRunningNow(true)
+    setRunNowResult(null)
+    setDryRunResult(null)
+    try {
+      const data = await apiPost('/scheduler/run-now')
+      setRunNowResult(data)
+      loadSchedulerStatus()
+    } catch (err) {
+      setSchedulerError('Run failed: ' + err.message)
+    } finally {
+      setRunningNow(false)
+    }
+  }
+
+  const ACTION_LABELS = {
+    open: 'Open & Notify',
+    remind_3: '3-Day Reminder',
+    remind_1: '1-Day Reminder',
+    due_today: 'Due Today Alert',
+    admin_summary: 'Admin Summary',
+  }
+
+  const ACTION_COLORS = {
+    open: '#0082b4',
+    remind_3: '#e67e22',
+    remind_1: '#e67e22',
+    due_today: '#e74c3c',
+    admin_summary: '#8b5cf6',
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -426,6 +500,215 @@ export default function AdminSettings() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Invoice Scheduler (collapsible) ── */}
+      <div className="card" style={{ marginTop: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setSchedulerOpen(o => !o)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ChevronIcon open={schedulerOpen} />
+            <h3 className="card-title" style={{ margin: 0 }}>Invoice Scheduler</h3>
+            {schedulerStatus && (
+              <span className={`badge ${schedulerStatus.scheduler_running ? 'badge--success' : 'badge--danger'}`} style={{ fontSize: '0.7rem' }}>
+                {schedulerStatus.scheduler_running ? 'Running' : 'Stopped'}
+              </span>
+            )}
+          </div>
+        </div>
+        {schedulerOpen && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <p className="card-description" style={{ marginBottom: '0.75rem' }}>
+              Automated pay period management — creates periods, sends reminders, and notifies admin on the configured cadence.
+            </p>
+            {schedulerError && <div className="form-error" style={{ marginBottom: '0.5rem' }}>{schedulerError}</div>}
+            {schedulerLoading ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Loading...</div>
+            ) : schedulerStatus ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+                {/* Status + Config */}
+                <div className="settings-info">
+                  <div className="settings-info-row">
+                    <span className="settings-info-label">Daily Run Time</span>
+                    <span className="settings-info-value">{schedulerStatus.scheduler_hour}:00 AM ET</span>
+                  </div>
+                  <div className="settings-info-row">
+                    <span className="settings-info-label">Last Run</span>
+                    <span className="settings-info-value">{schedulerStatus.last_run_date || 'Not yet (waiting for first run)'}</span>
+                  </div>
+                  <div className="settings-info-row">
+                    <span className="settings-info-label">SMS Notifications</span>
+                    <span className="settings-info-value">
+                      {schedulerStatus.sms_enabled ? (
+                        <span className="badge badge--success" style={{ fontSize: '0.7rem' }}>Enabled</span>
+                      ) : (
+                        <span className="badge badge--muted" style={{ fontSize: '0.7rem' }}>Disabled (awaiting Twilio approval)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="settings-info-row">
+                    <span className="settings-info-label">App URL</span>
+                    <span className="settings-info-value" style={{ fontSize: '0.78rem', wordBreak: 'break-all' }}>{schedulerStatus.app_url}</span>
+                  </div>
+                  <div className="settings-info-row">
+                    <span className="settings-info-label">Today (ET)</span>
+                    <span className="settings-info-value">{schedulerStatus.today}</span>
+                  </div>
+                </div>
+
+                {/* Recent Periods in DB */}
+                {schedulerStatus.recent_periods && schedulerStatus.recent_periods.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Recent Pay Periods</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {schedulerStatus.recent_periods.map((p, i) => (
+                        <div key={i} className="card" style={{ padding: '0.5rem 0.75rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)' }}>{p.label || `${p.start_date} – ${p.end_date}`}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span className={`badge ${p.status === 'open' ? 'badge--success' : p.status === 'closed' ? 'badge--muted' : 'badge--info'}`} style={{ fontSize: '0.68rem' }}>
+                                {p.status}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Due: {p.due_date}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upcoming Cadence */}
+                {schedulerStatus.cadence_preview && schedulerStatus.cadence_preview.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Upcoming Cadence</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {schedulerStatus.cadence_preview.map((p, i) => (
+                        <div key={i} className="card" style={{ padding: '0.6rem 0.75rem' }}>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)', marginBottom: '0.35rem' }}>{p.label}</div>
+                          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                            <span>Window: {p.window_open}</span>
+                            <span>Deadline: {p.deadline}</span>
+                            <span>Pay: {p.pay_date}</span>
+                          </div>
+                          {Object.keys(p.actions).length > 0 && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                              {Object.entries(p.actions).map(([dateStr, acts]) => (
+                                acts.map((act, j) => (
+                                  <span key={`${dateStr}-${j}`} style={{
+                                    display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 500,
+                                    background: (ACTION_COLORS[act] || '#888') + '18', color: ACTION_COLORS[act] || '#888', border: `1px solid ${(ACTION_COLORS[act] || '#888')}30`,
+                                  }}>
+                                    {dateStr.slice(5)} — {ACTION_LABELS[act] || act}
+                                  </span>
+                                ))
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Dry Run / Run Now */}
+                <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)' }}>Manual Controls</div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="date"
+                      value={dryRunDate}
+                      onChange={e => setDryRunDate(e.target.value)}
+                      placeholder="Simulate date"
+                      style={{ padding: '0.35rem 0.5rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', flex: '1', minWidth: '140px' }}
+                    />
+                    <button className="btn btn--secondary btn--small" onClick={handleDryRun} disabled={dryRunning}>
+                      {dryRunning ? 'Running...' : 'Dry Run'}
+                    </button>
+                    <button className="btn btn--primary btn--small" onClick={handleRunNow} disabled={runningNow}>
+                      {runningNow ? 'Running...' : 'Run Now'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Dry Run shows what would happen. Run Now actually sends emails.
+                  </div>
+                </div>
+
+                {/* Dry Run Results */}
+                {dryRunResult && (
+                  <div style={{ background: '#0082b410', borderRadius: 'var(--radius-sm)', padding: '0.75rem', border: '1px solid #0082b430' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0082b4', marginBottom: '0.35rem' }}>
+                      Dry Run Results — {dryRunResult.date}
+                    </div>
+                    <div className="settings-info" style={{ background: 'transparent', padding: 0 }}>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Periods Would Create</span>
+                        <span className="settings-info-value">{dryRunResult.periods_created}</span>
+                      </div>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Actions Planned</span>
+                        <span className="settings-info-value">{dryRunResult.actions_planned?.length || 0}</span>
+                      </div>
+                    </div>
+                    {dryRunResult.actions_planned && dryRunResult.actions_planned.length > 0 && (
+                      <div style={{ marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                        {dryRunResult.actions_planned.map((a, i) => (
+                          <span key={i} style={{
+                            display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 500,
+                            background: (ACTION_COLORS[a.action] || '#888') + '18', color: ACTION_COLORS[a.action] || '#888',
+                          }}>
+                            {a.period}: {ACTION_LABELS[a.action] || a.action} ({a.status})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {dryRunResult.actions_planned && dryRunResult.actions_planned.length === 0 && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>No actions scheduled for this date.</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Run Now Results */}
+                {runNowResult && (
+                  <div style={{ background: '#16a34a10', borderRadius: 'var(--radius-sm)', padding: '0.75rem', border: '1px solid #16a34a30' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#16a34a', marginBottom: '0.35rem' }}>
+                      Run Complete — {runNowResult.date}
+                    </div>
+                    <div className="settings-info" style={{ background: 'transparent', padding: 0 }}>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Periods Created</span>
+                        <span className="settings-info-value">{runNowResult.periods_created}</span>
+                      </div>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Periods Opened</span>
+                        <span className="settings-info-value">{runNowResult.periods_opened}</span>
+                      </div>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Reminders Sent</span>
+                        <span className="settings-info-value">{runNowResult.reminders_sent}</span>
+                      </div>
+                      <div className="settings-info-row">
+                        <span className="settings-info-label">Admin Summaries</span>
+                        <span className="settings-info-value">{runNowResult.admin_summaries_sent}</span>
+                      </div>
+                    </div>
+                    {runNowResult.errors && runNowResult.errors.length > 0 && (
+                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#e74c3c' }}>
+                        Errors: {runNowResult.errors.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Info note */}
+                <div style={{ padding: '0.65rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  The scheduler runs daily at {schedulerStatus.scheduler_hour}:00 AM ET. To change the run time, set <code style={{ background: 'var(--bg-card)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.73rem' }}>SCHEDULER_HOUR</code> in Railway. To enable SMS, set <code style={{ background: 'var(--bg-card)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.73rem' }}>SMS_ENABLED=true</code> once Twilio is approved.
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
