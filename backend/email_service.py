@@ -1,4 +1,4 @@
-"""Email service using Resend API via httpx."""
+"""Email service using SendGrid API via httpx."""
 import base64
 import logging
 import os
@@ -7,11 +7,11 @@ import httpx
 
 logger = logging.getLogger("bestlife")
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "frontdesk@bestlifenj.com")
 FROM_NAME = os.environ.get("FROM_NAME", "BestLife Behavioral Health")
 
-RESEND_API_URL = "https://api.resend.com/emails"
+SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
 
 
 async def send_invoice_email(
@@ -25,8 +25,8 @@ async def send_invoice_email(
 
     Returns True on success, False on failure. Never raises.
     """
-    if not RESEND_API_KEY:
-        logger.info("Email skipped — no RESEND_API_KEY configured")
+    if not SENDGRID_API_KEY:
+        logger.info("Email skipped — no SENDGRID_API_KEY configured")
         return False
 
     if not to_email:
@@ -34,7 +34,7 @@ async def send_invoice_email(
         return False
 
     action = "Updated" if is_update else "Submitted"
-    subject = f"Your BestLife Invoice {action} — {period_label}"
+    subject = f"Your BestLife Invoice {action} - {period_label}"
 
     html_body = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -62,16 +62,20 @@ async def send_invoice_email(
 
     filename = f"Invoice-{period_label.replace(' ', '-')}.pdf" if period_label else "Invoice.pdf"
 
+    # SendGrid v3 mail/send format
     payload = {
-        "from": f"{FROM_NAME} <{FROM_EMAIL}>",
-        "to": [to_email],
+        "personalizations": [
+            {"to": [{"email": to_email}]}
+        ],
+        "from": {"email": FROM_EMAIL, "name": FROM_NAME},
         "subject": subject,
-        "html": html_body,
+        "content": [{"type": "text/html", "value": html_body}],
         "attachments": [
             {
-                "filename": filename,
                 "content": base64.b64encode(pdf_bytes).decode("utf-8"),
-                "content_type": "application/pdf",
+                "filename": filename,
+                "type": "application/pdf",
+                "disposition": "attachment",
             }
         ],
     }
@@ -79,18 +83,19 @@ async def send_invoice_email(
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                RESEND_API_URL,
+                SENDGRID_API_URL,
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Authorization": f"Bearer {SENDGRID_API_KEY}",
                     "Content-Type": "application/json",
                 },
             )
-        if resp.status_code in (200, 201):
+        # SendGrid returns 202 Accepted on success
+        if resp.status_code == 202:
             logger.info(f"Invoice email sent to {to_email} ({subject})")
             return True
         else:
-            logger.error(f"Resend API error {resp.status_code}: {resp.text}")
+            logger.error(f"SendGrid API error {resp.status_code}: {resp.text}")
             return False
     except Exception as e:
         logger.error(f"Email send failed: {e}")
