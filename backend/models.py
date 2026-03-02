@@ -133,3 +133,8 @@ class DraftSaveRequest(BaseModel):
 class SubmitRequest(BaseModel):
     submit_token: str
     invoice_data: dict
+
+
+class UpdateInvoiceRequest(BaseModel):
+    submit_token: str
+    invoice_data: dict

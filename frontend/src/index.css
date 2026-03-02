@@ -1617,6 +1617,26 @@ a { color: var(--accent); text-decoration: none; }
   .modal-content { max-width: 100%; margin: 0.5rem; }
   .modal-actions { flex-direction: column; }
 
+  /* ── Invoice mobile (tablet) ── */
+  .public-invoice-page { padding: 1rem 0.5rem; }
+  .public-invoice-card { padding: 1.25rem 1rem; }
+  .public-invoice-header h1 { font-size: 1.25rem; }
+  .invoice-section-header { padding: 0.65rem 0.75rem; font-size: 0.825rem; }
+  .invoice-section-body { padding: 0.65rem 0.75rem; }
+  .invoice-entry-fields { flex-wrap: wrap; }
+  .invoice-field-sm,
+  .invoice-field-md,
+  .invoice-field-lg { flex: 0 0 100%; min-width: 0; }
+  .invoice-generate-row { flex-wrap: wrap; }
+  .invoice-generate-row label { white-space: normal; }
+  .public-invoice-actions { flex-direction: column; }
+  .public-invoice-actions .btn { width: 100%; justify-content: center; }
+  /* Prevent iOS zoom on focus */
+  .public-invoice-card input,
+  .public-invoice-card select,
+  .public-invoice-card textarea { font-size: 16px; }
+  .invoice-grand-total { padding: 0.75rem; }
+
   /* Scale down orbital for tablet */
   .kb-orbit-container { width: 440px; height: 440px; }
   .kb-orbit-betty { width: 100px; height: 100px; }
@@ -1636,6 +1656,19 @@ a { color: var(--accent); text-decoration: none; }
   .kb-grid { grid-template-columns: repeat(2, 1fr); }
   .pto-grid { grid-template-columns: 1fr; }
   .invoice-hours-grid { grid-template-columns: 1fr; }
+
+  /* ── Invoice mobile (phone) ── */
+  .public-invoice-page { padding: 0.5rem 0.25rem; }
+  .public-invoice-card { padding: 1rem 0.75rem; border-radius: var(--radius-sm); }
+  .public-invoice-header h1 { font-size: 1.1rem; }
+  .public-invoice-subtitle { font-size: 0.95rem; }
+  .invoice-section-header { gap: 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+  .invoice-section-body { padding: 0.5rem 0.65rem; }
+  .invoice-subgroup-header { flex-wrap: wrap; gap: 0.25rem; }
+  .invoice-total-row { font-size: 0.8rem; }
+  .invoice-total-row--grand { font-size: 0.9rem; }
+  .invoice-disclaimer { padding: 0.6rem 0.75rem; font-size: 0.75rem; }
+  .invoice-multi-select { gap: 0.35rem 0.75rem; }
 
   .kb-orbit-container { width: 320px; height: 320px; }
   .kb-orbit-betty { width: 64px; height: 64px; }
@@ -1909,6 +1942,31 @@ a { color: var(--accent); text-decoration: none; }
 [data-theme="light"] .invoice-entry { border-bottom-color: rgba(0,0,0,0.06); }
 [data-theme="light"] .invoice-disclaimer { background: rgba(220, 53, 69, 0.06); }
 [data-theme="light"] .invoice-disclaimer--info { background: rgba(0, 120, 200, 0.06); }
+
+/* ── Edit Mode Banner ── */
+.invoice-edit-banner {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+.invoice-edit-countdown {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #eab308;
+}
+.invoice-edit-banner--expired {
+  background: rgba(156, 163, 175, 0.1);
+  border-color: rgba(156, 163, 175, 0.3);
+}
+.invoice-edit-banner--expired .invoice-edit-countdown { display: none; }
+[data-theme="light"] .invoice-edit-banner { background: rgba(234, 179, 8, 0.08); }
+[data-theme="light"] .invoice-edit-countdown { color: #b45309; }
 
 .public-invoice-actions {
   display: flex;

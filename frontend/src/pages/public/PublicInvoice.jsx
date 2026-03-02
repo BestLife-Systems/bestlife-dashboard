@@ -93,6 +93,11 @@ export default function PublicInvoice() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [draftSaved, setDraftSaved] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editDeadline, setEditDeadline] = useState(null)
+  const [countdown, setCountdown] = useState('')
+  const [editExpired, setEditExpired] = useState(false)
+  const [updated, setUpdated] = useState(false)
 
   // ── Section state ──
   const [iic, setIic] = useState({ 'IICLC-H0036TJU1': [], 'IICMA-H0036TJU2': [], 'BA-H2014TJ': [] })
@@ -114,6 +119,27 @@ export default function PublicInvoice() {
 
   useEffect(() => { loadInvoice() }, [draftToken])
 
+  // ── Countdown timer for edit window ──
+  useEffect(() => {
+    if (!editDeadline) return
+    function tick() {
+      const now = new Date()
+      const deadline = new Date(editDeadline)
+      const diff = deadline - now
+      if (diff <= 0) {
+        setCountdown('')
+        setEditExpired(true)
+        return
+      }
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      setCountdown(`${h}h ${m}m remaining`)
+    }
+    tick()
+    const id = setInterval(tick, 30000) // update every 30s
+    return () => clearInterval(id)
+  }, [editDeadline])
+
   async function loadInvoice() {
     setLoading(true)
     setError('')
@@ -124,7 +150,12 @@ export default function PublicInvoice() {
         setData(result)
       } else {
         setData(result)
-        // Restore draft
+        // Check if this is an editable submitted invoice
+        if (result.editable) {
+          setEditMode(true)
+          setEditDeadline(result.edit_deadline)
+        }
+        // Restore draft / submitted data
         if (result.draft_data) {
           const d = result.draft_data
           if (d.iic) setIic(prev => ({ ...prev, ...d.iic }))
@@ -396,6 +427,56 @@ export default function PublicInvoice() {
     finally { setSubmitting(false) }
   }
 
+  async function handleUpdate() {
+    setError('')
+    // Run same validations as submit
+    for (const [code, entries] of Object.entries(iic)) {
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i]
+        if (!e.cyber_initials?.trim()) { setError(`IIC ${code}: Cyber # / Initials required for entry ${i + 1}`); return }
+        if (!e.date) { setError(`IIC ${code}: Date required for entry ${i + 1}`); return }
+        if (!e.hours || !IIC_HOUR_OPTIONS.includes(String(e.hours))) { setError(`IIC ${code}: Valid hours required for entry ${i + 1}`); return }
+      }
+    }
+    for (let i = 0; i < op.length; i++) {
+      if (!op[i].client_initials?.trim()) { setError(`OP: Client initials required for session ${i + 1}`); return }
+      if (!op[i].date) { setError(`OP: Date required for session ${i + 1}`); return }
+    }
+    for (let i = 0; i < sbys.length; i++) {
+      const hasAny = sbys[i].date || (sbys[i].hours && parseFloat(sbys[i].hours) > 0)
+      if (!hasAny) continue
+      if (!sbys[i].date) { setError(`SBYS: Date required for entry ${i + 1}`); return }
+      if (!sbys[i].hours || parseFloat(sbys[i].hours) <= 0) { setError(`SBYS: Hours required for entry ${i + 1}`); return }
+    }
+    for (let i = 0; i < ados.length; i++) {
+      const hasAny = ados[i].client_initials?.trim() || ados[i].date
+      if (!hasAny) continue
+      if (!ados[i].client_initials?.trim()) { setError(`ADOS: Client initials required for entry ${i + 1}`); return }
+      if (!ados[i].date) { setError(`ADOS: Date required for entry ${i + 1}`); return }
+    }
+    for (let i = 0; i < adminEntries.length; i++) {
+      const hasAny = adminEntries[i].date || (adminEntries[i].hours && parseFloat(adminEntries[i].hours) > 0)
+      if (!hasAny) continue
+      if (!adminEntries[i].date) { setError(`Administration: Date required for entry ${i + 1}`); return }
+      if (!adminEntries[i].hours || parseFloat(adminEntries[i].hours) <= 0) { setError(`Administration: Hours required for entry ${i + 1}`); return }
+    }
+    if (sickLeave.hours && parseFloat(sickLeave.hours) > 0) {
+      if (!sickLeave.date) { setError('Sick Leave: Date required'); return }
+      if (!sickLeave.policyAck) { setError('Sick Leave: You must acknowledge the sick leave policy'); return }
+    }
+
+    setSubmitting(true)
+    try {
+      const result = await pubPost(`/public/invoice/${draftToken}/update`, {
+        submit_token: data.submit_token,
+        invoice_data: buildInvoiceData(),
+      })
+      if (result.edit_deadline) setEditDeadline(result.edit_deadline)
+      setUpdated(true)
+    } catch (err) { setError(err.message) }
+    finally { setSubmitting(false) }
+  }
+
   // ── Render ──
   if (loading) {
     return (
@@ -421,11 +502,31 @@ export default function PublicInvoice() {
                 <polyline points="14,25 21,32 34,18" stroke="var(--accent)" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <h2 style={{ color: 'var(--accent)' }}>Invoice Submitted</h2>
-            <p>Your hours have been submitted successfully. You can close this page.</p>
+            <h2 style={{ color: 'var(--accent)' }}>{updated ? 'Invoice Updated' : 'Invoice Submitted'}</h2>
+            <p>Your hours have been {updated ? 'updated' : 'submitted'} successfully.</p>
             {data?.submitted_at && (
               <p className="public-invoice-muted">Submitted {new Date(data.submitted_at).toLocaleString()}</p>
             )}
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+              You can make changes within 24 hours of submission by revisiting this link.
+            </p>
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={`${API_BASE}/public/invoice/${draftToken}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn--primary"
+              >
+                Download PDF
+              </a>
+              <a
+                href={`/invoice/${draftToken}`}
+                className="btn btn--ghost"
+                onClick={e => { e.preventDefault(); setSubmitted(false); setUpdated(false); setEditMode(true); loadInvoice() }}
+              >
+                Edit Invoice
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -455,6 +556,21 @@ export default function PublicInvoice() {
         </div>
 
         {error && <div className="public-invoice-error">{error}</div>}
+
+        {/* ═══ Edit Mode Banner ═══ */}
+        {editMode && !editExpired && (
+          <div className="invoice-edit-banner">
+            <strong>Editing submitted invoice</strong>
+            {data?.submitted_at && <span> &mdash; submitted {new Date(data.submitted_at).toLocaleString()}</span>}
+            {countdown && <div className="invoice-edit-countdown">{countdown}</div>}
+          </div>
+        )}
+        {editMode && editExpired && (
+          <div className="invoice-edit-banner invoice-edit-banner--expired">
+            <strong>Edit window closed</strong>
+            <span> &mdash; this invoice can no longer be modified. Contact your admin for changes.</span>
+          </div>
+        )}
 
         {/* ═══ IIC Section ═══ */}
         <Section title="IIC Sessions" total={iicTotal()} totalLabel="hrs">
@@ -760,12 +876,22 @@ export default function PublicInvoice() {
 
         {/* ═══ Actions ═══ */}
         <div className="public-invoice-actions">
-          <button type="button" className="btn btn--ghost" onClick={handleSaveDraft} disabled={saving}>
-            {saving ? 'Saving...' : draftSaved ? 'Draft Saved' : 'Save Draft'}
-          </button>
-          <button type="button" className="btn btn--primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit Invoice'}
-          </button>
+          {editMode ? (
+            <>
+              <button type="button" className="btn btn--primary" onClick={handleUpdate} disabled={submitting || editExpired}>
+                {submitting ? 'Updating...' : 'Update Invoice'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn btn--ghost" onClick={handleSaveDraft} disabled={saving}>
+                {saving ? 'Saving...' : draftSaved ? 'Draft Saved' : 'Save Draft'}
+              </button>
+              <button type="button" className="btn btn--primary" onClick={handleSubmit} disabled={submitting}>
+                {submitting ? 'Submitting...' : 'Submit Invoice'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
