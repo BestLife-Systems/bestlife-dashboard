@@ -22,7 +22,8 @@ from backend.deps import (
 )
 
 # Routers (extracted from main.py in Phase 2)
-from backend.routers import announcements, tasks, meetings, auth, public_invoice, upload, ai, settings
+from backend.routers import announcements, tasks, meetings, auth, public_invoice, upload, ai, settings, cron
+from backend.sms_service import init_twilio, send_sms
 
 app = FastAPI(title="BestLife Hub API")
 
@@ -35,6 +36,7 @@ app.include_router(public_invoice.router)
 app.include_router(upload.router)
 app.include_router(ai.router)
 app.include_router(settings.router)
+app.include_router(cron.router)
 
 
 # ── Startup ──
@@ -356,44 +358,11 @@ async def therapist_analytics(user_id: str, user=Depends(verify_token)):
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Twilio Config ──────────────────────────────────────────────────
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
-TWILIO_MESSAGING_SERVICE_SID = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")
-
-twilio_client = None
+# SMS extracted to backend.sms_service (imported above as send_sms)
 
 @app.on_event("startup")
-async def init_twilio():
-    global twilio_client
-    if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
-        try:
-            from twilio.rest import Client
-            twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-            logger.info("Twilio client initialized")
-        except ImportError:
-            logger.warning("twilio package not installed — SMS disabled")
-        except Exception as e:
-            logger.warning(f"Twilio init failed: {e}")
-    else:
-        logger.info("Twilio credentials not configured — SMS disabled")
-
-
-def send_sms(to_number: str, body: str):
-    """Send SMS via Twilio Messaging Service."""
-    if not twilio_client or not TWILIO_MESSAGING_SERVICE_SID:
-        logger.info(f"SMS skipped (no Twilio): {to_number}")
-        return None
-    try:
-        msg = twilio_client.messages.create(
-            messaging_service_sid=TWILIO_MESSAGING_SERVICE_SID,
-            to=to_number,
-            body=body,
-        )
-        logger.info(f"SMS sent to {to_number}: {msg.sid}")
-        return msg.sid
-    except Exception as e:
-        logger.error(f"SMS send failed: {e}")
-        return None
+async def startup_init_twilio():
+    init_twilio()
 
 
 # ── Rate Catalog ───────────────────────────────────────────────────
