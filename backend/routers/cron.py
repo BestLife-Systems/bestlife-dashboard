@@ -1,4 +1,4 @@
-"""Automated pay period scheduler — daily cron endpoint.
+"""Automated pay period scheduler — built-in daily scheduler + manual test endpoint.
 
 Handles:
 1. Auto-create upcoming pay periods (look-ahead ~45 days)
@@ -6,12 +6,15 @@ Handles:
 3. Send reminder emails + texts on the agreed cadence
 4. Email admin with non-submitter list after deadline passes
 
-Secured by CRON_SECRET Bearer token.
+Runs automatically at 9:00 AM ET via built-in background loop (no external cron needed).
+Manual test endpoint: POST /api/cron/daily (secured by CRON_SECRET).
 """
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException
 
@@ -29,21 +32,55 @@ logger = logging.getLogger("bestlife")
 router = APIRouter(prefix="/api")
 
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
-APP_URL = os.environ.get("APP_URL", "https://bestlifenj.com")
+APP_URL = os.environ.get("APP_URL", "https://bestlife-dashboard-production-bf81.up.railway.app")
+SCHEDULER_HOUR = int(os.environ.get("SCHEDULER_HOUR", "9"))  # 9 AM ET default
+
+ET = ZoneInfo("America/New_York")
 
 
-# ── Auth helper ───────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Built-in background scheduler (runs inside the app — no cron needed)
+# ══════════════════════════════════════════════════════════════════
+
+_last_run_date: Optional[str] = None  # prevents double-runs per day
 
 
-def _verify_cron(authorization: Optional[str]):
-    """Verify the cron request has the correct Bearer token."""
-    if not CRON_SECRET:
-        raise HTTPException(status_code=500, detail="CRON_SECRET not configured")
-    if authorization != f"Bearer {CRON_SECRET}":
-        raise HTTPException(status_code=401, detail="Invalid cron secret")
+async def _scheduler_loop():
+    """Background loop: checks every 15 min, runs daily logic once at target hour."""
+    global _last_run_date
+    logger.info(f"Built-in scheduler started - runs daily at {SCHEDULER_HOUR}:00 AM ET")
+
+    # Wait 30s on startup to let the app fully initialize
+    await asyncio.sleep(30)
+
+    while True:
+        try:
+            now_et = datetime.now(ET)
+            today_str = now_et.strftime("%Y-%m-%d")
+
+            if now_et.hour >= SCHEDULER_HOUR and _last_run_date != today_str:
+                logger.info(f"Scheduler firing for {today_str} ({now_et.strftime('%H:%M')} ET)")
+                try:
+                    results = await _run_daily_logic(today_str=today_str, dry_run=False)
+                    _last_run_date = today_str
+                    logger.info(f"Scheduler complete: {results}")
+                except Exception as e:
+                    logger.error(f"Scheduler failed for {today_str}: {e}")
+                    # Don't set _last_run_date — will retry next 15-min check
+        except Exception as e:
+            logger.error(f"Scheduler loop error: {e}")
+
+        await asyncio.sleep(900)  # check every 15 minutes
 
 
-# ── Main daily endpoint ──────────────────────────────────────────
+def start_scheduler():
+    """Start the background scheduler. Call once from app startup."""
+    asyncio.get_event_loop().create_task(_scheduler_loop())
+
+
+# ══════════════════════════════════════════════════════════════════
+# Manual test endpoint (for dry runs and date simulation)
+# ══════════════════════════════════════════════════════════════════
 
 
 @router.post("/cron/daily")
@@ -52,25 +89,36 @@ async def daily_cron(
     test_date: Optional[str] = None,
     dry_run: bool = False,
 ):
-    """Daily scheduler — run once per day at 9:00 AM ET.
+    """Manual trigger / test endpoint for the daily scheduler.
 
-    1. Auto-create any missing upcoming pay periods
-    2. Auto-open periods whose submission window starts today
-    3. Send reminders (3-day, 1-day, due-today) to non-submitters
-    4. Email admin summary the day after deadline
-
-    Query params for testing:
+    Query params:
         test_date: Simulate a specific date (YYYY-MM-DD)
-        dry_run: If true, calculate actions but don't execute them
-    """
-    _verify_cron(authorization)
+        dry_run: If true, show what WOULD happen without executing
 
-    if test_date:
-        from datetime import date as date_type
-        today = date_type.fromisoformat(test_date)
-        logger.info(f"Cron running in {'DRY RUN' if dry_run else 'TEST'} mode for date: {today}")
-    else:
-        today = today_et()
+    Requires CRON_SECRET Bearer token.
+    """
+    if not CRON_SECRET:
+        raise HTTPException(status_code=500, detail="CRON_SECRET not configured — add it in Railway env vars")
+    if authorization != f"Bearer {CRON_SECRET}":
+        raise HTTPException(status_code=401, detail="Invalid cron secret")
+
+    date_str = test_date or today_et().isoformat()
+    return await _run_daily_logic(today_str=date_str, dry_run=dry_run)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Core daily logic (shared by scheduler + manual endpoint)
+# ══════════════════════════════════════════════════════════════════
+
+
+async def _run_daily_logic(today_str: str, dry_run: bool = False) -> dict:
+    """Run all daily scheduler steps for a given date.
+
+    Returns a results dict with counts and actions taken.
+    """
+    from datetime import date as date_type
+    today = date_type.fromisoformat(today_str)
+
     results = {
         "date": today.isoformat(),
         "dry_run": dry_run,
@@ -78,7 +126,7 @@ async def daily_cron(
         "periods_opened": 0,
         "reminders_sent": 0,
         "admin_summaries_sent": 0,
-        "actions_planned": [],  # always populated — shows what WOULD happen
+        "actions_planned": [],
         "errors": [],
     }
 
@@ -102,7 +150,6 @@ async def daily_cron(
             if not end_date_str:
                 continue
 
-            from datetime import date as date_type
             end_date = date_type.fromisoformat(end_date_str)
             window_open = end_date - timedelta(days=2)
             deadline = end_date + timedelta(days=4)
@@ -110,7 +157,6 @@ async def daily_cron(
             actions = get_reminder_actions(today, window_open, deadline)
 
             for action in actions:
-                # Always log what would happen
                 results["actions_planned"].append({
                     "period": period.get("label", period["id"]),
                     "action": action,
@@ -118,12 +164,12 @@ async def daily_cron(
                 })
 
                 if dry_run:
-                    continue  # report only, don't execute
+                    continue
 
                 if action == "open" and period["status"] == "draft":
                     count = await _auto_open_period(period)
                     results["periods_opened"] += 1
-                    results["reminders_sent"] += count  # initial notifications
+                    results["reminders_sent"] += count
 
                 elif action in ("remind_3", "remind_1", "due_today"):
                     if period["status"] == "open":
@@ -139,18 +185,19 @@ async def daily_cron(
             logger.error(f"Error processing period {period.get('id')}: {e}")
             results["errors"].append(f"period_{period.get('id')}: {e}")
 
-    logger.info(f"Daily cron complete: {results}")
+    logger.info(f"Daily logic complete: {results}")
     return results
 
 
-# ── Step 1: Auto-create periods ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Step 1: Auto-create periods
+# ══════════════════════════════════════════════════════════════════
 
 
 async def _auto_create_periods(today) -> int:
     """Create any missing pay periods for the next 45 days."""
     needed = upcoming_periods(today, days_ahead=45)
 
-    # Fetch existing periods to avoid duplicates
     existing = await sb_request("GET", "pay_periods", params={
         "select": "start_date,end_date",
     }) or []
@@ -176,7 +223,9 @@ async def _auto_create_periods(today) -> int:
     return created
 
 
-# ── Step 2: Auto-open period ─────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Step 2: Auto-open period
+# ══════════════════════════════════════════════════════════════════
 
 
 async def _auto_open_period(period: dict) -> int:
@@ -188,7 +237,6 @@ async def _auto_open_period(period: dict) -> int:
     period_label = period.get("label", "")
     due_date_str = period.get("due_date", "")
 
-    # Format deadline for display
     try:
         from datetime import date as date_type
         deadline_date = date_type.fromisoformat(due_date_str)
@@ -196,7 +244,6 @@ async def _auto_open_period(period: dict) -> int:
     except Exception:
         deadline_display = due_date_str
 
-    # Get eligible users
     users = await sb_request("GET", "users", params={
         "is_active": "eq.true",
         "select": "id,first_name,last_name,email,phone_number,sms_enabled,role",
@@ -209,7 +256,6 @@ async def _auto_open_period(period: dict) -> int:
 
     for user in eligible:
         try:
-            # Create recipient row (draft_token auto-generated by DB)
             recipient = await sb_request("POST", "pay_period_recipients", data={
                 "pay_period_id": period_id,
                 "user_id": user["id"],
@@ -224,7 +270,7 @@ async def _auto_open_period(period: dict) -> int:
             name = user.get("first_name", "")
             full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
 
-            # Send initial email
+            # Email
             if user.get("email"):
                 sent = await send_reminder_email(
                     to_email=user["email"],
@@ -242,7 +288,7 @@ async def _auto_open_period(period: dict) -> int:
                     })
                     notification_count += 1
 
-            # Send initial SMS
+            # SMS (silently skipped when SMS_ENABLED is false)
             phone = user.get("phone_number")
             sms_on = user.get("sms_enabled")
             if phone and sms_on:
@@ -263,7 +309,7 @@ async def _auto_open_period(period: dict) -> int:
         except Exception as e:
             logger.warning(f"Failed to create/notify recipient for {user['id']}: {e}")
 
-    # Update period status to open
+    # Update period status
     await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
         "status": "open",
         "opened_at": datetime.now(timezone.utc).isoformat(),
@@ -281,14 +327,19 @@ async def _auto_open_period(period: dict) -> int:
     return notification_count
 
 
-# ── Step 3: Send reminders ────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Step 3: Send reminders
+# ══════════════════════════════════════════════════════════════════
 
 
 async def _send_reminders(period: dict, action: str) -> int:
     """Send reminders to providers who haven't submitted.
 
-    action: 'remind_3' (text), 'remind_1' (email+text), 'due_today' (text)
-    Returns count of notifications sent.
+    Channels by action:
+        remind_3:  email only (SMS disabled for now)
+        remind_1:  email only
+        due_today: email only
+    SMS will be added for all when SMS_ENABLED=true.
     """
     period_id = period["id"]
     period_label = period.get("label", "")
@@ -301,16 +352,11 @@ async def _send_reminders(period: dict, action: str) -> int:
     except Exception:
         deadline_display = due_date_str
 
-    # Get recipients who haven't submitted (status = 'sent')
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "pay_period_id": f"eq.{period_id}",
         "status": "eq.sent",
-        "select": "id,draft_token,users!user_id(first_name,last_name,email,phone_number,sms_enabled)",
+        "select": "id,draft_token,reminder_count,users!user_id(first_name,last_name,email,phone_number,sms_enabled)",
     })
-
-    # Determine channels per action
-    send_email = action in ("remind_1",)  # email only on day-before
-    send_text = True  # always text
 
     count = 0
     for r in (recipients or []):
@@ -321,8 +367,8 @@ async def _send_reminders(period: dict, action: str) -> int:
         invoice_url = f"{APP_URL}/invoice/{draft_token}"
         rec_id = r["id"]
 
-        # Email
-        if send_email and user.get("email"):
+        # Email (all reminder types)
+        if user.get("email"):
             sent = await send_reminder_email(
                 to_email=user["email"],
                 user_name=full_name,
@@ -339,30 +385,29 @@ async def _send_reminders(period: dict, action: str) -> int:
                 })
                 count += 1
 
-        # SMS
-        if send_text:
-            phone = user.get("phone_number")
-            sms_on = user.get("sms_enabled")
-            if phone and sms_on:
-                if action == "remind_3":
-                    msg = f"Reminder: Your BestLife invoice for {period_label} is due in 3 days ({deadline_display}). Submit here: {invoice_url}"
-                elif action == "remind_1":
-                    msg = f"Your BestLife invoice for {period_label} is due tomorrow! Submit now: {invoice_url}"
-                elif action == "due_today":
-                    msg = f"Last chance - your BestLife invoice for {period_label} is due today. Submit now: {invoice_url}"
-                else:
-                    msg = f"Reminder: Your BestLife invoice for {period_label} needs to be submitted. {invoice_url}"
+        # SMS (silently skipped when SMS_ENABLED is false)
+        phone = user.get("phone_number")
+        sms_on = user.get("sms_enabled")
+        if phone and sms_on:
+            if action == "remind_3":
+                msg = f"Reminder: Your BestLife invoice for {period_label} is due in 3 days ({deadline_display}). Submit here: {invoice_url}"
+            elif action == "remind_1":
+                msg = f"Your BestLife invoice for {period_label} is due tomorrow! Submit now: {invoice_url}"
+            elif action == "due_today":
+                msg = f"Last chance - your BestLife invoice for {period_label} is due today. Submit now: {invoice_url}"
+            else:
+                msg = f"Reminder: Your BestLife invoice for {period_label} needs to be submitted. {invoice_url}"
 
-                sid = send_sms(phone, msg)
-                if sid:
-                    await sb_request("POST", "reminder_log", data={
-                        "recipient_id": rec_id,
-                        "channel": "sms",
-                        "status": "sent",
-                    })
-                    count += 1
+            sid = send_sms(phone, msg)
+            if sid:
+                await sb_request("POST", "reminder_log", data={
+                    "recipient_id": rec_id,
+                    "channel": "sms",
+                    "status": "sent",
+                })
+                count += 1
 
-        # Update recipient reminder tracking
+        # Update reminder tracking
         await sb_request("PATCH", f"pay_period_recipients?id=eq.{rec_id}", data={
             "reminder_count": (r.get("reminder_count") or 0) + 1,
             "last_reminder_at": datetime.now(timezone.utc).isoformat(),
@@ -372,7 +417,9 @@ async def _send_reminders(period: dict, action: str) -> int:
     return count
 
 
-# ── Step 4: Admin summary ────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Step 4: Admin summary
+# ══════════════════════════════════════════════════════════════════
 
 
 async def _send_admin_summary(period: dict):
@@ -380,7 +427,6 @@ async def _send_admin_summary(period: dict):
     period_id = period["id"]
     period_label = period.get("label", "")
 
-    # Get non-submitters
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "pay_period_id": f"eq.{period_id}",
         "status": "eq.sent",
@@ -398,7 +444,6 @@ async def _send_admin_summary(period: dict):
         if name:
             non_submitters.append(name)
 
-    # Get admin users
     admins = await sb_request("GET", "users", params={
         "role": "eq.admin",
         "is_active": "eq.true",

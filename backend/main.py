@@ -23,6 +23,7 @@ from backend.deps import (
 
 # Routers (extracted from main.py in Phase 2)
 from backend.routers import announcements, tasks, meetings, auth, public_invoice, upload, ai, settings, cron
+from backend.routers.cron import start_scheduler
 from backend.sms_service import init_twilio, send_sms
 
 app = FastAPI(title="BestLife Hub API")
@@ -363,6 +364,11 @@ async def therapist_analytics(user_id: str, user=Depends(verify_token)):
 @app.on_event("startup")
 async def startup_init_twilio():
     init_twilio()
+
+@app.on_event("startup")
+async def startup_scheduler():
+    """Start the built-in daily scheduler (runs at 9 AM ET)."""
+    start_scheduler()
 
 
 # ── Rate Catalog ───────────────────────────────────────────────────
