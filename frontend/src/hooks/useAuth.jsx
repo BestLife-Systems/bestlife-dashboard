@@ -128,7 +128,7 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  async function fetchProfile(authId) {
+  async function fetchProfile(authId, attempt = 1) {
     try {
       const { data, error } = await supabase
         .from('users')
@@ -151,7 +151,12 @@ export function AuthProvider({ children }) {
       }
       setProfile(data)
     } catch (err) {
-      console.error('Error fetching profile:', err)
+      console.error(`Error fetching profile (attempt ${attempt}):`, err)
+      // Retry once after 2s on non-auth failures (network hiccups, Supabase cold start)
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 2000))
+        return fetchProfile(authId, attempt + 1)
+      }
       setProfile(null)
     } finally {
       setLoading(false)

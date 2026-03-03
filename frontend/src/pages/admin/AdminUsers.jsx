@@ -118,6 +118,7 @@ export default function AdminUsers() {
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', role: 'therapist', employment_status: 'full_time', phone_number: '', sms_enabled: true, supervision_required: false, clinical_supervisor_id: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sendingLoginTo, setSendingLoginTo] = useState(null)
 
   // Pay rates step (shown after adding a new user)
   const [payRateStep, setPayRateStep] = useState(false)
@@ -275,6 +276,18 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleSendLogin(user) {
+    setSendingLoginTo(user.id)
+    try {
+      await apiPost(`/admin/send-welcome-email/${user.id}`, {})
+      alert(`Login email sent to ${user.email}`)
+    } catch (err) {
+      alert('Error sending login email: ' + (err.message || err))
+    } finally {
+      setSendingLoginTo(null)
+    }
+  }
+
   const groupedRateTypes = groupRateTypes(rateTypes)
 
   return (
@@ -352,6 +365,15 @@ export default function AdminUsers() {
                         <td>
                           <div className="table-actions">
                             <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
+                            {u.is_active && (
+                              <button
+                                className="btn btn--small btn--ghost"
+                                onClick={() => handleSendLogin(u)}
+                                disabled={sendingLoginTo === u.id}
+                              >
+                                {sendingLoginTo === u.id ? 'Sending...' : 'Send Login'}
+                              </button>
+                            )}
                             <button
                               className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`}
                               onClick={() => handleToggleActive(u)}
@@ -391,6 +413,15 @@ export default function AdminUsers() {
                     </div>
                     <div className="card-actions">
                       <button className="btn btn--small btn--ghost" onClick={() => openEditUser(u)}>Edit</button>
+                      {u.is_active && (
+                        <button
+                          className="btn btn--small btn--ghost"
+                          onClick={() => handleSendLogin(u)}
+                          disabled={sendingLoginTo === u.id}
+                        >
+                          {sendingLoginTo === u.id ? 'Sending...' : 'Send Login'}
+                        </button>
+                      )}
                       <button className={`btn btn--small ${u.is_active ? 'btn--danger-ghost' : 'btn--ghost'}`} onClick={() => handleToggleActive(u)}>
                         {u.is_active ? 'Deactivate' : 'Activate'}
                       </button>

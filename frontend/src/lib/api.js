@@ -28,13 +28,17 @@ async function apiFetch(path, options = {}) {
   let res = await doFetch()
 
   // On 401, Supabase's auto-refresh may have just rotated the token in the background.
-  // Brief pause to let it settle, then retry once with the updated session.
+  // Wait progressively, then retry twice with the updated session.
   if (res.status === 401) {
-    await new Promise(r => setTimeout(r, 1000))
+    await new Promise(r => setTimeout(r, 2000))
+    res = await doFetch()
+  }
+  if (res.status === 401) {
+    await new Promise(r => setTimeout(r, 3000))
     res = await doFetch()
   }
 
-  // Still 401 after retry — session is truly dead, redirect to login
+  // Still 401 after retries — session is truly dead, redirect to login
   if (res.status === 401) {
     window.location.href = '/login'
     throw new Error('Session expired')

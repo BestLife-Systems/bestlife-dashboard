@@ -66,9 +66,20 @@ async def _send_via_sendgrid(
 
 
 def _wrap_html(body_content: str) -> str:
-    """Wrap email body in a consistent BestLife branded template."""
-    return f"""
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    """Wrap email body in a consistent BestLife branded template (light mode enforced)."""
+    return f"""<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
+<style>
+  :root {{ color-scheme: light only; }}
+  body, .email-wrapper {{ background-color: #ffffff !important; }}
+</style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #ffffff; color: #333333;">
+    <div class="email-wrapper" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
         <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #0082b4;">
             <h2 style="color: #0082b4; margin: 0;">BestLife Behavioral Health</h2>
         </div>
@@ -81,7 +92,8 @@ def _wrap_html(body_content: str) -> str:
             </p>
         </div>
     </div>
-    """
+</body>
+</html>"""
 
 
 # ── Invoice confirmation (existing) ──────────────────────────────
@@ -209,6 +221,41 @@ async def send_reminder_email(
         deadline=deadline,
         url=invoice_url,
     )
+
+    return await _send_via_sendgrid(
+        to_email=to_email,
+        subject=subject,
+        html_body=_wrap_html(body),
+    )
+
+
+# ── Welcome / login email ────────────────────────────────────────
+
+
+async def send_welcome_email(
+    to_email: str,
+    user_name: str,
+    login_url: str,
+) -> bool:
+    """Send a welcome email with a link to set their password and log in."""
+    subject = "Welcome to BestLife Hub — Set Up Your Account"
+
+    body = f"""
+        <p style="font-size: 16px; color: #333;">Hi {user_name},</p>
+        <p style="font-size: 15px; color: #444; line-height: 1.6;">
+            Your BestLife Hub account has been created. Click the button below to
+            set your password and log in for the first time.
+        </p>
+        <div style="text-align: center; margin: 24px 0;">
+            <a href="{login_url}" style="display: inline-block; padding: 12px 32px; background: #0082b4; color: #fff; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                Set Your Password
+            </a>
+        </div>
+        <p style="font-size: 14px; color: #666; line-height: 1.5;">
+            This link will expire in 24 hours. If it expires, ask your admin to
+            resend the login email.
+        </p>
+    """
 
     return await _send_via_sendgrid(
         to_email=to_email,

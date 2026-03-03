@@ -1,4 +1,5 @@
-"""Auth / User Management — 3 endpoints (invite, cleanup, list users)."""
+"""Auth / User Management — invite, cleanup, list, resend welcome."""
+import os
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -7,6 +8,9 @@ from backend.deps import (
     sb_request, require_admin, logger,
 )
 from backend.models import InviteUserRequest
+from backend.email_service import send_welcome_email
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://bestlife-dashboard-production-bf81.up.railway.app")
 
 router = APIRouter(prefix="/api")
 
@@ -80,7 +84,85 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
             logger.error(f"Failed to clean up auth user: {cleanup_err}")
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Generate invite link and send welcome email
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            link_resp = await client.post(
+                f"{SUPABASE_URL}/auth/v1/admin/generate_link",
+                headers={
+                    "apikey": SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "type": "recovery",
+                    "email": req.email,
+                    "options": {"redirect_to": f"{FRONTEND_URL}/reset-password"},
+                },
+            )
+            if link_resp.status_code < 400:
+                link_data = link_resp.json()
+                action_link = link_data.get("action_link", "")
+                if action_link:
+                    await send_welcome_email(
+                        to_email=req.email,
+                        user_name=req.first_name,
+                        login_url=action_link,
+                    )
+                else:
+                    logger.warning(f"No action_link in generate_link response for {req.email}")
+            else:
+                logger.warning(f"generate_link failed for {req.email}: {link_resp.text}")
+    except Exception as e:
+        logger.error(f"Welcome email failed for {req.email}: {e}")
+
     return {"status": "created", "email": req.email, "user_id": user_id}
+
+
+@router.post("/admin/send-welcome-email/{user_id}")
+async def resend_welcome_email(user_id: str, admin=Depends(require_admin)):
+    """Resend the welcome / set-password email for an existing user."""
+    users = await sb_request("GET", "users", params={
+        "id": f"eq.{user_id}",
+        "select": "email,first_name",
+    })
+    if not users:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user = users[0]
+    email = user["email"]
+    name = user.get("first_name", "there")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        link_resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/admin/generate_link",
+            headers={
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "type": "recovery",
+                "email": email,
+                "options": {"redirect_to": f"{FRONTEND_URL}/reset-password"},
+            },
+        )
+        if link_resp.status_code >= 400:
+            raise HTTPException(status_code=500, detail=f"Failed to generate link: {link_resp.text}")
+
+        action_link = link_resp.json().get("action_link", "")
+        if not action_link:
+            raise HTTPException(status_code=500, detail="No action link returned")
+
+    sent = await send_welcome_email(
+        to_email=email,
+        user_name=name,
+        login_url=action_link,
+    )
+    if not sent:
+        raise HTTPException(status_code=500, detail="Email delivery failed")
+
+    return {"status": "sent", "email": email}
 
 
 @router.delete("/admin/cleanup-auth-user")
