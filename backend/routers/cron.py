@@ -43,7 +43,41 @@ ET = ZoneInfo("America/New_York")
 # Built-in background scheduler (runs inside the app — no cron needed)
 # ══════════════════════════════════════════════════════════════════
 
-_last_run_date: Optional[str] = None  # prevents double-runs per day
+_last_run_date: Optional[str] = None  # in-memory guard (supplementary)
+
+
+async def _get_last_run_date() -> Optional[str]:
+    """Read the scheduler's last-run date from the database (survives redeploys)."""
+    try:
+        rows = await sb_request("GET", "app_settings", params={
+            "key": "eq.scheduler_last_run",
+            "select": "value",
+        })
+        if rows and rows[0].get("value"):
+            return rows[0]["value"]
+    except Exception as e:
+        logger.warning(f"Could not read scheduler_last_run from DB: {e}")
+    return None
+
+
+async def _set_last_run_date(date_str: str):
+    """Persist the scheduler's last-run date to the database."""
+    try:
+        existing = await sb_request("GET", "app_settings", params={
+            "key": "eq.scheduler_last_run",
+            "select": "key",
+        })
+        if existing:
+            await sb_request("PATCH", "app_settings?key=eq.scheduler_last_run", data={
+                "value": date_str,
+            })
+        else:
+            await sb_request("POST", "app_settings", data={
+                "key": "scheduler_last_run",
+                "value": date_str,
+            })
+    except Exception as e:
+        logger.error(f"Could not persist scheduler_last_run to DB: {e}")
 
 
 async def _scheduler_loop():
@@ -53,6 +87,11 @@ async def _scheduler_loop():
 
     # Wait 30s on startup to let the app fully initialize
     await asyncio.sleep(30)
+
+    # Restore last-run date from DB so redeploys don't re-fire
+    _last_run_date = await _get_last_run_date()
+    if _last_run_date:
+        logger.info(f"Scheduler restored last_run_date from DB: {_last_run_date}")
 
     while True:
         try:
@@ -64,6 +103,7 @@ async def _scheduler_loop():
                 try:
                     results = await _run_daily_logic(today_str=today_str, dry_run=False)
                     _last_run_date = today_str
+                    await _set_last_run_date(today_str)
                     logger.info(f"Scheduler complete: {results}")
                 except Exception as e:
                     logger.error(f"Scheduler failed for {today_str}: {e}")
@@ -359,14 +399,34 @@ async def _send_reminders(period: dict, action: str) -> int:
         "select": "id,draft_token,reminder_count,users!user_id(first_name,last_name,email,phone_number,sms_enabled)",
     })
 
+    # Check what was already sent today to avoid duplicate emails on redeploy
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    already_sent_today = set()
+    try:
+        sent_logs = await sb_request("GET", "reminder_log", params={
+            "created_at": f"gte.{today_start}",
+            "channel": "eq.email",
+            "status": "eq.sent",
+            "select": "recipient_id",
+        })
+        already_sent_today = {log["recipient_id"] for log in (sent_logs or [])}
+    except Exception as e:
+        logger.warning(f"Could not check reminder_log for duplicates: {e}")
+
     count = 0
     for r in (recipients or []):
+        rec_id = r["id"]
+
+        # Skip if we already sent this recipient an email today
+        if rec_id in already_sent_today:
+            logger.info(f"Skipping duplicate reminder for recipient {rec_id} (already sent today)")
+            continue
+
         user = r.get("users") or {}
         name = user.get("first_name", "")
         full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
         draft_token = r.get("draft_token", "")
         invoice_url = f"{APP_URL}/invoice/{draft_token}"
-        rec_id = r["id"]
 
         # Email (all reminder types)
         if user.get("email"):
@@ -547,4 +607,5 @@ async def scheduler_run_now(admin=Depends(require_admin)):
     date_str = today_et().isoformat()
     results = await _run_daily_logic(today_str=date_str, dry_run=False)
     _last_run_date = date_str
+    await _set_last_run_date(date_str)
     return results
