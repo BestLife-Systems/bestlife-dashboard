@@ -154,13 +154,13 @@ async def resend_welcome_email(user_id: str, admin=Depends(require_admin)):
         if not action_link:
             raise HTTPException(status_code=500, detail="No action link returned")
 
-    sent = await send_welcome_email(
+    sent, reason = await send_welcome_email(
         to_email=email,
         user_name=name,
         login_url=action_link,
     )
     if not sent:
-        raise HTTPException(status_code=500, detail="Email delivery failed")
+        raise HTTPException(status_code=500, detail=f"Email delivery failed: {reason}")
 
     return {"status": "sent", "email": email}
 

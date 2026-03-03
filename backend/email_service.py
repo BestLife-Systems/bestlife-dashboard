@@ -23,14 +23,14 @@ async def _send_via_sendgrid(
     subject: str,
     html_body: str,
     attachments: Optional[List[dict]] = None,
-) -> bool:
-    """Low-level SendGrid v3 mail/send. Returns True on 202, False otherwise."""
+) -> tuple[bool, str]:
+    """Low-level SendGrid v3 mail/send. Returns (True, '') on 202, (False, reason) otherwise."""
     if not SENDGRID_API_KEY:
         logger.info("Email skipped - no SENDGRID_API_KEY configured")
-        return False
+        return False, "SENDGRID_API_KEY not configured"
     if not to_email:
         logger.info("Email skipped - no recipient email address")
-        return False
+        return False, "No recipient email address"
 
     payload: dict = {
         "personalizations": [{"to": [{"email": to_email}]}],
@@ -53,13 +53,14 @@ async def _send_via_sendgrid(
             )
         if resp.status_code == 202:
             logger.info(f"Email sent to {to_email} ({subject})")
-            return True
+            return True, ""
         else:
+            reason = f"SendGrid {resp.status_code}: {resp.text}"
             logger.error(f"SendGrid API error {resp.status_code}: {resp.text}")
-            return False
+            return False, reason
     except Exception as e:
         logger.error(f"Email send failed: {e}")
-        return False
+        return False, str(e)
 
 
 # ── HTML wrapper ──────────────────────────────────────────────────
@@ -124,7 +125,7 @@ async def send_invoice_email(
 
     filename = f"Invoice-{period_label.replace(' ', '-')}.pdf" if period_label else "Invoice.pdf"
 
-    return await _send_via_sendgrid(
+    ok, _ = await _send_via_sendgrid(
         to_email=to_email,
         subject=subject,
         html_body=_wrap_html(body),
@@ -135,6 +136,7 @@ async def send_invoice_email(
             "disposition": "attachment",
         }],
     )
+    return ok
 
 
 # ── Reminder emails (new) ────────────────────────────────────────
@@ -222,11 +224,12 @@ async def send_reminder_email(
         url=invoice_url,
     )
 
-    return await _send_via_sendgrid(
+    ok, _ = await _send_via_sendgrid(
         to_email=to_email,
         subject=subject,
         html_body=_wrap_html(body),
     )
+    return ok
 
 
 # ── Welcome / login email ────────────────────────────────────────
@@ -236,8 +239,9 @@ async def send_welcome_email(
     to_email: str,
     user_name: str,
     login_url: str,
-) -> bool:
-    """Send a welcome email with a link to set their password and log in."""
+) -> tuple[bool, str]:
+    """Send a welcome email with a link to set their password and log in.
+    Returns (success, error_reason)."""
     subject = "Welcome to BestLife Hub — Set Up Your Account"
 
     body = f"""
@@ -294,8 +298,9 @@ async def send_admin_summary_email(
         </p>
     """
 
-    return await _send_via_sendgrid(
+    ok, _ = await _send_via_sendgrid(
         to_email=to_email,
         subject=subject,
         html_body=_wrap_html(body),
     )
+    return ok
