@@ -48,33 +48,41 @@ async def startup_event():
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
     sg_key = os.environ.get("SENDGRID_API_KEY", "")
     logger.info(f"SendGrid key configured: {'Yes (len=' + str(len(sg_key)) + ')' if sg_key else 'No'}")
-    # Debug: log all env var names to diagnose missing vars
-    env_names = sorted(k for k in os.environ.keys() if not k.startswith('_'))
-    logger.info(f"Available env vars: {', '.join(env_names)}")
 
-    # If Anthropic key not in env vars, try loading from Supabase app_settings
-    if not deps.ANTHROPIC_API_KEY and SUPABASE_SERVICE_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{SUPABASE_URL}/rest/v1/app_settings",
-                    params={"key": "eq.ANTHROPIC_API_KEY", "select": "value"},
-                    headers={
-                        "apikey": SUPABASE_SERVICE_KEY,
-                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-                    },
-                )
-                if resp.status_code == 200:
-                    rows = resp.json()
-                    if rows and rows[0].get("value"):
-                        deps.ANTHROPIC_API_KEY = rows[0]["value"]
-                        logger.info(f"Loaded ANTHROPIC_API_KEY from Supabase app_settings (len={len(deps.ANTHROPIC_API_KEY)})")
+    # Load keys from Supabase app_settings when not in env vars
+    if SUPABASE_SERVICE_KEY:
+        keys_to_load = []
+        if not deps.ANTHROPIC_API_KEY:
+            keys_to_load.append("ANTHROPIC_API_KEY")
+        if not sg_key:
+            keys_to_load.append("SENDGRID_API_KEY")
+
+        for key_name in keys_to_load:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(
+                        f"{SUPABASE_URL}/rest/v1/app_settings",
+                        params={"key": f"eq.{key_name}", "select": "value"},
+                        headers={
+                            "apikey": SUPABASE_SERVICE_KEY,
+                            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                        },
+                    )
+                    if resp.status_code == 200:
+                        rows = resp.json()
+                        if rows and rows[0].get("value"):
+                            val = rows[0]["value"]
+                            if key_name == "ANTHROPIC_API_KEY":
+                                deps.ANTHROPIC_API_KEY = val
+                            else:
+                                os.environ[key_name] = val
+                            logger.info(f"Loaded {key_name} from Supabase app_settings (len={len(val)})")
+                        else:
+                            logger.warning(f"app_settings: no {key_name} row found")
                     else:
-                        logger.warning("app_settings table exists but no ANTHROPIC_API_KEY row found")
-                else:
-                    logger.warning(f"Could not read app_settings: {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"Failed to load API key from Supabase: {e}")
+                        logger.warning(f"Could not read app_settings for {key_name}: {resp.status_code}")
+            except Exception as e:
+                logger.warning(f"Failed to load {key_name} from Supabase: {e}")
 
     if deps.ANTHROPIC_API_KEY:
         logger.info(f"Anthropic key ready: Yes (len={len(deps.ANTHROPIC_API_KEY)}, prefix={deps.ANTHROPIC_API_KEY[:8]}...)")
