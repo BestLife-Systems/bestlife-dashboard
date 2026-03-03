@@ -101,9 +101,7 @@ export default function PublicInvoice() {
 
   // ── Section state ──
   const [iic, setIic] = useState({ 'IICLC-H0036TJU1': [], 'IICMA-H0036TJU2': [], 'BA-H2014TJ': [] })
-  const [op, setOp] = useState([])
-  const [opCount, setOpCount] = useState('')
-  const [opGenerated, setOpGenerated] = useState(false)
+  const [op, setOp] = useState([{ client_initials: '', date: '', cancel_fee: false }])
   const [sbys, setSbys] = useState([{ date: '', hours: '' }])
   const [ados, setAdos] = useState([{ client_initials: '', location: 'In home', id_number: '', date: '' }])
   const [adminEntries, setAdminEntries] = useState([{ date: '', hours: '' }])
@@ -159,7 +157,7 @@ export default function PublicInvoice() {
         if (result.draft_data) {
           const d = result.draft_data
           if (d.iic) setIic(prev => ({ ...prev, ...d.iic }))
-          if (d.op?.sessions) { setOp(d.op.sessions); setOpGenerated(true) }
+          if (d.op?.sessions && d.op.sessions.length > 0) setOp(d.op.sessions)
           if (d.sbys && d.sbys.length > 0) setSbys(d.sbys)
           if (d.ados && d.ados.length > 0) setAdos(d.ados)
           if (d.admin && d.admin.length > 0) setAdminEntries(d.admin)
@@ -248,13 +246,6 @@ export default function PublicInvoice() {
   }
 
   // ── OP helpers ──
-  function generateOpRows() {
-    const count = parseInt(opCount) || 0
-    if (count <= 0) return
-    setOp(Array.from({ length: count }, () => ({ client_initials: '', date: '', cancel_fee: false })))
-    setOpGenerated(true)
-    markDirty()
-  }
   function addOpRow() {
     setOp(prev => [...prev, { client_initials: '', date: '', cancel_fee: false }])
     markDirty()
@@ -623,41 +614,31 @@ export default function PublicInvoice() {
 
         {/* ═══ OP Section ═══ */}
         <Section title="OP Sessions" total={opTotal()} totalLabel="sessions">
-          {!opGenerated ? (
-            <div className="invoice-generate-row">
-              <label>Total # of completed OP sessions:</label>
-              <input type="number" min="1" value={opCount} onChange={e => setOpCount(e.target.value)} placeholder="0" style={{ width: '80px' }} />
-              <button type="button" className="btn btn--small btn--primary" onClick={generateOpRows} disabled={!opCount || parseInt(opCount) <= 0}>Generate</button>
-            </div>
-          ) : (
-            <>
-              <div className="invoice-disclaimer">
-                <strong>Outpatient Cancellations</strong> * This ONLY pertains to no call / no shows that gave less than 24hr notice, and is at your discretion. Clients added to this list are CHARGED the cancellation fee - $50.00. Do not add clients you do not wish to charge.
-              </div>
-              {op.map((entry, idx) => (
-                <div key={idx} className="invoice-entry">
-                  <div className="invoice-entry-fields">
-                    <div className="form-field invoice-field-sm">
-                      <label>Client Initials</label>
-                      <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateOp(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
-                    </div>
-                    <div className="form-field invoice-field-md">
-                      <label>Date</label>
-                      <input type="date" value={entry.date} onChange={e => updateOp(idx, 'date', e.target.value)} />
-                    </div>
-                    <div className="form-field">
-                      <label className="checkbox-label">
-                        <input type="checkbox" checked={entry.cancel_fee} onChange={e => updateOp(idx, 'cancel_fee', e.target.checked)} />
-                        Charge Cancellation Fee
-                      </label>
-                    </div>
-                    <button type="button" className="invoice-remove-btn" onClick={() => removeOp(idx)} title="Remove">&times;</button>
-                  </div>
+          <div className="invoice-disclaimer">
+            <strong>Outpatient Cancellations</strong> * This ONLY pertains to no call / no shows that gave less than 24hr notice, and is at your discretion. Clients added to this list are CHARGED the cancellation fee - $50.00. Do not add clients you do not wish to charge.
+          </div>
+          {op.map((entry, idx) => (
+            <div key={idx} className="invoice-entry">
+              <div className="invoice-entry-fields">
+                <div className="form-field invoice-field-sm">
+                  <label>Client Initials</label>
+                  <input type="text" maxLength={5} value={entry.client_initials} onChange={e => updateOp(idx, 'client_initials', e.target.value.toUpperCase())} placeholder="AB" />
                 </div>
-              ))}
-              <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addOpRow}>+ Add Session</button>
-            </>
-          )}
+                <div className="form-field invoice-field-md">
+                  <label>Date</label>
+                  <input type="date" value={entry.date} onChange={e => updateOp(idx, 'date', e.target.value)} />
+                </div>
+                <div className="form-field">
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={entry.cancel_fee} onChange={e => updateOp(idx, 'cancel_fee', e.target.checked)} />
+                    Charge Cancellation Fee
+                  </label>
+                </div>
+                <button type="button" className="invoice-remove-btn" onClick={() => removeOp(idx)} title="Remove">&times;</button>
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn btn--small btn--ghost invoice-add-btn" onClick={addOpRow}>+ Add Session</button>
         </Section>
 
         {/* ═══ SBYS Section ═══ */}

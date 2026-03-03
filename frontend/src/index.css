@@ -1197,54 +1197,54 @@ a { color: var(--accent); text-decoration: none; }
   pointer-events: none;
 }
 
-/* When KB is active, frosted-glass sidebar + topbar so sky bleeds through */
+/* When KB is active, dark frosted-glass sidebar + topbar so night sky bleeds through */
 .kb-active .sidebar {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(10, 14, 30, 0.65) !important;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-right: 1px solid rgba(255, 255, 255, 0.25) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 .kb-active .sidebar .sidebar-link,
 .kb-active .sidebar .sidebar-label {
-  color: rgba(0, 0, 0, 0.75) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
   opacity: 1 !important;
 }
 .kb-active .sidebar .sidebar-link:hover {
-  color: rgba(0, 0, 0, 0.95) !important;
-  background: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 .kb-active .sidebar .sidebar-link--active {
-  color: #000 !important;
-  background: rgba(255, 255, 255, 0.3) !important;
-  border-color: rgba(0, 0, 0, 0.08) !important;
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   box-shadow: none !important;
 }
 .kb-active .sidebar .sidebar-link--active .sidebar-icon svg {
-  stroke: #000;
+  stroke: #fff;
 }
 .kb-active .sidebar .sidebar-icon svg {
-  stroke: rgba(0, 0, 0, 0.6);
+  stroke: rgba(255, 255, 255, 0.6);
 }
 .kb-active .sidebar .sidebar-section-label {
-  color: rgba(0, 0, 0, 0.4) !important;
+  color: rgba(255, 255, 255, 0.35) !important;
   opacity: 1 !important;
 }
 .kb-active .sidebar .sidebar-divider {
-  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.12), transparent) !important;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent) !important;
 }
 .kb-active .sidebar .sidebar-theme-toggle {
-  color: rgba(0, 0, 0, 0.6) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
 }
 .kb-active .topbar {
-  background: rgba(255, 255, 255, 0.18) !important;
+  background: rgba(10, 14, 30, 0.65) !important;
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.25) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 .kb-active .topbar,
 .kb-active .topbar .topbar-title,
 .kb-active .topbar svg {
-  color: rgba(0, 0, 0, 0.8) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 .kb-active .content {
   overflow: hidden;

@@ -111,16 +111,9 @@ function SpaceCanvas() {
     const ctx = canvas.getContext('2d')
     let animId
 
-    // Returns 0 (full night) → 1 (full day) based on Eastern Time.
-    // Dawn 6–7:30 AM, dusk 7:30–9 PM, smooth sine-eased transition.
+    // Always show night sky with stars
     function getDaylight() {
-      const now = new Date()
-      const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-      const h = et.getHours() + et.getMinutes() / 60
-      if (h >= 7.5 && h < 19.5) return 1             // full day
-      if (h >= 19.5 && h < 21) return (21 - h) / 1.5  // dusk
-      if (h >= 6 && h < 7.5) return (h - 6) / 1.5     // dawn
-      return 0                                          // full night
+      return 0
     }
 
     // Lerp between two [r,g,b] colors
