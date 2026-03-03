@@ -8,11 +8,19 @@ import httpx
 
 logger = logging.getLogger("bestlife")
 
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "frontdesk@bestlifenj.com")
-FROM_NAME = os.environ.get("FROM_NAME", "BestLife Behavioral Health")
-
 SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+
+
+def _get_sendgrid_key():
+    return os.environ.get("SENDGRID_API_KEY", "")
+
+
+def _get_from_email():
+    return os.environ.get("FROM_EMAIL", "frontdesk@bestlifenj.com")
+
+
+def _get_from_name():
+    return os.environ.get("FROM_NAME", "BestLife Behavioral Health")
 
 
 # ── Shared SendGrid sender ───────────────────────────────────────
@@ -25,7 +33,8 @@ async def _send_via_sendgrid(
     attachments: Optional[List[dict]] = None,
 ) -> tuple[bool, str]:
     """Low-level SendGrid v3 mail/send. Returns (True, '') on 202, (False, reason) otherwise."""
-    if not SENDGRID_API_KEY:
+    api_key = _get_sendgrid_key()
+    if not api_key:
         logger.info("Email skipped - no SENDGRID_API_KEY configured")
         return False, "SENDGRID_API_KEY not configured"
     if not to_email:
@@ -34,7 +43,7 @@ async def _send_via_sendgrid(
 
     payload: dict = {
         "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": FROM_EMAIL, "name": FROM_NAME},
+        "from": {"email": _get_from_email(), "name": _get_from_name()},
         "subject": subject,
         "content": [{"type": "text/html", "value": html_body}],
     }
@@ -47,7 +56,7 @@ async def _send_via_sendgrid(
                 SENDGRID_API_URL,
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {SENDGRID_API_KEY}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
             )

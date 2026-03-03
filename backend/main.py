@@ -46,6 +46,8 @@ async def startup_event():
     logger.info("BestLife Hub API starting up...")
     logger.info(f"Supabase URL: {SUPABASE_URL}")
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
+    sg_key = os.environ.get("SENDGRID_API_KEY", "")
+    logger.info(f"SendGrid key configured: {'Yes (len=' + str(len(sg_key)) + ')' if sg_key else 'No'}")
 
     # If Anthropic key not in env vars, try loading from Supabase app_settings
     if not deps.ANTHROPIC_API_KEY and SUPABASE_SERVICE_KEY:
