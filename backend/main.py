@@ -48,6 +48,9 @@ async def startup_event():
     logger.info(f"Service key configured: {'Yes' if SUPABASE_SERVICE_KEY else 'No'}")
     sg_key = os.environ.get("SENDGRID_API_KEY", "")
     logger.info(f"SendGrid key configured: {'Yes (len=' + str(len(sg_key)) + ')' if sg_key else 'No'}")
+    # Debug: log all env var names to diagnose missing vars
+    env_names = sorted(k for k in os.environ.keys() if not k.startswith('_'))
+    logger.info(f"Available env vars: {', '.join(env_names)}")
 
     # If Anthropic key not in env vars, try loading from Supabase app_settings
     if not deps.ANTHROPIC_API_KEY and SUPABASE_SERVICE_KEY:
