@@ -1,5 +1,6 @@
 """Auth / User Management — invite, cleanup, list, resend welcome."""
 import os
+import re
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -11,6 +12,29 @@ from backend.models import InviteUserRequest
 from backend.email_service import send_welcome_email
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://bestlife-dashboard-production-bf81.up.railway.app")
+
+
+def _fix_action_link(action_link: str) -> str:
+    """Rewrite the Supabase action_link to use FRONTEND_URL instead of SITE_URL.
+
+    Supabase generate_link returns a redirect URL that ultimately lands on
+    whatever SITE_URL is configured in the Supabase dashboard.  If that's
+    still set to localhost, the emailed link will be broken.  This helper
+    replaces any localhost (or other wrong) redirect_to with FRONTEND_URL.
+    """
+    if not action_link:
+        return action_link
+    # The action_link format is:
+    # https://<supabase>/auth/v1/verify?...&redirect_to=<encoded_url>
+    # Replace the redirect_to param to point at production
+    import urllib.parse
+    parsed = urllib.parse.urlparse(action_link)
+    params = urllib.parse.parse_qs(parsed.query)
+    if "redirect_to" in params:
+        params["redirect_to"] = [f"{FRONTEND_URL}/reset-password"]
+        new_query = urllib.parse.urlencode(params, doseq=True)
+        action_link = urllib.parse.urlunparse(parsed._replace(query=new_query))
+    return action_link
 
 router = APIRouter(prefix="/api")
 
@@ -102,7 +126,7 @@ async def invite_user(req: InviteUserRequest, admin=Depends(require_admin)):
             )
             if link_resp.status_code < 400:
                 link_data = link_resp.json()
-                action_link = link_data.get("action_link", "")
+                action_link = _fix_action_link(link_data.get("action_link", ""))
                 if action_link:
                     await send_welcome_email(
                         to_email=req.email,
@@ -150,7 +174,7 @@ async def resend_welcome_email(user_id: str, admin=Depends(require_admin)):
         if link_resp.status_code >= 400:
             raise HTTPException(status_code=500, detail=f"Failed to generate link: {link_resp.text}")
 
-        action_link = link_resp.json().get("action_link", "")
+        action_link = _fix_action_link(link_resp.json().get("action_link", ""))
         if not action_link:
             raise HTTPException(status_code=500, detail="No action link returned")
 

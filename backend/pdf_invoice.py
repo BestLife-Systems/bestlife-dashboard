@@ -12,7 +12,7 @@ class InvoicePDF(FPDF):
     def header(self):
         self.set_font("Helvetica", "B", 18)
         self.set_text_color(0, 130, 180)
-        self.cell(0, 10, "BestLife Behavioral Health", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 10, "BestLife Counseling Services", align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "", 12)
         self.set_text_color(80, 80, 80)
         self.cell(0, 7, "Invoice Summary", align="C", new_x="LMARGIN", new_y="NEXT")

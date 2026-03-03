@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api")
 
 
 BETTY_SYSTEM_PROMPT = """You are Betty, the AI assistant built into the BestLife Hub — the internal operations \
-platform for BestLife Behavioral Health, an ABA therapy practice in Cape May Court House, NJ. \
+platform for BestLife Counseling Services, an ABA therapy practice in Cape May Court House, NJ. \
 You are an expert on every feature of the Hub. Be concise, friendly, and professional.
 
 ## HUB NAVIGATION & FEATURES
@@ -214,7 +214,7 @@ async def ai_kb_assist(req: AIChatRequest, user=Depends(verify_token)):
     import anthropic
 
     system_message = (
-        "You are a content writer for BestLife Behavioral Health's internal knowledge base. "
+        "You are a content writer for BestLife Counseling Services' internal knowledge base. "
         "Write clear, professional articles for therapists and staff. "
         "Use markdown formatting. Be thorough but concise. "
         "Structure content with headers, bullet points, and numbered lists where appropriate."

@@ -20,7 +20,20 @@ def _get_from_email():
 
 
 def _get_from_name():
-    return os.environ.get("FROM_NAME", "BestLife Behavioral Health")
+    return os.environ.get("FROM_NAME", "BestLife Counseling Services")
+
+
+def _get_email_whitelist() -> Optional[set]:
+    """Return a set of whitelisted email addresses, or None if unrestricted.
+
+    Set EMAIL_WHITELIST env var to a comma-separated list of emails to restrict
+    all outbound emails to only those addresses (useful during testing).
+    Example: EMAIL_WHITELIST=adrienne@bestlifenj.com,dave@bestlifenj.com
+    """
+    raw = os.environ.get("EMAIL_WHITELIST", "").strip()
+    if not raw:
+        return None
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
 # ── Shared SendGrid sender ───────────────────────────────────────
@@ -40,6 +53,12 @@ async def _send_via_sendgrid(
     if not to_email:
         logger.info("Email skipped - no recipient email address")
         return False, "No recipient email address"
+
+    # Whitelist gate — only send to approved addresses during testing
+    whitelist = _get_email_whitelist()
+    if whitelist and to_email.strip().lower() not in whitelist:
+        logger.info(f"Email blocked by whitelist - {to_email} not in EMAIL_WHITELIST")
+        return False, f"Recipient {to_email} not in EMAIL_WHITELIST"
 
     payload: dict = {
         "personalizations": [{"to": [{"email": to_email}]}],
@@ -91,7 +110,7 @@ def _wrap_html(body_content: str) -> str:
 <body style="margin: 0; padding: 0; background-color: #ffffff; color: #333333;">
     <div class="email-wrapper" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff;">
         <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #0082b4;">
-            <h2 style="color: #0082b4; margin: 0;">BestLife Behavioral Health</h2>
+            <h2 style="color: #0082b4; margin: 0;">BestLife Counseling Services</h2>
         </div>
         <div style="padding: 24px 0;">
             {body_content}
