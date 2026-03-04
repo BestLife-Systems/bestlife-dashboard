@@ -101,12 +101,12 @@ export default function PublicInvoice() {
 
   // ── Section state ──
   const [iic, setIic] = useState({ 'IICLC-H0036TJU1': [], 'IICMA-H0036TJU2': [], 'BA-H2014TJ': [] })
-  const [op, setOp] = useState([{ client_initials: '', date: '', cancel_fee: false }])
-  const [sbys, setSbys] = useState([{ date: '', hours: '' }])
-  const [ados, setAdos] = useState([{ client_initials: '', location: 'In home', id_number: '', date: '' }])
-  const [adminEntries, setAdminEntries] = useState([{ date: '', hours: '' }])
+  const [op, setOp] = useState([])
+  const [sbys, setSbys] = useState([])
+  const [ados, setAdos] = useState([])
+  const [adminEntries, setAdminEntries] = useState([])
   const [supervisionIndiv, setSupervisionIndiv] = useState([])
-  const [supervisionGroup, setSupervisionGroup] = useState([{ date: '', supervisee_ids: [], supervisee_names: [] }])
+  const [supervisionGroup, setSupervisionGroup] = useState([])
   const [sickLeave, setSickLeave] = useState({ date: '', hours: '', policyAck: false })
   const [pto, setPto] = useState({ hours: '' })
   const [notes, setNotes] = useState('')
@@ -186,7 +186,7 @@ export default function PublicInvoice() {
     const filledSupGroup = supervisionGroup.filter(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0))
     return {
       iic,
-      op: { sessions: op },
+      op: { sessions: op.filter(e => e.client_initials?.trim() || e.date) },
       sbys: filledSbys,
       ados: filledAdos,
       admin: filledAdmin,
@@ -197,19 +197,30 @@ export default function PublicInvoice() {
     }
   }
 
-  // ── Totals ──
+  // ── Completeness checks (entry only counts when all required fields are filled) ──
+  function isIicComplete(e) { return e.cyber_initials?.trim() && e.date && e.hours && IIC_HOUR_OPTIONS.includes(String(e.hours)) }
+  function isOpComplete(e) { return e.client_initials?.trim() && e.date }
+  function isSbysComplete(e) { return e.date && e.hours && parseFloat(e.hours) > 0 }
+  function isAdosComplete(e) { return e.client_initials?.trim() && e.date }
+  function isAdminComplete(e) { return e.date && e.hours && parseFloat(e.hours) > 0 }
+  function isSupIndivComplete(e) { return e.date && e.supervisee_id }
+  function isSupGroupComplete(e) { return e.date && e.supervisee_ids?.length > 0 }
+
+  // ── Totals (only count complete entries) ──
   function iicTotal() {
-    return Object.values(iic).flat().reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+    return Object.values(iic).flat().filter(isIicComplete).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
   }
-  function opTotal() { return op.length }
-  function opSessionCount() { return op.filter(e => !e.cancel_fee).length }
-  function opCancelCount() { return op.filter(e => e.cancel_fee).length }
-  function sbysTotal() { return sbys.filter(e => e.date).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
-  function adosTotal() { return ados.filter(e => e.client_initials?.trim() || e.date).length }
-  function adosInHomeCount() { return ados.filter(e => (e.client_initials?.trim() || e.date) && e.location === 'In home').length }
-  function adosAtOfficeCount() { return ados.filter(e => (e.client_initials?.trim() || e.date) && e.location === 'At office').length }
-  function adminTotal() { return adminEntries.filter(e => e.date).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
-  function supervisionTotal() { return supervisionIndiv.length + supervisionGroup.filter(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0)).length }
+  function iicCodeTotal(code) {
+    return iic[code].filter(isIicComplete).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)
+  }
+  function opSessionCount() { return op.filter(e => isOpComplete(e) && !e.cancel_fee).length }
+  function opCancelCount() { return op.filter(e => isOpComplete(e) && e.cancel_fee).length }
+  function sbysTotal() { return sbys.filter(isSbysComplete).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function adosTotal() { return ados.filter(isAdosComplete).length }
+  function adosInHomeCount() { return ados.filter(e => isAdosComplete(e) && e.location === 'In home').length }
+  function adosAtOfficeCount() { return ados.filter(e => isAdosComplete(e) && e.location === 'At office').length }
+  function adminTotal() { return adminEntries.filter(isAdminComplete).reduce((s, e) => s + (parseFloat(e.hours) || 0), 0) }
+  function supervisionTotal() { return supervisionIndiv.filter(isSupIndivComplete).length + supervisionGroup.filter(isSupGroupComplete).length }
   function sickTotal() { return parseFloat(sickLeave.hours) || 0 }
   function ptoTotal() { return parseFloat(pto.hours) || 0 }
   function adosHoursWorked() { return adosTotal() * 3 }
@@ -355,8 +366,10 @@ export default function PublicInvoice() {
         if (!e.hours || !IIC_HOUR_OPTIONS.includes(String(e.hours))) { setError(`IIC ${code}: Valid hours required for entry ${i + 1} (${IIC_HOUR_OPTIONS.join(', ')})`); return }
       }
     }
-    // Validate OP
+    // Validate OP (skip fully empty rows)
     for (let i = 0; i < op.length; i++) {
+      const hasAny = op[i].client_initials?.trim() || op[i].date
+      if (!hasAny) continue
       if (!op[i].client_initials?.trim()) { setError(`OP: Client initials required for session ${i + 1}`); return }
       if (!op[i].date) { setError(`OP: Date required for session ${i + 1}`); return }
     }
@@ -402,7 +415,8 @@ export default function PublicInvoice() {
     const hasFilledAdos = ados.some(e => e.client_initials?.trim() || e.date)
     const hasFilledAdmin = adminEntries.some(e => e.date || (e.hours && parseFloat(e.hours) > 0))
     const hasFilledSupGroup = supervisionGroup.some(e => e.date || (e.supervisee_ids && e.supervisee_ids.length > 0))
-    const hasData = Object.values(iic).some(a => a.length > 0) || op.length > 0 || hasFilledSbys ||
+    const hasFilledOp = op.some(e => e.client_initials?.trim() || e.date)
+    const hasData = Object.values(iic).some(a => a.length > 0) || hasFilledOp || hasFilledSbys ||
       hasFilledAdos || hasFilledAdmin || supervisionIndiv.length > 0 || hasFilledSupGroup ||
       (sickLeave.hours && parseFloat(sickLeave.hours) > 0) || (pto.hours && parseFloat(pto.hours) > 0)
     if (!hasData) { setError('Please add at least one entry before submitting.'); return }
@@ -430,6 +444,8 @@ export default function PublicInvoice() {
       }
     }
     for (let i = 0; i < op.length; i++) {
+      const hasAny = op[i].client_initials?.trim() || op[i].date
+      if (!hasAny) continue
       if (!op[i].client_initials?.trim()) { setError(`OP: Client initials required for session ${i + 1}`); return }
       if (!op[i].date) { setError(`OP: Date required for session ${i + 1}`); return }
     }
@@ -570,9 +586,9 @@ export default function PublicInvoice() {
               <div className="invoice-subgroup-header">
                 <span className="invoice-subgroup-title">{label}</span>
                 <span className="invoice-subgroup-code">{code}</span>
-                {iic[code].length > 0 && (
+                {iicCodeTotal(code) > 0 && (
                   <span className="invoice-section-total">
-                    {iic[code].reduce((s, e) => s + (parseFloat(e.hours) || 0), 0)} hrs
+                    {iicCodeTotal(code)} hrs
                   </span>
                 )}
               </div>
@@ -595,7 +611,7 @@ export default function PublicInvoice() {
                         value={entry.hours}
                         onChange={e => updateIicClient(code, idx, 'hours', e.target.value)}
                         onBlur={e => validateIicHours(code, idx, e.target.value)}
-                        placeholder="1"
+                        placeholder=""
                         className={iicHoursError[`${code}-${idx}`] ? 'input-error' : ''}
                       />
                       <datalist id={`iic-hours-${code}-${idx}`}>
@@ -613,7 +629,7 @@ export default function PublicInvoice() {
         </Section>
 
         {/* ═══ OP Section ═══ */}
-        <Section title="OP Sessions" total={opTotal()} totalLabel="sessions">
+        <Section title="OP Sessions" total={opSessionCount() + opCancelCount()} totalLabel="sessions">
           <div className="invoice-disclaimer">
             <strong>Outpatient Cancellations</strong> * This ONLY pertains to no call / no shows that gave less than 24hr notice, and is at your discretion. Clients added to this list are CHARGED the cancellation fee - $50.00. Do not add clients you do not wish to charge.
           </div>
