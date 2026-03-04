@@ -3,6 +3,21 @@ import { useParams } from 'react-router-dom'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
+const APPRECIATION_MESSAGES = [
+  "Thank you for being you!",
+  "You make a difference every single day.",
+  "Your dedication doesn't go unnoticed!",
+  "Thanks for all that you do!",
+  "You're an essential part of the BestLife team!",
+  "Your hard work is truly appreciated!",
+  "Thank you for showing up and giving your best!",
+  "The world is better because of the work you do.",
+]
+
+function getAppreciationMessage() {
+  return APPRECIATION_MESSAGES[Math.floor(Math.random() * APPRECIATION_MESSAGES.length)]
+}
+
 async function pubGet(path) {
   const res = await fetch(`${API_BASE}${path}`)
   if (!res.ok) {
@@ -498,6 +513,17 @@ export default function PublicInvoice() {
   if (submitted) {
     return (
       <div className="public-invoice-page">
+        <div className="invoice-confetti" aria-hidden="true">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <span key={i} className="confetti-piece" style={{
+              '--x': `${Math.random() * 100}vw`,
+              '--delay': `${Math.random() * 1.5}s`,
+              '--speed': `${2 + Math.random() * 2}s`,
+              '--color': ['#0082b4', '#e67e22', '#2ecc71', '#9b59b6', '#f1c40f', '#e74c3c'][i % 6],
+              '--rotation': `${Math.random() * 360}deg`,
+            }} />
+          ))}
+        </div>
         <div className="public-invoice-card">
           <div className="public-invoice-header">
             <h1>Payroll Invoice</h1>
@@ -511,6 +537,9 @@ export default function PublicInvoice() {
             </div>
             <h2 style={{ color: 'var(--accent)' }}>{updated ? 'Invoice Updated' : 'Invoice Submitted'}</h2>
             <p>Your hours have been {updated ? 'updated' : 'submitted'} successfully.</p>
+            <p style={{ fontSize: '1.05rem', color: 'var(--accent)', fontStyle: 'italic', margin: '0.75rem 0' }}>
+              {getAppreciationMessage()}
+            </p>
             {data?.submitted_at && (
               <p className="public-invoice-muted">Submitted {new Date(data.submitted_at).toLocaleString()}</p>
             )}
