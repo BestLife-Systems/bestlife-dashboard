@@ -46,6 +46,14 @@ async def _send_via_sendgrid(
     attachments: Optional[List[dict]] = None,
 ) -> tuple[bool, str]:
     """Low-level SendGrid v3 mail/send. Returns (True, '') on 202, (False, reason) otherwise."""
+
+    # ── Master kill switch — emails are OFF unless explicitly enabled ──
+    # Set EMAILS_ENABLED=true in Railway when you're ready to go live.
+    # Until then, ZERO emails leave the system.
+    if os.environ.get("EMAILS_ENABLED", "false").lower() != "true":
+        logger.info(f"Email blocked — EMAILS_ENABLED is not 'true' (to: {to_email}, subject: {subject})")
+        return False, "EMAILS_ENABLED is not true — all outbound email is disabled"
+
     api_key = _get_sendgrid_key()
     if not api_key:
         logger.info("Email skipped - no SENDGRID_API_KEY configured")
@@ -54,7 +62,7 @@ async def _send_via_sendgrid(
         logger.info("Email skipped - no recipient email address")
         return False, "No recipient email address"
 
-    # Whitelist gate — only send to approved addresses during testing
+    # Whitelist gate — optional additional filter during rollout
     whitelist = _get_email_whitelist()
     if whitelist and to_email.strip().lower() not in whitelist:
         logger.info(f"Email blocked by whitelist - {to_email} not in EMAIL_WHITELIST")
