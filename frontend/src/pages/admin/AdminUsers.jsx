@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, safeSb } from '../../lib/supabase'
 import { apiPost, apiGet, apiPatch } from '../../lib/api'
 import Modal from '../../components/Modal'
 
@@ -151,7 +151,7 @@ export default function AdminUsers() {
   async function loadUsers() {
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('users').select('*').order('last_name')
+      const { data, error } = await safeSb(supabase.from('users').select('*').order('last_name'))
       if (error) throw error
       setUsers(data || [])
     } catch (err) {
@@ -209,7 +209,7 @@ export default function AdminUsers() {
         clinical_supervisor_id: form.clinical_supervisor_id || null,
       })
       if (result.user_id && form.employment_status !== 'full_time') {
-        await supabase.from('users').update({ employment_status: form.employment_status }).eq('id', result.user_id)
+        await safeSb(supabase.from('users').update({ employment_status: form.employment_status }).eq('id', result.user_id))
       }
       setNewUserId(result.user_id)
       setNewUserName(`${form.first_name} ${form.last_name}`)
@@ -267,7 +267,7 @@ export default function AdminUsers() {
 
   async function handleToggleActive(user) {
     try {
-      const { error } = await supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id)
+      const { error } = await safeSb(supabase.from('users').update({ is_active: !user.is_active }).eq('id', user.id))
       if (error) throw error
       loadUsers()
     } catch (err) {

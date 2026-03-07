@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, safeSb } from '../../lib/supabase'
 import { apiPost } from '../../lib/api'
 import { useAuth } from '../../hooks/useAuth'
 import { useLoadingVerb } from '../../hooks/useLoadingVerb'
@@ -472,13 +472,13 @@ function AddArticlePanel({ categories, onClose, onSaved }) {
     if (!category) { setError('Please select a category'); return }
     setSaving(true); setError(null)
     try {
-      const { error: err } = await supabase.from('kb_articles').insert({
+      const { error: err } = await safeSb(supabase.from('kb_articles').insert({
         title: title.trim(),
         body_markdown: body.trim() || null,
         tags: [category],
         status,
         created_by_user_id: profile?.id || null,
-      })
+      }))
       if (err) throw err
       onSaved?.()
       onClose()
@@ -608,7 +608,7 @@ export default function KnowledgeBase() {
       query = query.order('created_at', { ascending: false })
       if (search.trim()) query = query.or(`title.ilike.%${search.trim()}%,body_markdown.ilike.%${search.trim()}%`)
       if (selectedTag) query = query.contains('tags', [selectedTag])
-      const { data, error } = await query
+      const { data, error } = await safeSb(query)
       if (error) throw error
       setArticles(data || [])
     } catch (err) { console.error('KB fetch error:', err); setArticles([]) }
@@ -629,7 +629,7 @@ export default function KnowledgeBase() {
         let query = supabase.from('kb_articles').select('id,title,tags')
         if (!isAdmin) query = query.eq('status', 'published')
         query = query.ilike('title', `%${search.trim()}%`).limit(6)
-        const { data } = await query
+        const { data } = await safeSb(query)
         setSuggestions(data || [])
         setShowSuggestions((data || []).length > 0)
       } catch { setSuggestions([]); setShowSuggestions(false) }

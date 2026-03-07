@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, clearAndRedirect } from './supabase'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -47,9 +47,9 @@ async function apiFetch(path, options = {}) {
     res = await doFetch()
   }
 
-  // Still 401 after retries — session is truly dead, redirect to login
+  // Still 401 after retries — session is truly dead, clear storage and redirect
   if (res.status === 401) {
-    window.location.href = '/login'
+    clearAndRedirect()
     throw new Error('Session expired')
   }
 

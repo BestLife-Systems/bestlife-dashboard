@@ -6,7 +6,7 @@ import { fetchMyInstances, updateInstanceStatus } from '../../lib/tasksApi'
 import { fetchMeetingInstances, deleteMeetingInstance } from '../../lib/meetingsApi'
 import { fetchAnnouncements, createAnnouncement, updateAnnouncement, deleteAnnouncement } from '../../lib/announcementsApi'
 import { apiGet, apiPatch } from '../../lib/api'
-import { supabase } from '../../lib/supabase'
+import { supabase, safeSb } from '../../lib/supabase'
 import { formatDateWeekday as formatDate, isOverdue, isToday, isThisWeek, relativeTime, todayStr } from '../../lib/utils'
 import Modal from '../../components/Modal'
 
@@ -419,7 +419,7 @@ export default function Home() {
   async function loadWins() {
     setLoadingWins(true)
     try {
-      const { data, error } = await supabase.from('wins').select('*, users(first_name, last_name)').order('created_at', { ascending: false }).limit(20)
+      const { data, error } = await safeSb(supabase.from('wins').select('*, users(first_name, last_name)').order('created_at', { ascending: false }).limit(20))
       if (error) throw error
       setWins(data || [])
     } catch (err) { console.error('Failed to load wins:', err); setWins([]) } finally { setLoadingWins(false) }
@@ -482,12 +482,12 @@ export default function Home() {
     if (!winForm.body.trim()) return
     setWinSaving(true)
     try {
-      if (winModal.editing) await supabase.from('wins').update({ category: winForm.category, body: winForm.body.trim() }).eq('id', winModal.editing.id)
-      else await supabase.from('wins').insert({ user_id: profile.id, category: winForm.category, body: winForm.body.trim() })
+      if (winModal.editing) await safeSb(supabase.from('wins').update({ category: winForm.category, body: winForm.body.trim() }).eq('id', winModal.editing.id))
+      else await safeSb(supabase.from('wins').insert({ user_id: profile.id, category: winForm.category, body: winForm.body.trim() }))
       setWinModal({ open: false, editing: null }); loadWins()
     } catch (err) { console.error('Failed to save win:', err) } finally { setWinSaving(false) }
   }
-  async function removeWin(win) { try { await supabase.from('wins').delete().eq('id', win.id); loadWins() } catch (err) { console.error(err) } }
+  async function removeWin(win) { try { await safeSb(supabase.from('wins').delete().eq('id', win.id)); loadWins() } catch (err) { console.error(err) } }
 
   // ── Meeting handlers ──
   function openAddMeeting() { setMeetingForm({ title: '', meeting_date: todayStr(), meeting_time: '' }); setMeetingModal({ open: true, editing: null }) }
@@ -496,8 +496,8 @@ export default function Home() {
     if (!meetingForm.title.trim()) return
     setMeetingSaving(true)
     try {
-      if (meetingModal.editing) await supabase.from('meeting_instances').update({ title: meetingForm.title.trim(), meeting_date: meetingForm.meeting_date, meeting_time: meetingForm.meeting_time || null }).eq('id', meetingModal.editing.id)
-      else await supabase.from('meeting_instances').insert({ title: meetingForm.title.trim(), meeting_date: meetingForm.meeting_date, meeting_time: meetingForm.meeting_time || null })
+      if (meetingModal.editing) await safeSb(supabase.from('meeting_instances').update({ title: meetingForm.title.trim(), meeting_date: meetingForm.meeting_date, meeting_time: meetingForm.meeting_time || null }).eq('id', meetingModal.editing.id))
+      else await safeSb(supabase.from('meeting_instances').insert({ title: meetingForm.title.trim(), meeting_date: meetingForm.meeting_date, meeting_time: meetingForm.meeting_time || null }))
       setMeetingModal({ open: false, editing: null }); loadMeetings()
     } catch (err) { console.error('Failed to save meeting:', err) } finally { setMeetingSaving(false) }
   }
