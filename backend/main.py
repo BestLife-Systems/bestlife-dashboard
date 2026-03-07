@@ -505,16 +505,6 @@ async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depen
             "limit": "1",
         })
 
-        # Also get the most recent prior rate (for audit log)
-        prior = await sb_request("GET", "user_pay_rates", params={
-            "user_id": f"eq.{user_id}",
-            "rate_type_id": f"eq.{rt_id}",
-            "order": "effective_date.desc",
-            "select": "id, pay_rate, effective_date",
-            "limit": "1",
-        })
-        old_rate = float(prior[0]["pay_rate"]) if prior else None
-
         if existing_today:
             # Row exists for today — update it (same-day rate correction)
             if float(existing_today[0].get("pay_rate", 0)) != pay_rate:
@@ -522,42 +512,26 @@ async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depen
                     "pay_rate": pay_rate,
                     "updated_at": datetime.utcnow().isoformat(),
                 })
-                await sb_request("POST", "audit_log", data={
-                    "action": "pay_rate_updated",
-                    "entity_type": "user_pay_rates",
-                    "entity_id": existing_today[0]["id"],
-                    "user_id": admin["id"],
-                    "details": {
-                        "target_user_id": user_id,
-                        "rate_type_id": rt_id,
-                        "old_rate": old_rate,
-                        "new_rate": pay_rate,
-                        "effective_date": today,
-                    },
-                })
         else:
             # Insert new row with today's effective_date (preserves old rows)
-            result = await sb_request("POST", "user_pay_rates", data={
+            await sb_request("POST", "user_pay_rates", data={
                 "user_id": user_id,
                 "rate_type_id": rt_id,
                 "pay_rate": pay_rate,
                 "effective_date": today,
             })
-            new_id = result[0]["id"] if isinstance(result, list) and result else None
-            await sb_request("POST", "audit_log", data={
-                "action": "pay_rate_created" if old_rate is None else "pay_rate_updated",
-                "entity_type": "user_pay_rates",
-                "entity_id": new_id,
-                "user_id": admin["id"],
-                "details": {
-                    "target_user_id": user_id,
-                    "rate_type_id": rt_id,
-                    "old_rate": old_rate,
-                    "new_rate": pay_rate,
-                    "effective_date": today,
-                },
-            })
         saved += 1
+
+    # Best-effort audit log (don't block save if audit_log table is missing)
+    try:
+        await sb_request("POST", "audit_log", data={
+            "action": "pay_rates_updated",
+            "entity_type": "user_pay_rates",
+            "user_id": admin["id"],
+            "details": {"target_user_id": user_id, "effective_date": today, "count": saved},
+        })
+    except Exception:
+        pass  # Audit logging is non-critical
 
     return {"status": "saved", "count": saved}
 
