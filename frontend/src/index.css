@@ -1261,14 +1261,17 @@ a { color: var(--accent); text-decoration: none; }
   font-family: var(--font-display);
   font-size: 2.4rem;
   font-weight: 400;
-  color: var(--text-bright);
-  text-shadow: 0 1px 8px rgba(0,0,0,0.25);
+  color: #ffffff;
+  text-shadow:
+    0 0 20px rgba(0, 187, 238, 0.5),
+    0 0 40px rgba(0, 187, 238, 0.25),
+    0 2px 12px rgba(0, 0, 0, 0.6);
 }
 .kb-hero-sub {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 1rem;
   margin-top: 0.35rem;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* Search wrap */
@@ -1389,17 +1392,30 @@ a { color: var(--accent); text-decoration: none; }
   transition: box-shadow 0.3s ease, border-color 0.3s ease;
   flex-shrink: 0;
 }
-/* Arc label SVG — centered over the icon, larger so text sits outside */
+/* Arc label SVG — kept for backward compat, hidden */
 .kb-orbit-arc-label {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  overflow: visible;
+  display: none;
 }
-.kb-orbit-arc-label text {
-  transition: fill 0.25s ease;
+/* Clean HTML label below each orb */
+.kb-orbit-label {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.7),
+    0 0 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transition: color 0.25s ease;
+}
+.kb-orbit-node-js--hovered .kb-orbit-label {
+  color: #ffffff;
 }
 /* Hover: glow the icon */
 .kb-orbit-node-js--hovered .kb-orbit-node-icon-js {
@@ -1645,8 +1661,7 @@ a { color: var(--accent); text-decoration: none; }
   .kb-orbit-node-icon-js { width: 54px; height: 54px; }
   .kb-orbit-node-glow { width: 54px; height: 54px; }
   .kb-orbit-node-icon-js svg { width: 28px; height: 28px; }
-  .kb-orbit-arc-label { width: 110px; height: 110px; }
-  .kb-orbit-arc-label text { font-size: 9px; }
+  .kb-orbit-label { font-size: 0.68rem; }
   .kb-hero-title { font-size: 1.85rem; }
   .kb-hero { margin-bottom: 1.25rem; }
 }
@@ -1677,8 +1692,7 @@ a { color: var(--accent); text-decoration: none; }
   .kb-orbit-node-icon-js { width: 40px; height: 40px; }
   .kb-orbit-node-glow { width: 40px; height: 40px; }
   .kb-orbit-node-icon-js svg { width: 22px; height: 22px; }
-  .kb-orbit-arc-label { width: 86px; height: 86px; }
-  .kb-orbit-arc-label text { font-size: 7px; }
+  .kb-orbit-label { font-size: 0.6rem; }
   .kb-hero-title { font-size: 1.5rem; }
   .kb-hero { margin-bottom: 1rem; }
 }

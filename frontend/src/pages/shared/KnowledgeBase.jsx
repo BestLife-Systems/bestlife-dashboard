@@ -373,19 +373,10 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
     return () => cancelAnimationFrame(rafRef.current)
   }, [categories.length])
 
-  // The SVG arc label traces the outside-bottom of the icon circle.
-  // Icon is 80px (r=40). We want text on a circle of r=54 (14px outside the icon edge).
-  // The SVG is 160x160 centered on the icon. The arc center is at (80,80).
-  const arcR = 54 // radius for text path (outside the 40px icon radius)
-  const svgSize = 160
-  const cx = svgSize / 2
-  const cy = svgSize / 2
-
   return (
     <div className="kb-orbit-track-js">
       {categories.map((cat, i) => {
         const isHovered = hoveredCat === i
-        const arcId = `arc-${cat.name.replace(/[^a-zA-Z]/g, '')}`
         return (
           <div
             key={cat.name}
@@ -401,51 +392,7 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
               <div className="kb-orbit-node-icon-js">
                 {CAT_ICONS[cat.name]}
               </div>
-              {/* SVG arc label — positioned absolutely over the icon, text on outside-bottom arc */}
-              <svg
-                className="kb-orbit-arc-label"
-                width={svgSize}
-                height={svgSize}
-                viewBox={`0 0 ${svgSize} ${svgSize}`}
-              >
-                <defs>
-                  <path
-                    id={arcId}
-                    d={`M ${cx - arcR} ${cy} A ${arcR} ${arcR} 0 0 1 ${cx + arcR} ${cy}`}
-                  />
-                  <filter id={`shadow-${arcId}`} x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.5" />
-                  </filter>
-                </defs>
-                {/* White stroke outline behind colored text for contrast on any sky */}
-                <text
-                  fill="none"
-                  stroke="#fff"
-                  strokeWidth="3.5"
-                  strokeLinejoin="round"
-                  fontSize="13.5"
-                  fontFamily="'DM Sans', sans-serif"
-                  fontWeight="600"
-                  letterSpacing="0.04em"
-                  opacity="0.85"
-                >
-                  <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
-                    {cat.name}
-                  </textPath>
-                </text>
-                <text
-                  fill={isHovered ? '#ffffff' : (cat.color || '#7d8a82')}
-                  fontSize="13.5"
-                  fontFamily="'DM Sans', sans-serif"
-                  fontWeight="600"
-                  letterSpacing="0.04em"
-                  filter={`url(#shadow-${arcId})`}
-                >
-                  <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
-                    {cat.name}
-                  </textPath>
-                </text>
-              </svg>
+              <span className="kb-orbit-label">{cat.name}</span>
             </div>
           </div>
         )

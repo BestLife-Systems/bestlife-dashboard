@@ -83,16 +83,16 @@ document.addEventListener('visibilitychange', async () => {
 
 // ── Safe wrapper for direct Supabase client calls ───────────────────
 // Wraps any Promise (e.g. supabase.from('x').select()) with a timeout.
-// If the call hangs (broken auth state), it clears storage and redirects
-// to login instead of freezing the UI.
+// A slow query should NOT log the user out — it just fails gracefully.
+// Session-death redirects only happen via the 401 handler (api.js)
+// and the visibilitychange health check above.
 export async function safeSb(promise, timeoutMs = 10000) {
   const result = await Promise.race([
     promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase call timed out')), timeoutMs)),
   ]).catch(err => {
     if (err.message === 'Supabase call timed out') {
-      console.warn('Direct Supabase call hung — clearing session')
-      clearAndRedirect()
+      console.warn('Direct Supabase call timed out (not redirecting)')
     }
     throw err
   })
