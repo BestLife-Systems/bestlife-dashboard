@@ -80,6 +80,33 @@ async def _set_last_run_date(date_str: str):
         logger.error(f"Could not persist scheduler_last_run to DB: {e}")
 
 
+async def _get_cadence_config() -> dict:
+    """Read cadence offsets from app_settings (falls back to defaults)."""
+    try:
+        rows = await sb_request("GET", "app_settings", params={
+            "key": "in.(cadence_window_open_days,cadence_deadline_days)",
+        }) or []
+        config = {r["key"]: r["value"] for r in rows}
+    except Exception as e:
+        logger.warning(f"Could not read cadence config from DB: {e}")
+        config = {}
+    return {
+        "window_open_days": int(config.get("cadence_window_open_days", "2")),
+        "deadline_days": int(config.get("cadence_deadline_days", "4")),
+    }
+
+
+async def _upsert_setting(key: str, value: str):
+    """Insert or update a single app_settings row."""
+    existing = await sb_request("GET", "app_settings", params={
+        "key": f"eq.{key}", "select": "key",
+    })
+    if existing:
+        await sb_request("PATCH", f"app_settings?key=eq.{key}", data={"value": value})
+    else:
+        await sb_request("POST", "app_settings", data={"key": key, "value": value})
+
+
 async def _scheduler_loop():
     """Background loop: checks every 15 min, runs daily logic once at target hour."""
     global _last_run_date
@@ -160,6 +187,11 @@ async def _run_daily_logic(today_str: str, dry_run: bool = False) -> dict:
     from datetime import date as date_type
     today = date_type.fromisoformat(today_str)
 
+    # Read cadence config once for the entire run
+    cadence = await _get_cadence_config()
+    wo_days = cadence["window_open_days"]
+    dl_days = cadence["deadline_days"]
+
     results = {
         "date": today.isoformat(),
         "dry_run": dry_run,
@@ -174,7 +206,7 @@ async def _run_daily_logic(today_str: str, dry_run: bool = False) -> dict:
     # ── Step 1: Auto-create upcoming pay periods ──
     if not dry_run:
         try:
-            results["periods_created"] = await _auto_create_periods(today)
+            results["periods_created"] = await _auto_create_periods(today, wo_days, dl_days)
         except Exception as e:
             logger.error(f"Auto-create failed: {e}")
             results["errors"].append(f"auto_create: {e}")
@@ -192,8 +224,8 @@ async def _run_daily_logic(today_str: str, dry_run: bool = False) -> dict:
                 continue
 
             end_date = date_type.fromisoformat(end_date_str)
-            window_open = end_date - timedelta(days=2)
-            deadline = end_date + timedelta(days=4)
+            window_open = end_date - timedelta(days=wo_days)
+            deadline = end_date + timedelta(days=dl_days)
 
             actions = get_reminder_actions(today, window_open, deadline)
 
@@ -235,9 +267,9 @@ async def _run_daily_logic(today_str: str, dry_run: bool = False) -> dict:
 # ══════════════════════════════════════════════════════════════════
 
 
-async def _auto_create_periods(today) -> int:
+async def _auto_create_periods(today, window_open_days: int = 2, deadline_days: int = 4) -> int:
     """Create any missing pay periods for the next 45 days."""
-    needed = upcoming_periods(today, days_ahead=45)
+    needed = upcoming_periods(today, days_ahead=45, window_open_days=window_open_days, deadline_days=deadline_days)
 
     existing = await sb_request("GET", "pay_periods", params={
         "select": "start_date,end_date",
@@ -534,15 +566,18 @@ async def scheduler_status(admin=Depends(require_admin)):
     from datetime import date as date_type
 
     today = today_et()
+    cadence = await _get_cadence_config()
+    wo_days = cadence["window_open_days"]
+    dl_days = cadence["deadline_days"]
 
     # Build upcoming cadence (next ~45 days)
     cadence_preview = []
-    periods = upcoming_periods(today, days_ahead=45)
+    periods = upcoming_periods(today, days_ahead=45, window_open_days=wo_days, deadline_days=dl_days)
     for p in periods:
         end_date = p["end_date"]
-        window_open = end_date - timedelta(days=2)
-        deadline = end_date + timedelta(days=4)
-        info = calculate_period_info(p["start_date"], p["end_date"])
+        window_open = end_date - timedelta(days=wo_days)
+        deadline = end_date + timedelta(days=dl_days)
+        info = calculate_period_info(p["start_date"], p["end_date"], wo_days, dl_days)
 
         # For each date in the cadence window, show what fires
         actions_by_date = {}
@@ -565,9 +600,11 @@ async def scheduler_status(admin=Depends(require_admin)):
             "actions": actions_by_date,
         })
 
-    # Check existing pay periods in DB
+    # Recent periods — filter out far-future drafts
+    cutoff = (today + timedelta(days=30)).isoformat()
     db_periods = await sb_request("GET", "pay_periods", params={
         "select": "id,label,status,start_date,end_date,due_date,opened_at",
+        "start_date": f"lte.{cutoff}",
         "order": "start_date.desc",
         "limit": "6",
     }) or []
@@ -579,6 +616,7 @@ async def scheduler_status(admin=Depends(require_admin)):
         "sms_enabled": SMS_ENABLED,
         "app_url": APP_URL,
         "today": today.isoformat(),
+        "cadence_config": cadence,
         "cadence_preview": cadence_preview,
         "recent_periods": db_periods,
     }
@@ -609,3 +647,27 @@ async def scheduler_run_now(admin=Depends(require_admin)):
     _last_run_date = date_str
     await _set_last_run_date(date_str)
     return results
+
+
+@router.patch("/scheduler/cadence")
+async def update_cadence(body: dict, admin=Depends(require_admin)):
+    """Update the submission window cadence offsets.
+
+    Body: { "window_open_days": 2, "deadline_days": 4 }
+    """
+    window = body.get("window_open_days")
+    deadline = body.get("deadline_days")
+
+    if window is not None:
+        window = int(window)
+        if not (1 <= window <= 7):
+            raise HTTPException(400, "window_open_days must be between 1 and 7")
+        await _upsert_setting("cadence_window_open_days", str(window))
+
+    if deadline is not None:
+        deadline = int(deadline)
+        if not (2 <= deadline <= 10):
+            raise HTTPException(400, "deadline_days must be between 2 and 10")
+        await _upsert_setting("cadence_deadline_days", str(deadline))
+
+    return await _get_cadence_config()

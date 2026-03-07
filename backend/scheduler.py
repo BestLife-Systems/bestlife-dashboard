@@ -87,16 +87,22 @@ def today_et() -> date:
 # ── Pay Period Calculation ────────────────────────────────────────
 
 
-def calculate_period_info(start: date, end: date) -> Dict:
+def calculate_period_info(
+    start: date,
+    end: date,
+    window_open_days: int = 2,
+    deadline_days: int = 4,
+) -> Dict:
     """Derive all key dates for a pay period.
 
+    Args:
+        start: period start date
+        end: period end date
+        window_open_days: how many days before end the submission window opens
+        deadline_days: how many days after end the submission deadline falls
+
     Returns:
-        start_date:  period start
-        end_date:    period end
-        window_open: 3 days before end (inclusive) — providers can start submitting
-        deadline:    end + 4 days — submission deadline (7-day window)
-        pay_date:    nominal pay date (15th or last day of next half-month)
-        effective_pay_date: adjusted for weekends/holidays
+        start_date, end_date, window_open, deadline, pay_date, effective_pay_date
     """
     # Determine nominal pay date
     # Second-half period (16th–end) → paid on 15th of next month
@@ -114,14 +120,19 @@ def calculate_period_info(start: date, end: date) -> Dict:
     return {
         "start_date": start,
         "end_date": end,
-        "window_open": end - timedelta(days=2),
-        "deadline": end + timedelta(days=4),
+        "window_open": end - timedelta(days=window_open_days),
+        "deadline": end + timedelta(days=deadline_days),
         "pay_date": pay,
         "effective_pay_date": prev_business_day(pay),
     }
 
 
-def upcoming_periods(from_date: date, days_ahead: int = 45) -> List[Dict]:
+def upcoming_periods(
+    from_date: date,
+    days_ahead: int = 45,
+    window_open_days: int = 2,
+    deadline_days: int = 4,
+) -> List[Dict]:
     """Generate all pay periods that should exist from from_date looking ahead.
 
     Returns a list of dicts, each with:
@@ -141,8 +152,8 @@ def upcoming_periods(from_date: date, days_ahead: int = 45) -> List[Dict]:
             ("first_half", date(yr, mo, 1), date(yr, mo, 15)),
             ("second_half", date(yr, mo, 16), eom),
         ]:
-            info = calculate_period_info(start, end)
-            # Only include periods whose window_open is in the future or recent past
+            info = calculate_period_info(start, end, window_open_days, deadline_days)
+            # Only include periods whose deadline is in the future or recent past
             if info["deadline"] >= from_date:
                 label = f"{start.strftime('%b %d')} - {end.strftime('%b %d, %Y')}"
                 periods.append({

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { apiUpload, apiGet, apiPost } from '../../lib/api'
+import { apiUpload, apiGet, apiPost, apiPatch } from '../../lib/api'
 import { fetchTemplates, createTemplate, updateTemplate, deleteTemplate, generateInstances } from '../../lib/tasksApi'
 import { fetchMeetingTemplates, createMeetingTemplate, updateMeetingTemplate, deleteMeetingTemplate, generateMeetings } from '../../lib/meetingsApi'
 import Modal from '../../components/Modal'
@@ -122,11 +122,10 @@ export default function AdminSettings() {
   const [schedulerStatus, setSchedulerStatus] = useState(null)
   const [schedulerLoading, setSchedulerLoading] = useState(false)
   const [schedulerError, setSchedulerError] = useState(null)
-  const [dryRunResult, setDryRunResult] = useState(null)
-  const [dryRunDate, setDryRunDate] = useState('')
-  const [dryRunning, setDryRunning] = useState(false)
-  const [runningNow, setRunningNow] = useState(false)
-  const [runNowResult, setRunNowResult] = useState(null)
+  const [cadenceWindowDays, setCadenceWindowDays] = useState(2)
+  const [cadenceDeadlineDays, setCadenceDeadlineDays] = useState(4)
+  const [cadenceSaving, setCadenceSaving] = useState(false)
+  const [cadenceSaved, setCadenceSaved] = useState(false)
 
   useEffect(() => {
     apiGet('/settings/last-upload').then(setLastUpload).catch(() => {})
@@ -345,6 +344,10 @@ export default function AdminSettings() {
     try {
       const data = await apiGet('/scheduler/status')
       setSchedulerStatus(data)
+      if (data.cadence_config) {
+        setCadenceWindowDays(data.cadence_config.window_open_days)
+        setCadenceDeadlineDays(data.cadence_config.deadline_days)
+      }
       setSchedulerError(null)
     } catch (err) {
       setSchedulerError('Could not load scheduler status: ' + err.message)
@@ -353,34 +356,21 @@ export default function AdminSettings() {
     }
   }
 
-  async function handleDryRun() {
-    setDryRunning(true)
-    setDryRunResult(null)
-    setRunNowResult(null)
+  async function handleSaveCadence() {
+    setCadenceSaving(true)
+    setCadenceSaved(false)
     try {
-      const params = dryRunDate ? `?test_date=${dryRunDate}` : ''
-      const data = await apiPost(`/scheduler/dry-run${params}`)
-      setDryRunResult(data)
-    } catch (err) {
-      setSchedulerError('Dry run failed: ' + err.message)
-    } finally {
-      setDryRunning(false)
-    }
-  }
-
-  async function handleRunNow() {
-    if (!confirm('Run the scheduler now? This will send real emails to providers if any actions are due today.')) return
-    setRunningNow(true)
-    setRunNowResult(null)
-    setDryRunResult(null)
-    try {
-      const data = await apiPost('/scheduler/run-now')
-      setRunNowResult(data)
+      await apiPatch('/scheduler/cadence', {
+        window_open_days: cadenceWindowDays,
+        deadline_days: cadenceDeadlineDays,
+      })
+      setCadenceSaved(true)
+      setTimeout(() => setCadenceSaved(false), 3000)
       loadSchedulerStatus()
     } catch (err) {
-      setSchedulerError('Run failed: ' + err.message)
+      setSchedulerError('Failed to save cadence: ' + err.message)
     } finally {
-      setRunningNow(false)
+      setCadenceSaving(false)
     }
   }
 
@@ -544,7 +534,7 @@ export default function AdminSettings() {
                       {schedulerStatus.sms_enabled ? (
                         <span className="badge badge--success" style={{ fontSize: '0.7rem' }}>Enabled</span>
                       ) : (
-                        <span className="badge badge--muted" style={{ fontSize: '0.7rem' }}>Disabled (awaiting Twilio approval)</span>
+                        <span className="badge badge--muted" style={{ fontSize: '0.7rem' }}>Disabled</span>
                       )}
                     </span>
                   </div>
@@ -558,17 +548,50 @@ export default function AdminSettings() {
                   </div>
                 </div>
 
-                {/* Recent Periods in DB */}
+                {/* Submission Window Config */}
+                <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Submission Window</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      <span>Opens</span>
+                      <input
+                        type="number" min="1" max="7"
+                        value={cadenceWindowDays}
+                        onChange={e => setCadenceWindowDays(parseInt(e.target.value) || 2)}
+                        style={{ width: '50px', padding: '0.3rem 0.4rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', textAlign: 'center' }}
+                      />
+                      <span>days before period ends</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                      <span>Deadline</span>
+                      <input
+                        type="number" min="2" max="10"
+                        value={cadenceDeadlineDays}
+                        onChange={e => setCadenceDeadlineDays(parseInt(e.target.value) || 4)}
+                        style={{ width: '50px', padding: '0.3rem 0.4rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', textAlign: 'center' }}
+                      />
+                      <span>days after period ends</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      <button className="btn btn--primary btn--small" onClick={handleSaveCadence} disabled={cadenceSaving}>
+                        {cadenceSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      {cadenceSaved && <span style={{ fontSize: '0.78rem', color: '#16a34a' }}>Saved</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Current & Recent Periods */}
                 {schedulerStatus.recent_periods && schedulerStatus.recent_periods.length > 0 && (
                   <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Recent Pay Periods</div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Current & Recent Periods</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                       {schedulerStatus.recent_periods.map((p, i) => (
                         <div key={i} className="card" style={{ padding: '0.5rem 0.75rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)' }}>{p.label || `${p.start_date} – ${p.end_date}`}</span>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              <span className={`badge ${p.status === 'open' ? 'badge--success' : p.status === 'closed' ? 'badge--muted' : 'badge--info'}`} style={{ fontSize: '0.68rem' }}>
+                              <span className={`badge ${p.status === 'open' ? 'badge--success' : p.status === 'closed' ? 'badge--muted' : 'badge--muted'}`} style={{ fontSize: '0.68rem' }}>
                                 {p.status}
                               </span>
                               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Due: {p.due_date}</span>
@@ -612,101 +635,6 @@ export default function AdminSettings() {
                     </div>
                   </div>
                 )}
-
-                {/* Dry Run / Run Now */}
-                <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)' }}>Manual Controls</div>
-
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input
-                      type="date"
-                      value={dryRunDate}
-                      onChange={e => setDryRunDate(e.target.value)}
-                      placeholder="Simulate date"
-                      style={{ padding: '0.35rem 0.5rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', flex: '1', minWidth: '140px' }}
-                    />
-                    <button className="btn btn--secondary btn--small" onClick={handleDryRun} disabled={dryRunning}>
-                      {dryRunning ? 'Running...' : 'Dry Run'}
-                    </button>
-                    <button className="btn btn--primary btn--small" onClick={handleRunNow} disabled={runningNow}>
-                      {runningNow ? 'Running...' : 'Run Now'}
-                    </button>
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Dry Run shows what would happen. Run Now actually sends emails.
-                  </div>
-                </div>
-
-                {/* Dry Run Results */}
-                {dryRunResult && (
-                  <div style={{ background: '#0082b410', borderRadius: 'var(--radius-sm)', padding: '0.75rem', border: '1px solid #0082b430' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0082b4', marginBottom: '0.35rem' }}>
-                      Dry Run Results — {dryRunResult.date}
-                    </div>
-                    <div className="settings-info" style={{ background: 'transparent', padding: 0 }}>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Periods Would Create</span>
-                        <span className="settings-info-value">{dryRunResult.periods_created}</span>
-                      </div>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Actions Planned</span>
-                        <span className="settings-info-value">{dryRunResult.actions_planned?.length || 0}</span>
-                      </div>
-                    </div>
-                    {dryRunResult.actions_planned && dryRunResult.actions_planned.length > 0 && (
-                      <div style={{ marginTop: '0.4rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                        {dryRunResult.actions_planned.map((a, i) => (
-                          <span key={i} style={{
-                            display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 500,
-                            background: (ACTION_COLORS[a.action] || '#888') + '18', color: ACTION_COLORS[a.action] || '#888',
-                          }}>
-                            {a.period}: {ACTION_LABELS[a.action] || a.action} ({a.status})
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {dryRunResult.actions_planned && dryRunResult.actions_planned.length === 0 && (
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>No actions scheduled for this date.</div>
-                    )}
-                  </div>
-                )}
-
-                {/* Run Now Results */}
-                {runNowResult && (
-                  <div style={{ background: '#16a34a10', borderRadius: 'var(--radius-sm)', padding: '0.75rem', border: '1px solid #16a34a30' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#16a34a', marginBottom: '0.35rem' }}>
-                      Run Complete — {runNowResult.date}
-                    </div>
-                    <div className="settings-info" style={{ background: 'transparent', padding: 0 }}>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Periods Created</span>
-                        <span className="settings-info-value">{runNowResult.periods_created}</span>
-                      </div>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Periods Opened</span>
-                        <span className="settings-info-value">{runNowResult.periods_opened}</span>
-                      </div>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Reminders Sent</span>
-                        <span className="settings-info-value">{runNowResult.reminders_sent}</span>
-                      </div>
-                      <div className="settings-info-row">
-                        <span className="settings-info-label">Admin Summaries</span>
-                        <span className="settings-info-value">{runNowResult.admin_summaries_sent}</span>
-                      </div>
-                    </div>
-                    {runNowResult.errors && runNowResult.errors.length > 0 && (
-                      <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#e74c3c' }}>
-                        Errors: {runNowResult.errors.join(', ')}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Info note */}
-                <div style={{ padding: '0.65rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  The scheduler runs daily at {schedulerStatus.scheduler_hour}:00 AM ET. To change the run time, set <code style={{ background: 'var(--bg-card)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.73rem' }}>SCHEDULER_HOUR</code> in Railway. To enable SMS, set <code style={{ background: 'var(--bg-card)', padding: '0.1rem 0.3rem', borderRadius: '3px', fontSize: '0.73rem' }}>SMS_ENABLED=true</code> once Twilio is approved.
-                </div>
               </div>
             ) : null}
           </div>
