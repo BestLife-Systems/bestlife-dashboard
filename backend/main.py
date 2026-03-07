@@ -487,51 +487,31 @@ class UserPayRatesRequest(BaseModel):
 
 @app.post("/api/payroll/user-pay-rates/{user_id}")
 async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depends(require_admin)):
-    """Admin: set pay rates for a user. Inserts new effective-dated rows to
-    preserve rate history. Old rates remain in the table for audit trail."""
+    """Admin: set pay rates for a user (upsert). Historical billing data is
+    protected by time_entries snapshots — safe to update rates in place."""
     saved = 0
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-
     for rate in req.rates:
         rt_id = rate["rate_type_id"]
         pay_rate = rate["pay_rate"]
-
-        # Check if a rate already exists for TODAY's effective_date
-        existing_today = await sb_request("GET", "user_pay_rates", params={
+        # Check if existing rate exists for this user + rate_type
+        existing = await sb_request("GET", "user_pay_rates", params={
             "user_id": f"eq.{user_id}",
             "rate_type_id": f"eq.{rt_id}",
-            "effective_date": f"eq.{today}",
-            "select": "id, pay_rate",
+            "select": "id",
             "limit": "1",
         })
-
-        if existing_today:
-            # Row exists for today — update it (same-day rate correction)
-            if float(existing_today[0].get("pay_rate", 0)) != pay_rate:
-                await sb_request("PATCH", f"user_pay_rates?id=eq.{existing_today[0]['id']}", data={
-                    "pay_rate": pay_rate,
-                    "updated_at": datetime.utcnow().isoformat(),
-                })
+        if existing:
+            await sb_request("PATCH", f"user_pay_rates?user_id=eq.{user_id}&rate_type_id=eq.{rt_id}", data={
+                "pay_rate": pay_rate,
+                "updated_at": datetime.utcnow().isoformat(),
+            })
         else:
-            # Insert new row with today's effective_date (preserves old rows)
             await sb_request("POST", "user_pay_rates", data={
                 "user_id": user_id,
                 "rate_type_id": rt_id,
                 "pay_rate": pay_rate,
-                "effective_date": today,
             })
         saved += 1
-
-    # Best-effort audit log (don't block save if audit_log table is missing)
-    try:
-        await sb_request("POST", "audit_log", data={
-            "action": "pay_rates_updated",
-            "entity_type": "user_pay_rates",
-            "user_id": admin["id"],
-            "details": {"target_user_id": user_id, "effective_date": today, "count": saved},
-        })
-    except Exception:
-        pass  # Audit logging is non-critical
 
     return {"status": "saved", "count": saved}
 
