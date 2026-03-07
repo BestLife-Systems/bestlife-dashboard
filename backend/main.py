@@ -1085,13 +1085,15 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
                 rate_type_fallback[new_name] = {"id": rate_type_id, "name": new_name, "unit": "hourly"}
         pay_rate = rate_info.get("pay_rate", 0)
         bill_rate = bill_rate_map.get(resolved_name, 0) or bill_rate_map.get(rate_name, 0)
-        unit = rate_info.get("unit") or fallback.get("unit", "hourly")
-        if unit == "session":
-            # Session-based types (e.g. ADOS): flat rate per session/assessment.
-            # qty is hours for tracking (e.g. 3.0 for ADOS) but pay/bill is per session.
+        # ADOS assessments are flat rate per assessment (not rate × hours).
+        # qty=3.0 for ADOS is hours toward requirement, but pay/bill is per assessment.
+        # Check by name since the unit field in rate_types is unreliable
+        # (APN has unit='session' but is actually billed hourly).
+        is_ados = "ADOS" in rate_name or "ADOS" in resolved_name
+        if is_ados:
             est_bill = bill_rate
             est_pay = pay_rate
-            total_hours += qty  # ADOS hours still count toward hourly requirement
+            total_hours += qty
             total_sessions += 1
         else:
             est_bill = bill_rate * qty
