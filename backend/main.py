@@ -461,8 +461,24 @@ async def update_rate_type(rate_type_id: str, req: RateTypeRequest, admin=Depend
 
 @app.get("/api/payroll/user-pay-rates")
 async def get_all_user_pay_rates(admin=Depends(require_admin)):
-    """Admin: get all user pay rates."""
-    return await sb_request("GET", "user_pay_rates", params={"select": "*"}) or []
+    """Admin: get all user pay rates (latest effective per user+rate_type).
+    With rate versioning, old rates are preserved with earlier effective_dates.
+    This endpoint returns only the current rate for each user+rate_type pair."""
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    all_rates = await sb_request("GET", "user_pay_rates", params={
+        "select": "*",
+        "effective_date": f"lte.{today_str}",
+        "order": "effective_date.desc",
+    }) or []
+    # Deduplicate: keep only the latest rate per (user_id, rate_type_id)
+    seen = set()
+    result = []
+    for r in all_rates:
+        key = (r["user_id"], r["rate_type_id"])
+        if key not in seen:
+            seen.add(key)
+            result.append(r)
+    return result
 
 
 class UserPayRatesRequest(BaseModel):
@@ -471,28 +487,75 @@ class UserPayRatesRequest(BaseModel):
 
 @app.post("/api/payroll/user-pay-rates/{user_id}")
 async def set_user_pay_rates(user_id: str, req: UserPayRatesRequest, admin=Depends(require_admin)):
-    """Admin: set pay rates for a user (upsert)."""
+    """Admin: set pay rates for a user. Inserts new effective-dated rows to
+    preserve rate history. Old rates remain in the table for audit trail."""
     saved = 0
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
     for rate in req.rates:
         rt_id = rate["rate_type_id"]
         pay_rate = rate["pay_rate"]
-        # Check if existing rate exists for this user + rate_type (any date)
-        existing = await sb_request("GET", "user_pay_rates", params={
+
+        # Check if a rate already exists for TODAY's effective_date
+        existing_today = await sb_request("GET", "user_pay_rates", params={
             "user_id": f"eq.{user_id}",
             "rate_type_id": f"eq.{rt_id}",
-            "select": "id",
+            "effective_date": f"eq.{today}",
+            "select": "id, pay_rate",
             "limit": "1",
         })
-        if existing:
-            await sb_request("PATCH", f"user_pay_rates?user_id=eq.{user_id}&rate_type_id=eq.{rt_id}", data={
-                "pay_rate": pay_rate,
-                "updated_at": datetime.utcnow().isoformat(),
-            })
+
+        # Also get the most recent prior rate (for audit log)
+        prior = await sb_request("GET", "user_pay_rates", params={
+            "user_id": f"eq.{user_id}",
+            "rate_type_id": f"eq.{rt_id}",
+            "order": "effective_date.desc",
+            "select": "id, pay_rate, effective_date",
+            "limit": "1",
+        })
+        old_rate = float(prior[0]["pay_rate"]) if prior else None
+
+        if existing_today:
+            # Row exists for today — update it (same-day rate correction)
+            if float(existing_today[0].get("pay_rate", 0)) != pay_rate:
+                await sb_request("PATCH", f"user_pay_rates?id=eq.{existing_today[0]['id']}", data={
+                    "pay_rate": pay_rate,
+                    "updated_at": datetime.utcnow().isoformat(),
+                })
+                await sb_request("POST", "audit_log", data={
+                    "action": "pay_rate_updated",
+                    "entity_type": "user_pay_rates",
+                    "entity_id": existing_today[0]["id"],
+                    "user_id": admin["id"],
+                    "details": {
+                        "target_user_id": user_id,
+                        "rate_type_id": rt_id,
+                        "old_rate": old_rate,
+                        "new_rate": pay_rate,
+                        "effective_date": today,
+                    },
+                })
         else:
-            await sb_request("POST", "user_pay_rates", data={
+            # Insert new row with today's effective_date (preserves old rows)
+            result = await sb_request("POST", "user_pay_rates", data={
                 "user_id": user_id,
                 "rate_type_id": rt_id,
                 "pay_rate": pay_rate,
+                "effective_date": today,
+            })
+            new_id = result[0]["id"] if isinstance(result, list) and result else None
+            await sb_request("POST", "audit_log", data={
+                "action": "pay_rate_created" if old_rate is None else "pay_rate_updated",
+                "entity_type": "user_pay_rates",
+                "entity_id": new_id,
+                "user_id": admin["id"],
+                "details": {
+                    "target_user_id": user_id,
+                    "rate_type_id": rt_id,
+                    "old_rate": old_rate,
+                    "new_rate": pay_rate,
+                    "effective_date": today,
+                },
             })
         saved += 1
 
@@ -1004,15 +1067,25 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
     user_id = recipient["user_id"]
     period_id = recipient["pay_period_id"]
 
-    # Get user's pay rates
+    # Get user's pay rates (latest effective rate per rate_type).
+    # With rate versioning, a user may have multiple rows per rate_type
+    # with different effective_dates. We want only the most recent one
+    # that has taken effect (effective_date <= today).
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
     pay_rates = await sb_request("GET", "user_pay_rates", params={
         "user_id": f"eq.{user_id}",
+        "effective_date": f"lte.{today_str}",
+        "order": "effective_date.desc",
         "select": "*, rate_types(name, unit)",
     })
     pay_rate_map = {}
     for pr in (pay_rates or []):
         rt = pr.get("rate_types") or {}
-        pay_rate_map[rt.get("name", "")] = {
+        rname = rt.get("name", "")
+        # Only keep the first (latest) rate per rate_type name
+        if rname in pay_rate_map:
+            continue
+        pay_rate_map[rname] = {
             "rate_type_id": pr["rate_type_id"],
             "pay_rate": float(pr["pay_rate"]),
             "unit": rt.get("unit", "hourly"),
@@ -1691,8 +1764,48 @@ SERVICE_TO_RATE_NAME = {
     "APN 30 Min": "APN Session (30)",
     "APN Intake": "APN Intake (60)",
 }
-# Reverse map
+# Reverse map (forward only — bill rate names → service keys)
 RATE_NAME_TO_SERVICE = {v: k for k, v in SERVICE_TO_RATE_NAME.items()}
+
+# Comprehensive reverse map: rate_types.name → billing summary service key.
+# Covers all possible rate_type names that can appear on time_entries (including
+# pay-rate aliases, bill-rate names, and legacy names). Used by the snapshot-based
+# billing summary to map time_entries back to service categories.
+RATE_TYPE_TO_BILLING_SERVICE = {
+    # IIC
+    "IIC-LC": "IIC-LC",
+    "IIC LPC/LCSW": "IIC-LC",
+    "IIC-MA": "IIC-MA",
+    "IIC LAC/LSW": "IIC-MA",
+    "IIC-BA": "IIC-BA",
+    "Behavioral Assistant": "IIC-BA",
+    "IIC": "IIC-LC",  # legacy fallback
+    # OP
+    "OP-LC Session": "OP",
+    "OP-MA Session": "OP",
+    "OP Session": "OP",
+    # OP Cancellation
+    "OP Cancellation": "OP Cancellation",
+    # SBYS
+    "SBYS": "SBYS",
+    # ADOS
+    "ADOS Assessment - In Home": "ADOS In Home",
+    "ADOS Assessment (In Home)": "ADOS In Home",
+    "ADOS Assessment - At Office": "ADOS At Office",
+    "ADOS Assessment (In Office)": "ADOS At Office",
+    "ADOS": "ADOS In Home",  # legacy fallback
+    # APN
+    "APN Session (30)": "APN 30 Min",
+    "APN 30 Min": "APN 30 Min",
+    "APN Intake (60)": "APN Intake",
+    "APN Intake": "APN Intake",
+    # Time off
+    "PTO": "PTO",
+    "Sick Leave": "Sick Leave",
+    # Non-billing types — these are tracked as time entries but do not appear
+    # in the billing summary service categories. They will be silently skipped.
+    # "Administration", "Individual Supervision", "Group Supervision"
+}
 
 # Map service types → pay rate name candidates (try in order until one matches)
 # Some services have LC/MA variants — e.g. OP-LC Session vs OP-MA Session
@@ -1795,7 +1908,8 @@ def _extract_service_hours(invoice_data: dict) -> dict:
 async def billing_summary(admin=Depends(require_admin)):
     """
     Billing Summary: returns closed pay periods with per-service-type breakdowns.
-    Aggregates from approved recipients' invoice_data only.
+    Uses immutable time_entries snapshots (est_pay_amount, est_bill_amount) written
+    at approval time — changing pay rates will NOT alter historical summaries.
     Also returns any open/pending periods so the frontend can warn the user to close them.
     """
     # Get all closed pay periods (most recent first)
@@ -1834,60 +1948,53 @@ async def billing_summary(admin=Depends(require_admin)):
             rate = bill_rate_map.get(st, 0)
         service_bill_rates[st] = rate
 
-    # Get pay rates for all users (needed for per-service pay calculation)
-    all_pay_rates_list = await sb_request("GET", "user_pay_rates", params={
-        "select": "user_id, pay_rate, rate_types(name)",
-    })
-    user_pay_map_list = {}
-    for pr in (all_pay_rates_list or []):
-        uid = pr["user_id"]
-        rt = pr.get("rate_types") or {}
-        rname = rt.get("name", "")
-        if uid not in user_pay_map_list:
-            user_pay_map_list[uid] = {}
-        user_pay_map_list[uid][rname] = float(pr["pay_rate"])
+    # NOTE: Pay and revenue are now calculated from time_entries snapshots
+    # (est_pay_amount, est_bill_amount) written at approval time, NOT from
+    # live user_pay_rates. This ensures changing a staff member's rate does
+    # not retroactively alter historical billing summaries.
 
     period_summaries = []
 
     for period in periods:
         pid = period["id"]
-        # Only approved recipients for closed periods
+        # Get approved + exported recipients (exported must still appear in summary)
         recipients = await sb_request("GET", "pay_period_recipients", params={
             "pay_period_id": f"eq.{pid}",
-            "status": "eq.approved",
-            "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
+            "status": "in.(approved,exported)",
+            "select": "user_id",
+        })
+        valid_user_ids = {r["user_id"] for r in (recipients or [])}
+
+        # Query time_entries with rate_type name for this period
+        time_entries_list = await sb_request("GET", "time_entries", params={
+            "pay_period_id": f"eq.{pid}",
+            "select": "user_id, rate_type_id, quantity, est_pay_amount, est_bill_amount, rate_types(name)",
         })
 
-        # Aggregate by service type AND compute per-service pay
+        # Aggregate by billing service type from snapshot data
         service_totals = {st: 0.0 for st in SERVICE_TYPES}
         service_pay = {st: 0.0 for st in SERVICE_TYPES}
+        service_bill = {st: 0.0 for st in SERVICE_TYPES}
         ados_counts = {"ADOS In Home": 0, "ADOS At Office": 0}
-        for r in (recipients or []):
-            uid = r["user_id"]
-            hours, counts = _extract_service_hours(r.get("invoice_data") or {})
-            user_rates = user_pay_map_list.get(uid, {})
-            for st, h in hours.items():
-                service_totals[st] += h
-                # Compute pay: try each candidate pay-rate name, then bill-rate name
-                pay_rate_candidates = SERVICE_TO_PAY_RATE_NAMES.get(st, [])
-                bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
-                pay_rate = 0
-                for candidate in pay_rate_candidates:
-                    pay_rate = user_rates.get(candidate, 0)
-                    if pay_rate:
-                        break
-                if not pay_rate:
-                    pay_rate = user_rates.get(bill_rate_name, 0)
-                if st.startswith("ADOS"):
-                    # ADOS pay = assessments × session rate
-                    num_a = counts.get(st, 0)
-                    service_pay[st] += num_a * pay_rate
-                else:
-                    service_pay[st] += h * pay_rate
-            for k, v in counts.items():
-                ados_counts[k] = ados_counts.get(k, 0) + v
+        for te in (time_entries_list or []):
+            if te["user_id"] not in valid_user_ids:
+                continue
+            rt = te.get("rate_types") or {}
+            rate_name = rt.get("name", "")
+            service_key = RATE_TYPE_TO_BILLING_SERVICE.get(rate_name)
+            if not service_key or service_key not in service_totals:
+                continue  # Skip non-billing types (Administration, Supervision, etc.)
+            qty = float(te.get("quantity", 0))
+            pay_amt = float(te.get("est_pay_amount", 0))
+            bill_amt = float(te.get("est_bill_amount", 0))
+            service_totals[service_key] += qty
+            service_pay[service_key] += pay_amt
+            service_bill[service_key] += bill_amt
+            # ADOS: each time_entry = 1 assessment (with quantity=3 hours)
+            if service_key in ados_counts:
+                ados_counts[service_key] += 1
 
-        # Calculate revenue, pay, profit per service type
+        # Build service breakdown from snapshot aggregates
         service_breakdown = []
         grand_hours = 0.0
         grand_revenue = 0.0
@@ -1896,16 +2003,9 @@ async def billing_summary(admin=Depends(require_admin)):
             hrs = service_totals[st]
             if hrs == 0:
                 continue
-            bill_rate = service_bill_rates.get(st, 0)
-            # ADOS revenue = bill_rate × number of assessments (not hours)
-            if st.startswith("ADOS") and st in REVENUE_TYPES:
-                num_assessments = ados_counts.get(st, 0)
-                revenue = num_assessments * bill_rate
-            elif st in REVENUE_TYPES:
-                revenue = hrs * bill_rate
-            else:
-                revenue = 0
-            pay = service_pay.get(st, 0)
+            revenue = service_bill[st]  # from est_bill_amount snapshots
+            pay = service_pay[st]       # from est_pay_amount snapshots
+            bill_rate = service_bill_rates.get(st, 0)  # display-only reference rate
             # PTO and Sick Leave don't count toward total hours of impact
             if st not in NON_REVENUE_TYPES:
                 grand_hours += hrs
@@ -2062,14 +2162,19 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Pay period not found")
     period = periods[0]
 
-    # Get approved recipients
+    # Get approved + exported recipients (exported must still appear)
     recipients = await sb_request("GET", "pay_period_recipients", params={
         "pay_period_id": f"eq.{period_id}",
-        "status": "eq.approved",
-        "select": "id, user_id, invoice_data, users!user_id(first_name, last_name)",
+        "status": "in.(approved,exported)",
+        "select": "id, user_id, users!user_id(first_name, last_name)",
     })
+    valid_user_ids = {r["user_id"] for r in (recipients or [])}
+    user_names = {}
+    for r in (recipients or []):
+        u = r.get("users") or {}
+        user_names[r["user_id"]] = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
 
-    # Get bill rates
+    # Get bill rates for display reference only (not used in calculations)
     bill_rates = await sb_request("GET", "bill_rate_defaults", params={
         "select": "*, rate_types(name)",
     })
@@ -2086,61 +2191,46 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
             rate = bill_rate_map.get(st, 0)
         service_bill_rates[st] = rate
 
-    # Get pay rates for all users
-    all_pay_rates = await sb_request("GET", "user_pay_rates", params={
-        "select": "user_id, pay_rate, rate_types(name)",
+    # NOTE: Pay and revenue now come from time_entries snapshots (est_pay_amount,
+    # est_bill_amount), NOT from live user_pay_rates. This ensures changing a
+    # staff member's rate does not alter historical billing summaries.
+
+    # Query all time_entries for this period with rate_type names
+    time_entries_list = await sb_request("GET", "time_entries", params={
+        "pay_period_id": f"eq.{period_id}",
+        "select": "user_id, rate_type_id, quantity, est_pay_amount, est_bill_amount, rate_types(name)",
     })
-    # user_id → { rate_name: pay_rate }
-    user_pay_map = {}
-    for pr in (all_pay_rates or []):
-        uid = pr["user_id"]
-        rt = pr.get("rate_types") or {}
-        rname = rt.get("name", "")
-        if uid not in user_pay_map:
-            user_pay_map[uid] = {}
-        user_pay_map[uid][rname] = float(pr["pay_rate"])
+
+    # Build per-user per-service breakdown from snapshot data
+    # user_id → service_key → {hours, pay, revenue}
+    user_service_data = {}
+    for te in (time_entries_list or []):
+        uid = te["user_id"]
+        if uid not in valid_user_ids:
+            continue
+        rt = te.get("rate_types") or {}
+        rate_name = rt.get("name", "")
+        service_key = RATE_TYPE_TO_BILLING_SERVICE.get(rate_name)
+        if not service_key or service_key not in {s for s in SERVICE_TYPES}:
+            continue  # Skip non-billing types
+        if uid not in user_service_data:
+            user_service_data[uid] = {}
+        if service_key not in user_service_data[uid]:
+            user_service_data[uid][service_key] = {"hours": 0, "pay": 0, "revenue": 0}
+        user_service_data[uid][service_key]["hours"] += float(te.get("quantity", 0))
+        user_service_data[uid][service_key]["pay"] += float(te.get("est_pay_amount", 0))
+        user_service_data[uid][service_key]["revenue"] += float(te.get("est_bill_amount", 0))
 
     # Build per-service-type per-therapist detail
     service_detail = {st: [] for st in SERVICE_TYPES}
     service_totals_map = {st: {"hours": 0, "revenue": 0, "pay": 0} for st in SERVICE_TYPES}
 
-    for r in (recipients or []):
-        u = r.get("users") or {}
-        name = f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-        uid = r["user_id"]
-        inv = r.get("invoice_data") or {}
-        hours_map, counts_map = _extract_service_hours(inv)
-        user_rates = user_pay_map.get(uid, {})
-
-        for st in SERVICE_TYPES:
-            hrs = hours_map[st]
-            if hrs == 0:
-                continue
-            bill_rate = service_bill_rates.get(st, 0)
-            # ADOS revenue = bill_rate × assessments (not hours)
-            if st.startswith("ADOS") and st in REVENUE_TYPES:
-                num_a = counts_map.get(st, 0)
-                revenue = num_a * bill_rate
-            elif st in REVENUE_TYPES:
-                revenue = hrs * bill_rate
-            else:
-                revenue = 0
-            # Find the user's pay rate: try each candidate pay-rate name, then bill-rate name
-            pay_rate_candidates = SERVICE_TO_PAY_RATE_NAMES.get(st, [])
-            bill_rate_name = SERVICE_TO_RATE_NAME.get(st, st)
-            pay_rate = 0
-            for candidate in pay_rate_candidates:
-                pay_rate = user_rates.get(candidate, 0)
-                if pay_rate:
-                    break
-            if not pay_rate:
-                pay_rate = user_rates.get(bill_rate_name, 0)
-            # ADOS pay = assessments × session rate (not hours × rate)
-            if st.startswith("ADOS"):
-                num_a = counts_map.get(st, 0)
-                pay = num_a * pay_rate
-            else:
-                pay = hrs * pay_rate
+    for uid, svc_map in user_service_data.items():
+        name = user_names.get(uid, "Unknown")
+        for st, data in svc_map.items():
+            hrs = data["hours"]
+            revenue = data["revenue"]
+            pay = data["pay"]
             profit = revenue - pay
             margin = (profit / revenue * 100) if revenue > 0 else 0
 
