@@ -3,9 +3,18 @@ import { supabase } from './supabase'
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 async function getAuthHeaders() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.access_token) return {}
-  return { 'Authorization': `Bearer ${session.access_token}` }
+  try {
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 5000)),
+    ])
+    const session = result?.data?.session
+    if (!session?.access_token) return {}
+    return { 'Authorization': `Bearer ${session.access_token}` }
+  } catch (e) {
+    console.warn('getAuthHeaders failed:', e.message)
+    return {}
+  }
 }
 
 // Central fetch wrapper: 401 retry (no manual refreshSession!) + hard redirect on dead session
