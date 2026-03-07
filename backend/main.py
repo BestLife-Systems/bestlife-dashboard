@@ -461,24 +461,7 @@ async def update_rate_type(rate_type_id: str, req: RateTypeRequest, admin=Depend
 
 @app.get("/api/payroll/user-pay-rates")
 async def get_all_user_pay_rates(admin=Depends(require_admin)):
-    """Admin: get all user pay rates (latest effective per user+rate_type).
-    With rate versioning, old rates are preserved with earlier effective_dates.
-    This endpoint returns only the current rate for each user+rate_type pair."""
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    all_rates = await sb_request("GET", "user_pay_rates", params={
-        "select": "*",
-        "effective_date": f"lte.{today_str}",
-        "order": "effective_date.desc",
-    }) or []
-    # Deduplicate: keep only the latest rate per (user_id, rate_type_id)
-    seen = set()
-    result = []
-    for r in all_rates:
-        key = (r["user_id"], r["rate_type_id"])
-        if key not in seen:
-            seen.add(key)
-            result.append(r)
-    return result
+    return await sb_request("GET", "user_pay_rates", params={"select": "*"}) or []
 
 
 class UserPayRatesRequest(BaseModel):
@@ -1021,24 +1004,15 @@ async def approve_recipient(recipient_id: str, req: ApproveRequest, admin=Depend
     user_id = recipient["user_id"]
     period_id = recipient["pay_period_id"]
 
-    # Get user's pay rates (latest effective rate per rate_type).
-    # With rate versioning, a user may have multiple rows per rate_type
-    # with different effective_dates. We want only the most recent one
-    # that has taken effect (effective_date <= today).
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    # Get user's pay rates
     pay_rates = await sb_request("GET", "user_pay_rates", params={
         "user_id": f"eq.{user_id}",
-        "effective_date": f"lte.{today_str}",
-        "order": "effective_date.desc",
         "select": "*, rate_types(name, unit)",
     })
     pay_rate_map = {}
     for pr in (pay_rates or []):
         rt = pr.get("rate_types") or {}
         rname = rt.get("name", "")
-        # Only keep the first (latest) rate per rate_type name
-        if rname in pay_rate_map:
-            continue
         pay_rate_map[rname] = {
             "rate_type_id": pr["rate_type_id"],
             "pay_rate": float(pr["pay_rate"]),
