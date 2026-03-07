@@ -1974,7 +1974,6 @@ async def billing_summary(admin=Depends(require_admin)):
         # Aggregate by billing service type from snapshot data
         service_totals = {st: 0.0 for st in SERVICE_TYPES}
         service_pay = {st: 0.0 for st in SERVICE_TYPES}
-        service_bill = {st: 0.0 for st in SERVICE_TYPES}
         ados_counts = {"ADOS In Home": 0, "ADOS At Office": 0}
         for te in (time_entries_list or []):
             if te["user_id"] not in valid_user_ids:
@@ -1986,15 +1985,13 @@ async def billing_summary(admin=Depends(require_admin)):
                 continue  # Skip non-billing types (Administration, Supervision, etc.)
             qty = float(te.get("quantity", 0))
             pay_amt = float(te.get("est_pay_amount", 0))
-            bill_amt = float(te.get("est_bill_amount", 0))
             service_totals[service_key] += qty
             service_pay[service_key] += pay_amt
-            service_bill[service_key] += bill_amt
             # ADOS: each time_entry = 1 assessment (with quantity=3 hours)
             if service_key in ados_counts:
                 ados_counts[service_key] += 1
 
-        # Build service breakdown from snapshot aggregates
+        # Build service breakdown: PAY from snapshots, REVENUE from current bill rates
         service_breakdown = []
         grand_hours = 0.0
         grand_revenue = 0.0
@@ -2003,9 +2000,17 @@ async def billing_summary(admin=Depends(require_admin)):
             hrs = service_totals[st]
             if hrs == 0:
                 continue
-            revenue = service_bill[st]  # from est_bill_amount snapshots
-            pay = service_pay[st]       # from est_pay_amount snapshots
-            bill_rate = service_bill_rates.get(st, 0)  # display-only reference rate
+            bill_rate = service_bill_rates.get(st, 0)
+            # Revenue: calculated dynamically from current bill_rate_defaults
+            # (bill rates may be adjusted for business reasons)
+            if st.startswith("ADOS") and st in REVENUE_TYPES:
+                num_assessments = ados_counts.get(st, 0)
+                revenue = num_assessments * bill_rate
+            elif st in REVENUE_TYPES:
+                revenue = hrs * bill_rate
+            else:
+                revenue = 0
+            pay = service_pay[st]  # from est_pay_amount snapshots (immutable)
             # PTO and Sick Leave don't count toward total hours of impact
             if st not in NON_REVENUE_TYPES:
                 grand_hours += hrs
@@ -2201,8 +2206,8 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         "select": "user_id, rate_type_id, quantity, est_pay_amount, est_bill_amount, rate_types(name)",
     })
 
-    # Build per-user per-service breakdown from snapshot data
-    # user_id → service_key → {hours, pay, revenue}
+    # Build per-user per-service breakdown: PAY from snapshots, hours for revenue calc
+    # user_id → service_key → {hours, pay, ados_count}
     user_service_data = {}
     for te in (time_entries_list or []):
         uid = te["user_id"]
@@ -2216,10 +2221,12 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         if uid not in user_service_data:
             user_service_data[uid] = {}
         if service_key not in user_service_data[uid]:
-            user_service_data[uid][service_key] = {"hours": 0, "pay": 0, "revenue": 0}
+            user_service_data[uid][service_key] = {"hours": 0, "pay": 0, "ados_count": 0}
         user_service_data[uid][service_key]["hours"] += float(te.get("quantity", 0))
         user_service_data[uid][service_key]["pay"] += float(te.get("est_pay_amount", 0))
-        user_service_data[uid][service_key]["revenue"] += float(te.get("est_bill_amount", 0))
+        # ADOS: each time_entry = 1 assessment
+        if service_key.startswith("ADOS"):
+            user_service_data[uid][service_key]["ados_count"] += 1
 
     # Build per-service-type per-therapist detail
     service_detail = {st: [] for st in SERVICE_TYPES}
@@ -2229,8 +2236,15 @@ async def billing_summary_detail(period_id: str, admin=Depends(require_admin)):
         name = user_names.get(uid, "Unknown")
         for st, data in svc_map.items():
             hrs = data["hours"]
-            revenue = data["revenue"]
-            pay = data["pay"]
+            bill_rate = service_bill_rates.get(st, 0)
+            # Revenue: calculated dynamically from current bill_rate_defaults
+            if st.startswith("ADOS") and st in REVENUE_TYPES:
+                revenue = data["ados_count"] * bill_rate
+            elif st in REVENUE_TYPES:
+                revenue = hrs * bill_rate
+            else:
+                revenue = 0
+            pay = data["pay"]  # from est_pay_amount snapshots (immutable)
             profit = revenue - pay
             margin = (profit / revenue * 100) if revenue > 0 else 0
 
