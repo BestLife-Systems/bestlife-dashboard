@@ -227,6 +227,21 @@ async def cleanup_auth_user(email: str, admin=Depends(require_admin)):
     return {"status": "deleted", "email": email, "auth_id": target["id"]}
 
 
+@router.patch("/admin/users/{user_id}")
+async def update_user(user_id: str, updates: dict, admin=Depends(require_admin)):
+    """Admin: update a user's profile fields."""
+    ALLOWED_FIELDS = {
+        "first_name", "last_name", "email", "role",
+        "employment_status", "phone_number", "sms_enabled",
+        "supervision_required", "clinical_supervisor_id",
+    }
+    patch = {k: v for k, v in updates.items() if k in ALLOWED_FIELDS}
+    if not patch:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    result = await sb_request("PATCH", f"users?id=eq.{user_id}", data=patch)
+    return (result or [{}])[0]
+
+
 @router.get("/admin/users")
 async def list_users(admin=Depends(require_admin)):
     """Admin: list all users."""

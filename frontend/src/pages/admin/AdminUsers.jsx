@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { apiPost, apiGet } from '../../lib/api'
+import { apiPost, apiGet, apiPatch } from '../../lib/api'
 import Modal from '../../components/Modal'
 
 const ROLES = [
@@ -235,8 +235,7 @@ export default function AdminUsers() {
         setSaving(false)
         return
       }
-      console.log('[SAVE] Step 1: Updating users table...')
-      const { error: err } = await supabase.from('users').update({
+      await apiPatch(`/admin/users/${editUser.id}`, {
         first_name: editUser.first_name,
         last_name: editUser.last_name,
         email: editUser.email,
@@ -246,25 +245,20 @@ export default function AdminUsers() {
         sms_enabled: editUser.sms_enabled ?? true,
         supervision_required: editUser.supervision_required ?? false,
         clinical_supervisor_id: editUser.clinical_supervisor_id || null,
-      }).eq('id', editUser.id)
-      console.log('[SAVE] Step 1 done, error:', err)
-      if (err) throw err
+      })
 
       // Save pay rates
       const rateEntries = Object.entries(editUserRates)
         .filter(([, val]) => val !== '' && val !== null && val !== undefined)
         .map(([rateTypeId, payRate]) => ({ rate_type_id: rateTypeId, pay_rate: parseFloat(payRate) }))
-      console.log('[SAVE] Step 2: Saving', rateEntries.length, 'pay rates...')
       if (rateEntries.length > 0) {
         await apiPost(`/payroll/user-pay-rates/${editUser.id}`, { rates: rateEntries })
       }
-      console.log('[SAVE] Step 2 done')
 
       setEditUser(null)
       loadUsers()
       loadRateData()
     } catch (err) {
-      console.error('[SAVE] Error:', err)
       setError(err.message)
     } finally {
       setSaving(false)
