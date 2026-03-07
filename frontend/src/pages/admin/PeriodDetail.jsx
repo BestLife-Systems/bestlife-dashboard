@@ -13,20 +13,24 @@ function fmtPct(v) {
 
 // Service type colors for detail view
 const SVC_COLORS = {
+  'IIC': '#00bbee',
   'IIC-LC': '#00bbee',
   'IIC-MA': '#0ea5e9',
   'IIC-BA': '#38bdf8',
   OP: '#4ade80',
   'OP Cancellation': '#86efac',
   SBYS: '#a78bfa',
+  'ADOS Assessments': '#fbbf24',
   'ADOS In Home': '#fbbf24',
   'ADOS At Office': '#f59e0b',
-  'APN 30 Min': '#f97316',
-  'APN Intake': '#fb923c',
-  PTO: '#e879f9',
+  'APN': '#e879f9',
+  'APN 30 Min': '#e879f9',
+  'APN Intake': '#d946ef',
+  PTO: '#94a3b8',
   'Sick Leave': '#f87171',
 }
 
+const IIC_KEYS = new Set(['IIC-LC', 'IIC-MA', 'IIC-BA'])
 const OP_KEYS = new Set(['OP', 'OP Cancellation'])
 const ADOS_KEYS = new Set(['ADOS In Home', 'ADOS At Office'])
 const APN_KEYS = new Set(['APN 30 Min', 'APN Intake'])
@@ -64,109 +68,83 @@ export default function PeriodDetail({ periodId, period, onBack }) {
 
   const { sections, grand_total } = data
 
-  // Combine OP + OP Cancellation into one section
+  // Helper to build a combined section from multiple subsections
+  function buildCombined(service, combinedLabel, subDefs) {
+    const subsections = subDefs
+      .map(({ label, sec }) => sec ? { label, rows: sec.rows, totals: sec } : null)
+      .filter(Boolean)
+    if (subsections.length === 0) return null
+    const totalHours = subDefs.reduce((s, d) => s + (d.sec?.total_hours || 0), 0)
+    const totalRevenue = subDefs.reduce((s, d) => s + (d.sec?.total_revenue || 0), 0)
+    const totalPay = subDefs.reduce((s, d) => s + (d.sec?.total_pay || 0), 0)
+    const totalProfit = subDefs.reduce((s, d) => s + (d.sec?.total_profit || 0), 0)
+    return {
+      service, _isCombined: true, _combinedLabel: combinedLabel, _subsections: subsections,
+      total_hours: totalHours, total_revenue: totalRevenue, total_pay: totalPay,
+      total_profit: totalProfit, total_margin: totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0,
+    }
+  }
+
+  // Find individual sections from backend data
+  const iicLcSec = sections.find(s => s.service === 'IIC-LC')
+  const iicMaSec = sections.find(s => s.service === 'IIC-MA')
+  const iicBaSec = sections.find(s => s.service === 'IIC-BA')
   const opRegSec = sections.find(s => s.service === 'OP')
   const opCancelSec = sections.find(s => s.service === 'OP Cancellation')
-  const hasOpSplit = opRegSec && opCancelSec  // only combine if both exist
-
-  // Combine ADOS In Home + ADOS At Office into one section
   const adosHomeSec = sections.find(s => s.service === 'ADOS In Home')
   const adosOfficeSec = sections.find(s => s.service === 'ADOS At Office')
-  const hasAdos = adosHomeSec || adosOfficeSec
-
-  // Combine APN 30 Min + APN Intake into one section
   const apn30Sec = sections.find(s => s.service === 'APN 30 Min')
   const apnIntakeSec = sections.find(s => s.service === 'APN Intake')
+
+  const hasIic = iicLcSec || iicMaSec || iicBaSec
+  const hasOpSplit = opRegSec && opCancelSec
+  const hasAdos = adosHomeSec || adosOfficeSec
   const hasApn = apn30Sec || apnIntakeSec
 
-  // Build final display sections: filter out combined subsections, then add combined
-  const displaySections = sections.filter(s =>
-    !(hasOpSplit && OP_KEYS.has(s.service)) &&
-    !ADOS_KEYS.has(s.service) &&
-    !APN_KEYS.has(s.service)
-  )
+  // Build display sections in exact order: IIC, OP, SBYS, ADOS, APN, PTO, Sick Leave
+  const displaySections = []
 
+  // 1. IIC (combined with subsections)
+  if (hasIic) {
+    displaySections.push(buildCombined('IIC', 'IIC Combined Total', [
+      { label: 'IIC-LC (LPC/LCSW)', sec: iicLcSec },
+      { label: 'IIC-MA (LAC/LSW)', sec: iicMaSec },
+      { label: 'IIC-BA (Behavioral Assistant)', sec: iicBaSec },
+    ]))
+  }
+
+  // 2. OP (combined if both exist, otherwise single)
   if (hasOpSplit) {
-    const opSubsections = []
-    if (opRegSec) {
-      opSubsections.push({ label: 'Sessions', rows: opRegSec.rows, totals: opRegSec })
-    }
-    if (opCancelSec) {
-      opSubsections.push({ label: 'Cancellations', rows: opCancelSec.rows, totals: opCancelSec })
-    }
-    const totalHours = (opRegSec?.total_hours || 0) + (opCancelSec?.total_hours || 0)
-    const totalRevenue = (opRegSec?.total_revenue || 0) + (opCancelSec?.total_revenue || 0)
-    const totalPay = (opRegSec?.total_pay || 0) + (opCancelSec?.total_pay || 0)
-    const totalProfit = (opRegSec?.total_profit || 0) + (opCancelSec?.total_profit || 0)
-    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
-
-    // Insert OP combined at the position where OP was (keep ordering natural)
-    const opIdx = displaySections.findIndex(s => s.service && s.service.startsWith('IIC'))
-    displaySections.splice(opIdx >= 0 ? opIdx + 1 : displaySections.length, 0, {
-      service: 'OP',
-      _isCombined: true,
-      _combinedLabel: 'OP Combined Total',
-      _subsections: opSubsections,
-      total_hours: totalHours,
-      total_revenue: totalRevenue,
-      total_pay: totalPay,
-      total_profit: totalProfit,
-      total_margin: totalMargin,
-    })
+    displaySections.push(buildCombined('OP', 'OP Combined Total', [
+      { label: 'Sessions', sec: opRegSec },
+      { label: 'Cancellations', sec: opCancelSec },
+    ]))
+  } else if (opRegSec) {
+    displaySections.push(opRegSec)
+  } else if (opCancelSec) {
+    displaySections.push(opCancelSec)
   }
 
+  // 3. Remaining standalone sections (SBYS, PTO, Sick Leave)
+  sections.filter(s =>
+    !IIC_KEYS.has(s.service) && !OP_KEYS.has(s.service) &&
+    !ADOS_KEYS.has(s.service) && !APN_KEYS.has(s.service)
+  ).forEach(s => displaySections.push(s))
+
+  // 4. ADOS (combined)
   if (hasAdos) {
-    const adosSubsections = []
-    if (adosHomeSec) {
-      adosSubsections.push({ label: 'In Home', rows: adosHomeSec.rows, totals: adosHomeSec })
-    }
-    if (adosOfficeSec) {
-      adosSubsections.push({ label: 'At Office', rows: adosOfficeSec.rows, totals: adosOfficeSec })
-    }
-    const totalHours = (adosHomeSec?.total_hours || 0) + (adosOfficeSec?.total_hours || 0)
-    const totalRevenue = (adosHomeSec?.total_revenue || 0) + (adosOfficeSec?.total_revenue || 0)
-    const totalPay = (adosHomeSec?.total_pay || 0) + (adosOfficeSec?.total_pay || 0)
-    const totalProfit = (adosHomeSec?.total_profit || 0) + (adosOfficeSec?.total_profit || 0)
-    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
-
-    displaySections.push({
-      service: 'ADOS Assessments',
-      _isCombined: true,
-      _combinedLabel: 'ADOS Combined Total',
-      _subsections: adosSubsections,
-      total_hours: totalHours,
-      total_revenue: totalRevenue,
-      total_pay: totalPay,
-      total_profit: totalProfit,
-      total_margin: totalMargin,
-    })
+    displaySections.push(buildCombined('ADOS Assessments', 'ADOS Combined Total', [
+      { label: 'In Home', sec: adosHomeSec },
+      { label: 'At Office', sec: adosOfficeSec },
+    ]))
   }
 
+  // 5. APN (combined)
   if (hasApn) {
-    const apnSubsections = []
-    if (apn30Sec) {
-      apnSubsections.push({ label: '30 Min', rows: apn30Sec.rows, totals: apn30Sec })
-    }
-    if (apnIntakeSec) {
-      apnSubsections.push({ label: 'Intake (60 Min)', rows: apnIntakeSec.rows, totals: apnIntakeSec })
-    }
-    const totalHours = (apn30Sec?.total_hours || 0) + (apnIntakeSec?.total_hours || 0)
-    const totalRevenue = (apn30Sec?.total_revenue || 0) + (apnIntakeSec?.total_revenue || 0)
-    const totalPay = (apn30Sec?.total_pay || 0) + (apnIntakeSec?.total_pay || 0)
-    const totalProfit = (apn30Sec?.total_profit || 0) + (apnIntakeSec?.total_profit || 0)
-    const totalMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0
-
-    displaySections.push({
-      service: 'APN',
-      _isCombined: true,
-      _combinedLabel: 'APN Combined Total',
-      _subsections: apnSubsections,
-      total_hours: totalHours,
-      total_revenue: totalRevenue,
-      total_pay: totalPay,
-      total_profit: totalProfit,
-      total_margin: totalMargin,
-    })
+    displaySections.push(buildCombined('APN', 'APN Combined Total', [
+      { label: '30 Min', sec: apn30Sec },
+      { label: 'Intake (60 Min)', sec: apnIntakeSec },
+    ]))
   }
 
   return (
