@@ -1392,30 +1392,17 @@ a { color: var(--accent); text-decoration: none; }
   transition: box-shadow 0.3s ease, border-color 0.3s ease;
   flex-shrink: 0;
 }
-/* Arc label SVG — kept for backward compat, hidden */
+/* Arc label SVG — centered over the icon, larger so text sits outside */
 .kb-orbit-arc-label {
-  display: none;
-}
-/* Clean HTML label below each orb */
-.kb-orbit-label {
   position: absolute;
-  top: calc(100% + 4px);
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.7),
-    0 0 12px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
   pointer-events: none;
-  transition: color 0.25s ease;
+  overflow: visible;
 }
-.kb-orbit-node-js--hovered .kb-orbit-label {
-  color: #ffffff;
+.kb-orbit-arc-label text {
+  transition: fill 0.25s ease;
 }
 /* Hover: glow the icon */
 .kb-orbit-node-js--hovered .kb-orbit-node-icon-js {
@@ -1661,7 +1648,8 @@ a { color: var(--accent); text-decoration: none; }
   .kb-orbit-node-icon-js { width: 54px; height: 54px; }
   .kb-orbit-node-glow { width: 54px; height: 54px; }
   .kb-orbit-node-icon-js svg { width: 28px; height: 28px; }
-  .kb-orbit-label { font-size: 0.68rem; }
+  .kb-orbit-arc-label { width: 110px; height: 110px; }
+  .kb-orbit-arc-label text { font-size: 9px; }
   .kb-hero-title { font-size: 1.85rem; }
   .kb-hero { margin-bottom: 1.25rem; }
 }
@@ -1692,7 +1680,8 @@ a { color: var(--accent); text-decoration: none; }
   .kb-orbit-node-icon-js { width: 40px; height: 40px; }
   .kb-orbit-node-glow { width: 40px; height: 40px; }
   .kb-orbit-node-icon-js svg { width: 22px; height: 22px; }
-  .kb-orbit-label { font-size: 0.6rem; }
+  .kb-orbit-arc-label { width: 86px; height: 86px; }
+  .kb-orbit-arc-label text { font-size: 7px; }
   .kb-hero-title { font-size: 1.5rem; }
   .kb-hero { margin-bottom: 1rem; }
 }

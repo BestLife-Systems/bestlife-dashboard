@@ -373,10 +373,17 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
     return () => cancelAnimationFrame(rafRef.current)
   }, [categories.length])
 
+  // The SVG arc label traces the outside-bottom of the icon circle.
+  const arcR = 54
+  const svgSize = 160
+  const cx = svgSize / 2
+  const cy = svgSize / 2
+
   return (
     <div className="kb-orbit-track-js">
       {categories.map((cat, i) => {
         const isHovered = hoveredCat === i
+        const arcId = `arc-${cat.name.replace(/[^a-zA-Z]/g, '')}`
         return (
           <div
             key={cat.name}
@@ -392,7 +399,31 @@ function OrbitTrack({ categories, hoveredCat, setHoveredCat, onCategoryClick }) 
               <div className="kb-orbit-node-icon-js">
                 {CAT_ICONS[cat.name]}
               </div>
-              <span className="kb-orbit-label">{cat.name}</span>
+              <svg
+                className="kb-orbit-arc-label"
+                width={svgSize}
+                height={svgSize}
+                viewBox={`0 0 ${svgSize} ${svgSize}`}
+              >
+                <defs>
+                  <path
+                    id={arcId}
+                    d={`M ${cx - arcR} ${cy} A ${arcR} ${arcR} 0 0 1 ${cx + arcR} ${cy}`}
+                  />
+                </defs>
+                <text
+                  fill={isHovered ? '#ffffff' : (cat.color || '#7d8a82')}
+                  fontSize="13.5"
+                  fontFamily="'DM Sans', sans-serif"
+                  fontWeight="600"
+                  letterSpacing="0.04em"
+                  style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
+                >
+                  <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
+                    {cat.name}
+                  </textPath>
+                </text>
+              </svg>
             </div>
           </div>
         )
