@@ -235,6 +235,7 @@ export default function AdminUsers() {
         setSaving(false)
         return
       }
+      console.log('[SAVE] Step 1: Updating users table...')
       const { error: err } = await supabase.from('users').update({
         first_name: editUser.first_name,
         last_name: editUser.last_name,
@@ -246,20 +247,24 @@ export default function AdminUsers() {
         supervision_required: editUser.supervision_required ?? false,
         clinical_supervisor_id: editUser.clinical_supervisor_id || null,
       }).eq('id', editUser.id)
+      console.log('[SAVE] Step 1 done, error:', err)
       if (err) throw err
 
       // Save pay rates
       const rateEntries = Object.entries(editUserRates)
         .filter(([, val]) => val !== '' && val !== null && val !== undefined)
         .map(([rateTypeId, payRate]) => ({ rate_type_id: rateTypeId, pay_rate: parseFloat(payRate) }))
+      console.log('[SAVE] Step 2: Saving', rateEntries.length, 'pay rates...')
       if (rateEntries.length > 0) {
         await apiPost(`/payroll/user-pay-rates/${editUser.id}`, { rates: rateEntries })
       }
+      console.log('[SAVE] Step 2 done')
 
       setEditUser(null)
       loadUsers()
       loadRateData()
     } catch (err) {
+      console.error('[SAVE] Error:', err)
       setError(err.message)
     } finally {
       setSaving(false)
