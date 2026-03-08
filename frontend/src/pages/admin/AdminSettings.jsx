@@ -583,11 +583,11 @@ export default function AdminSettings() {
                 </div>
 
                 {/* Upcoming Cadence */}
-                {schedulerStatus.cadence_preview && schedulerStatus.cadence_preview.length > 0 && (
+                {schedulerStatus.cadence_preview && schedulerStatus.cadence_preview.filter(p => p.id).length > 0 && (
                   <div>
                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Upcoming Cadence</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {schedulerStatus.cadence_preview.map((p, i) => (
+                      {schedulerStatus.cadence_preview.filter(p => p.id).map((p, i) => (
                         <div key={i} className="card" style={{ padding: '0.6rem 0.75rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -598,19 +598,13 @@ export default function AdminSettings() {
                                 </span>
                               )}
                             </div>
-                            {p.id ? (
-                              <button
-                                className="btn btn--ghost btn--small"
-                                style={{ fontSize: '0.7rem', padding: '0.2rem 0.4rem' }}
-                                onClick={() => openEditPeriod(p)}
-                              >
-                                Edit
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '0.2rem 0.4rem' }}>
-                                Not created yet
-                              </span>
-                            )}
+                            <button
+                              className="btn btn--ghost btn--small"
+                              style={{ fontSize: '0.7rem', padding: '0.2rem 0.4rem' }}
+                              onClick={() => openEditPeriod(p)}
+                            >
+                              Edit
+                            </button>
                           </div>
                           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
                             <span>Window: {p.window_open}</span>
