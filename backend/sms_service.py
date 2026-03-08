@@ -9,7 +9,7 @@ import os
 logger = logging.getLogger("bestlife")
 
 # Master toggle — set to "true" in Railway when Twilio is approved
-SMS_ENABLED = os.environ.get("SMS_ENABLED", "false").lower() == "true"
+SMS_ENABLED = os.environ.get("SMS_ENABLED", "true").lower() == "true"
 
 # Twilio config
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")

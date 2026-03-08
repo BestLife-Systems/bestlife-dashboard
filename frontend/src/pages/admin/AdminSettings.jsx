@@ -126,6 +126,14 @@ export default function AdminSettings() {
   const [cadenceDeadlineDays, setCadenceDeadlineDays] = useState(4)
   const [cadenceSaving, setCadenceSaving] = useState(false)
   const [cadenceSaved, setCadenceSaved] = useState(false)
+  const [dryRunResult, setDryRunResult] = useState(null)
+  const [dryRunDate, setDryRunDate] = useState('')
+  const [dryRunning, setDryRunning] = useState(false)
+  const [runningNow, setRunningNow] = useState(false)
+  const [runNowResult, setRunNowResult] = useState(null)
+  const [editPeriodModal, setEditPeriodModal] = useState(false)
+  const [editingPeriod, setEditingPeriod] = useState(null)
+  const [periodEditForm, setPeriodEditForm] = useState({ window_open: '', deadline: '' })
 
   useEffect(() => {
     apiGet('/settings/last-upload').then(setLastUpload).catch(() => {})
@@ -374,6 +382,32 @@ export default function AdminSettings() {
     }
   }
 
+  // ── Period Edit Functions ──
+
+  function openEditPeriod(period) {
+    setEditingPeriod(period)
+    setPeriodEditForm({
+      window_open: period.window_open,
+      deadline: period.deadline,
+    })
+    setEditPeriodModal(true)
+  }
+
+  async function handleSavePeriodEdit() {
+    if (!editingPeriod) return
+
+    try {
+      await apiPatch(`/pay-periods/${editingPeriod.id}`, {
+        window_open: periodEditForm.window_open,
+        deadline: periodEditForm.deadline,
+      })
+      setEditPeriodModal(false)
+      loadSchedulerStatus() // Refresh the data
+    } catch (err) {
+      setSchedulerError('Failed to update pay period: ' + err.message)
+    }
+  }
+
   const ACTION_LABELS = {
     open: 'Open & Notify',
     remind_3: '3-Day Reminder',
@@ -548,61 +582,6 @@ export default function AdminSettings() {
                   </div>
                 </div>
 
-                {/* Submission Window Config */}
-                <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', padding: '0.75rem' }}>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Submission Window</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                      <span>Opens</span>
-                      <input
-                        type="number" min="1" max="7"
-                        value={cadenceWindowDays}
-                        onChange={e => setCadenceWindowDays(parseInt(e.target.value) || 2)}
-                        style={{ width: '50px', padding: '0.3rem 0.4rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', textAlign: 'center' }}
-                      />
-                      <span>days before period ends</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                      <span>Deadline</span>
-                      <input
-                        type="number" min="2" max="10"
-                        value={cadenceDeadlineDays}
-                        onChange={e => setCadenceDeadlineDays(parseInt(e.target.value) || 4)}
-                        style={{ width: '50px', padding: '0.3rem 0.4rem', fontSize: '0.82rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-bright)', textAlign: 'center' }}
-                      />
-                      <span>days after period ends</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
-                      <button className="btn btn--primary btn--small" onClick={handleSaveCadence} disabled={cadenceSaving}>
-                        {cadenceSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      {cadenceSaved && <span style={{ fontSize: '0.78rem', color: '#16a34a' }}>Saved</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Current & Recent Periods */}
-                {schedulerStatus.recent_periods && schedulerStatus.recent_periods.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>Current & Recent Periods</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                      {schedulerStatus.recent_periods.map((p, i) => (
-                        <div key={i} className="card" style={{ padding: '0.5rem 0.75rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)' }}>{p.label || `${p.start_date} – ${p.end_date}`}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                              <span className={`badge ${p.status === 'open' ? 'badge--success' : p.status === 'closed' ? 'badge--muted' : 'badge--muted'}`} style={{ fontSize: '0.68rem' }}>
-                                {p.status}
-                              </span>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Due: {p.due_date}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Upcoming Cadence */}
                 {schedulerStatus.cadence_preview && schedulerStatus.cadence_preview.length > 0 && (
                   <div>
@@ -610,7 +589,29 @@ export default function AdminSettings() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       {schedulerStatus.cadence_preview.map((p, i) => (
                         <div key={i} className="card" style={{ padding: '0.6rem 0.75rem' }}>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)', marginBottom: '0.35rem' }}>{p.label}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-bright)' }}>{p.label}</div>
+                              {p.status && p.status !== 'draft' && (
+                                <span className={`badge ${p.status === 'open' ? 'badge--success' : 'badge--muted'}`} style={{ fontSize: '0.68rem' }}>
+                                  {p.status}
+                                </span>
+                              )}
+                            </div>
+                            {p.id ? (
+                              <button
+                                className="btn btn--ghost btn--small"
+                                style={{ fontSize: '0.7rem', padding: '0.2rem 0.4rem' }}
+                                onClick={() => openEditPeriod(p)}
+                              >
+                                Edit
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '0.2rem 0.4rem' }}>
+                                Not created yet
+                              </span>
+                            )}
+                          </div>
                           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
                             <span>Window: {p.window_open}</span>
                             <span>Deadline: {p.deadline}</span>
@@ -954,6 +955,47 @@ export default function AdminSettings() {
             <button type="button" className="btn btn--secondary" onClick={() => setMeetingTmplModal(false)}>Cancel</button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Period Edit Modal ── */}
+      <Modal open={editPeriodModal} onClose={() => setEditPeriodModal(false)} title="Edit Pay Period Schedule">
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-bright)', marginBottom: '0.5rem' }}>
+            {editingPeriod?.label}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Adjust the submission window and deadline for this pay period. Changes only affect this specific period.
+          </div>
+        </div>
+
+        <div className="form-field">
+          <label>Submission Window Opens</label>
+          <input
+            type="date"
+            value={periodEditForm.window_open}
+            onChange={e => setPeriodEditForm(f => ({ ...f, window_open: e.target.value }))}
+          />
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+            Date when providers can start submitting invoices
+          </div>
+        </div>
+
+        <div className="form-field" style={{ marginTop: '0.75rem' }}>
+          <label>Submission Deadline</label>
+          <input
+            type="date"
+            value={periodEditForm.deadline}
+            onChange={e => setPeriodEditForm(f => ({ ...f, deadline: e.target.value }))}
+          />
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+            Final date for invoice submissions
+          </div>
+        </div>
+
+        <div className="modal-actions">
+          <button className="btn btn--primary" onClick={handleSavePeriodEdit}>Save Changes</button>
+          <button className="btn btn--secondary" onClick={() => setEditPeriodModal(false)}>Cancel</button>
+        </div>
       </Modal>
     </div>
   )

@@ -17,6 +17,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Depends
+from pydantic import BaseModel
 
 from backend.deps import sb_request, require_admin
 from backend.email_service import send_admin_summary_email, send_reminder_email
@@ -603,11 +604,36 @@ async def scheduler_status(admin=Depends(require_admin)):
     # Recent periods — filter out far-future drafts
     cutoff = (today + timedelta(days=30)).isoformat()
     db_periods = await sb_request("GET", "pay_periods", params={
-        "select": "id,label,status,start_date,end_date,due_date,opened_at",
+        "select": "id,label,status,start_date,end_date,due_date,opened_at,window_open,deadline",
         "start_date": f"lte.{cutoff}",
         "order": "start_date.desc",
-        "limit": "6",
+        "limit": "20",  # Get more to match with cadence preview
     }) or []
+
+    # Create a lookup for existing periods by start/end date
+    db_lookup = {(p["start_date"], p["end_date"]): p for p in db_periods}
+
+    # Enhance cadence_preview with database IDs where periods exist
+    enhanced_cadence = []
+    for p in cadence_preview:
+        key = (p["start_date"], p["end_date"])
+        db_period = db_lookup.get(key)
+
+        enhanced_period = {
+            **p,
+            "id": db_period["id"] if db_period else None,
+            "status": db_period["status"] if db_period else "draft",
+            "db_window_open": db_period.get("window_open") if db_period else None,
+            "db_deadline": db_period.get("deadline") if db_period else None,
+        }
+
+        # Use database overrides if they exist, otherwise use calculated dates
+        if enhanced_period["db_window_open"]:
+            enhanced_period["window_open"] = enhanced_period["db_window_open"]
+        if enhanced_period["db_deadline"]:
+            enhanced_period["deadline"] = enhanced_period["db_deadline"]
+
+        enhanced_cadence.append(enhanced_period)
 
     return {
         "scheduler_running": True,
@@ -617,8 +643,8 @@ async def scheduler_status(admin=Depends(require_admin)):
         "app_url": APP_URL,
         "today": today.isoformat(),
         "cadence_config": cadence,
-        "cadence_preview": cadence_preview,
-        "recent_periods": db_periods,
+        "cadence_preview": enhanced_cadence,
+        "recent_periods": db_periods[:6],  # Keep just the most recent 6
     }
 
 
@@ -671,3 +697,52 @@ async def update_cadence(body: dict, admin=Depends(require_admin)):
         await _upsert_setting("cadence_deadline_days", str(deadline))
 
     return await _get_cadence_config()
+
+
+class PeriodUpdateRequest(BaseModel):
+    window_open: str
+    deadline: str
+
+
+@router.patch("/pay-periods/{period_id}")
+async def update_pay_period(
+    period_id: str,
+    request: PeriodUpdateRequest,
+    admin=Depends(require_admin),
+):
+    """Update the window_open and deadline dates for a specific pay period."""
+    from datetime import date as date_type
+
+    try:
+        # Validate dates
+        window_date = date_type.fromisoformat(request.window_open)
+        deadline_date = date_type.fromisoformat(request.deadline)
+
+        if deadline_date <= window_date:
+            raise HTTPException(status_code=400, detail="Deadline must be after window open date")
+
+        # Update the period
+        result = await sb_request("PATCH", f"pay_periods?id=eq.{period_id}", data={
+            "window_open": request.window_open,
+            "deadline": request.deadline,
+        })
+
+        # Log the change
+        await sb_request("POST", "audit_log", data={
+            "action": "pay_period_dates_updated",
+            "entity_type": "pay_period",
+            "entity_id": period_id,
+            "details": {
+                "window_open": request.window_open,
+                "deadline": request.deadline,
+                "updated_by": "admin",
+            },
+        })
+
+        return {"success": True, "message": "Pay period updated successfully"}
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    except Exception as e:
+        logger.error(f"Failed to update pay period {period_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update pay period")
