@@ -142,7 +142,7 @@ export function AuthProvider({ children }) {
           // making it impossible for Supabase's auto-refresh to recover the session.
           // Just reset React state — user will be redirected to login naturally.
           console.warn('Profile fetch auth error:', error.message)
-          setUser(null)
+          // Don't immediately set user to null on auth errors - let the 401 handler in api.js deal with it
           setProfile(null)
           setLoading(false)
           return

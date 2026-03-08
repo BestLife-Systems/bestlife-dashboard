@@ -6,7 +6,7 @@ async function getAuthHeaders() {
   try {
     const result = await Promise.race([
       supabase.auth.getSession(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 5000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('getSession timeout')), 10000)), // Increased to 10s
     ])
     const session = result?.data?.session
     if (!session?.access_token) return {}

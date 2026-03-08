@@ -61,23 +61,28 @@ function clearAndRedirect() {
 let lastHealthCheck = Date.now()
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible') return
-  // Skip if we checked less than 30s ago
-  if (Date.now() - lastHealthCheck < 30000) return
+  // Skip if we checked less than 2 minutes ago (was 30s)
+  if (Date.now() - lastHealthCheck < 120000) return
   // Skip if on login/reset pages
   if (window.location.pathname.startsWith('/login') || window.location.pathname.startsWith('/reset')) return
   lastHealthCheck = Date.now()
   try {
     const result = await Promise.race([
       supabase.auth.getSession(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)), // Increased to 10s
     ])
     if (!result?.data?.session) {
       console.warn('Session expired on tab refocus — redirecting to login')
       clearAndRedirect()
     }
-  } catch {
-    console.warn('Session health check failed — redirecting to login')
-    clearAndRedirect()
+  } catch (err) {
+    // Only redirect on real session failures, not timeouts
+    if (!err.message.includes('timeout')) {
+      console.warn('Session health check failed — redirecting to login')
+      clearAndRedirect()
+    } else {
+      console.warn('Session health check timed out (not redirecting)', err.message)
+    }
   }
 })
 
