@@ -93,6 +93,7 @@ async def startup_event():
     if SUPABASE_SERVICE_KEY:
         migrations = [
             ("users_role_check", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check; ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'clinical_leader', 'therapist', 'front_desk', 'ba', 'medical_biller', 'apn', 'intern'));"),
+            ("pay_periods_custom_dates", "ALTER TABLE pay_periods ADD COLUMN IF NOT EXISTS window_open DATE, ADD COLUMN IF NOT EXISTS deadline DATE;"),
         ]
         for name, sql in migrations:
             try:
