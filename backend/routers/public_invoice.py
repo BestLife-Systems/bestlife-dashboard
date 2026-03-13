@@ -286,12 +286,16 @@ async def download_invoice_pdf(draft_token: str):
     period = r.get("pay_periods") or {}
     period_label = period.get("label", "")
 
-    pdf_bytes = generate_invoice_pdf(
-        invoice_data=r.get("invoice_data") or {},
-        user_name=user_name,
-        period_label=period_label,
-        submitted_at=r.get("submitted_at"),
-    )
+    try:
+        pdf_bytes = generate_invoice_pdf(
+            invoice_data=r.get("invoice_data") or {},
+            user_name=user_name,
+            period_label=period_label,
+            submitted_at=r.get("submitted_at"),
+        )
+    except Exception as e:
+        logger.error(f"PDF generation failed for {draft_token}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
     filename = f"Invoice-{period_label.replace(' ', '-')}.pdf" if period_label else "Invoice.pdf"
     return Response(
