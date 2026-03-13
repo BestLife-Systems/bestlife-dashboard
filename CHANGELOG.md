@@ -24,10 +24,20 @@ Invoice notifications for the **Mar 01–15 pay period** were scheduled for 9:00
 **Railway env var changes require redeploy**
 - Deleting an env var doesn't affect the running process — `os.environ` is only set at startup
 
+**PDF download error handling**
+- Added try/except around `generate_invoice_pdf()` in the download endpoint
+- Failures now return a proper 500 with a logged error instead of an unhandled crash
+- PDF generation (fpdf2) reviewed — pending live verification when a staff member submits an invoice
+
+**SMS notifications: zero sent**
+- Zero text messages were delivered for this pay period due to a Twilio issue
+- Needs investigation into Twilio configuration/credentials
+
 ### Outstanding issues
 - [ ] `_get_email_whitelist()` should treat `"none"` / `"null"` / `"false"` as no whitelist
 - [ ] `_auto_open_period()` should not mark period `"open"` if zero notifications sent
 - [ ] `_run_daily_logic()` ignores per-period `window_open`/`deadline` DB overrides — always recalculates from global cadence
 - [ ] "Open & Send" button in Pay Periods UI sends SMS only, not emails
 - [ ] No way to resend open notifications for an already-opened period
-- [ ] SMS via Twilio failed — needs investigation
+- [ ] Twilio SMS not working — zero messages sent, needs investigation
+- [ ] PDF download needs live verification once a staff member submits an invoice
