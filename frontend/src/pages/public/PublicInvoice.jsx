@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
@@ -132,6 +132,18 @@ export default function PublicInvoice() {
 
   useEffect(() => { loadInvoice() }, [draftToken])
 
+  // ── Warn before leaving with unsaved changes ──
+  useEffect(() => {
+    function handleBeforeUnload(e) {
+      if (!draftSaved && autoSaveDirty.current) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [draftSaved])
+
   // ── Countdown timer for edit window ──
   useEffect(() => {
     if (!editDeadline) return
@@ -190,7 +202,31 @@ export default function PublicInvoice() {
     }
   }
 
-  function markDirty() { setDraftSaved(false) }
+  function markDirty() { setDraftSaved(false); autoSaveDirty.current = true }
+
+  // ── Auto-save draft (3s after last change) ──
+  const autoSaveTimer = useRef(null)
+  const autoSaveDirty = useRef(false)
+  const autoSaving = useRef(false)
+
+  useEffect(() => {
+    if (!autoSaveDirty.current || submitted || !data || autoSaving.current) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    autoSaveTimer.current = setTimeout(async () => {
+      if (!autoSaveDirty.current || autoSaving.current) return
+      autoSaving.current = true
+      autoSaveDirty.current = false
+      try {
+        await pubPost(`/public/invoice/${draftToken}/save-draft`, { invoice_data: buildInvoiceData() })
+        setDraftSaved(true)
+      } catch (_) {
+        // Silent fail — user can still manually save
+      } finally {
+        autoSaving.current = false
+      }
+    }, 3000)
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [iic, op, sbys, ados, adminEntries, supervisionIndiv, supervisionGroup, sickLeave, pto, notes])
 
   // ── Build submit data ──
   function buildInvoiceData() {
