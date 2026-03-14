@@ -696,7 +696,9 @@ export default function PublicInvoice() {
         {/* ═══ OP Section ═══ */}
         <Section title="OP Sessions" total={opSessionCount() + opCancelCount()} totalLabel="sessions">
           <div className="invoice-disclaimer">
-            <strong>Outpatient Cancellations</strong> * This ONLY pertains to no call / no shows that gave less than 24hr notice, and is at your discretion. Clients added to this list are CHARGED the cancellation fee - $50.00. Do not add clients you do not wish to charge.
+            • <strong>Record all outpatient therapy sessions</strong> below<br/>
+            • <strong>For cancelled sessions:</strong> still add the client and date, then check "Charge Cancellation Fee" only if it was a <strong>no-show or last-minute cancellation</strong> (less than 24 hours notice)<br/>
+            • <strong>Use your discretion</strong> - the <strong>$50.00 fee</strong> will be charged to clients you mark
           </div>
           {op.map((entry, idx) => (
             <div key={idx} className="invoice-entry">
