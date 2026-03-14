@@ -43,6 +43,7 @@ const RATE_GROUPS = [
   { label: 'SBYS', patterns: ['SBYS'] },
   { label: 'ADOS', patterns: ['ADOS Assessment'] },
   { label: 'APN', patterns: ['APN Session', 'APN Intake'] },
+  { label: 'Supervision', patterns: ['Individual Supervision', 'Group Supervision'] },
   { label: 'General', patterns: ['Administration', 'PTO', 'Sick Leave', 'Community Event', 'OP Cancellation'] },
 ]
 
