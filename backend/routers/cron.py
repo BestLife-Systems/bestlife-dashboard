@@ -323,7 +323,7 @@ async def _auto_open_period(period: dict) -> int:
         "select": "id,first_name,last_name,email,phone_number,sms_enabled,role",
     })
 
-    payroll_roles = {"therapist", "clinical_leader", "apn", "ba"}
+    payroll_roles = {"therapist", "clinical_leader", "apn", "ba", "supervisor"}
     eligible = [u for u in (users or []) if u.get("role") in payroll_roles]
 
     notification_count = 0

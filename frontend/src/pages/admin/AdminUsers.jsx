@@ -9,13 +9,14 @@ const ROLES = [
   { value: 'therapist', label: 'Therapist' },
   { value: 'apn', label: 'APN' },
   { value: 'ba', label: 'Behavioral Assistant' },
+  { value: 'supervisor', label: 'Supervisor' },
   { value: 'intern', label: 'Intern' },
   { value: 'front_desk', label: 'Front Desk' },
   { value: 'medical_biller', label: 'Medical Biller' },
 ]
 
 // Display order for role grouping
-const ROLE_ORDER = ['admin', 'clinical_leader', 'therapist', 'apn', 'ba', 'front_desk', 'intern', 'medical_biller']
+const ROLE_ORDER = ['admin', 'clinical_leader', 'therapist', 'apn', 'ba', 'supervisor', 'front_desk', 'intern', 'medical_biller']
 const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.value, r.label]))
 
 const EMPLOYMENT_STATUSES = [

@@ -794,7 +794,7 @@ async def open_pay_period(period_id: str, admin=Depends(require_admin)):
         "select": "id,first_name,last_name,email,phone_number,sms_enabled,role",
     })
 
-    payroll_roles = {"therapist", "clinical_leader", "apn", "ba"}
+    payroll_roles = {"therapist", "clinical_leader", "apn", "ba", "supervisor"}
     eligible = [u for u in (users or []) if u.get("role") in payroll_roles]
     logger.info(f"Opening pay period {period_id}: {len(users or [])} total users, {len(eligible)} eligible")
 
